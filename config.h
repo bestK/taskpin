@@ -47,6 +47,7 @@ typedef struct {
     int     font_size;  /* point size, default 9 */
     COLORREF font_color;
     COLORREF bg_color;  /* background, use 0xFFFFFFFF for transparent */
+    BOOL  scroll_enabled; /* auto-scroll long text, default TRUE */
 } TaskPinConfig;
 
 void config_load(TaskPinConfig *cfg);
