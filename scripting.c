@@ -206,18 +206,9 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 
 /* ─── execute Lua file ─── */
 
-BOOL script_exec_file(const WCHAR *lua_path, ScriptResult *result) {
-    if (!L || !lua_path || !lua_path[0] || !result) return FALSE;
-
-    result->display[0] = L'\0';
-    result->clickable = FALSE;
-    result->click_url[0] = L'\0';
-
-    /* Resolve relative path (relative to exe directory) */
-    WCHAR full_path[MAX_PATH];
+static void resolve_lua_path(const WCHAR *lua_path, WCHAR *full_path) {
     if (lua_path[0] != L'\\' && lua_path[0] != L'/' &&
         !(lua_path[0] && lua_path[1] == L':')) {
-        /* Relative path — prepend exe directory */
         GetModuleFileNameW(NULL, full_path, MAX_PATH);
         WCHAR *slash = wcsrchr(full_path, L'\\');
         if (slash) *(slash + 1) = L'\0';
@@ -225,6 +216,31 @@ BOOL script_exec_file(const WCHAR *lua_path, ScriptResult *result) {
     } else {
         lstrcpynW(full_path, lua_path, MAX_PATH);
     }
+}
+
+BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param_count,
+                      ScriptResult *result) {
+    if (!L || !lua_path || !lua_path[0] || !result) return FALSE;
+
+    result->display[0] = L'\0';
+    result->clickable = FALSE;
+    result->click_url[0] = L'\0';
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    /* Inject args table */
+    lua_newtable(L);
+    for (int i = 0; i < param_count; i++) {
+        if (params[i].key[0]) {
+            char k8[CFG_MAX_PARAM_KEY], v8[CFG_MAX_PARAM_VAL];
+            WideCharToMultiByte(CP_UTF8, 0, params[i].key, -1, k8, sizeof(k8), NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, params[i].value, -1, v8, sizeof(v8), NULL, NULL);
+            lua_pushstring(L, v8);
+            lua_setfield(L, -2, k8);
+        }
+    }
+    lua_setglobal(L, "args");
 
     char path8[512];
     WideCharToMultiByte(CP_UTF8, 0, full_path, -1, path8, 512, NULL, NULL);
@@ -234,7 +250,7 @@ BOOL script_exec_file(const WCHAR *lua_path, ScriptResult *result) {
         if (err) MultiByteToWideChar(CP_UTF8, 0, err, -1, result->display, 2048);
         else lstrcpyW(result->display, L"[lua error]");
         lua_settop(L, 0);
-        return TRUE; /* return TRUE so error shows in taskbar */
+        return TRUE;
     }
 
     int nresults = lua_gettop(L);
@@ -252,4 +268,56 @@ BOOL script_exec_file(const WCHAR *lua_path, ScriptResult *result) {
 
     lua_settop(L, 0);
     return (result->display[0] != L'\0');
+}
+
+/* ─── parse @param declarations ─── */
+
+int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_decls) {
+    if (!lua_path || !lua_path[0]) return 0;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return 0;
+
+    int count = 0;
+    char line[512];
+    while (fgets(line, sizeof(line), f) && count < max_decls) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@param", 6) != 0) continue;
+        p += 6;
+        while (*p == ' ') p++;
+
+        char *start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        int klen = (int)(p - start);
+        if (klen <= 0 || klen >= 64) continue;
+        memcpy(decls[count].key, start, klen);
+        decls[count].key[klen] = '\0';
+
+        while (*p == ' ' || *p == '\t') p++;
+        start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        int tlen = (int)(p - start);
+        if (tlen >= 16) tlen = 15;
+        memcpy(decls[count].type, start, tlen);
+        decls[count].type[tlen] = '\0';
+
+        while (*p == ' ' || *p == '\t') p++;
+        start = p;
+        int llen = (int)strlen(start);
+        while (llen > 0 && (start[llen-1] == '\n' || start[llen-1] == '\r')) llen--;
+        if (llen >= 128) llen = 127;
+        memcpy(decls[count].label, start, llen);
+        decls[count].label[llen] = '\0';
+
+        count++;
+    }
+    fclose(f);
+    return count;
 }

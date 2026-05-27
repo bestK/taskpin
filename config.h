@@ -8,9 +8,18 @@
 #define CFG_MAX_EXPR  4096
 #define CFG_MAX_PATH  512
 #define CFG_MAX_ITEMS 64
+#define CFG_MAX_PARAMS 16
+#define CFG_MAX_PARAM_KEY 64
+#define CFG_MAX_PARAM_VAL 256
 
 #define ITEM_TYPE_URL  0
 #define ITEM_TYPE_LUA  1
+
+typedef struct {
+    WCHAR key[CFG_MAX_PARAM_KEY];
+    WCHAR value[CFG_MAX_PARAM_VAL];
+    WCHAR label[CFG_MAX_NAME];       /* display label from @param comment */
+} ParamEntry;
 
 typedef struct {
     int   type;                      /* ITEM_TYPE_URL or ITEM_TYPE_LUA */
@@ -22,7 +31,10 @@ typedef struct {
     BOOL  click_enabled;
     WCHAR click_url[CFG_MAX_URL];
     /* Lua file mode */
-    WCHAR lua_path[CFG_MAX_PATH];    /* path to .lua script file */
+    WCHAR lua_path[CFG_MAX_PATH];
+    /* Script params (from @param declarations) */
+    ParamEntry params[CFG_MAX_PARAMS];
+    int param_count;
 } PinItem;
 
 typedef struct {

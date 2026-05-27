@@ -66,6 +66,23 @@ void config_load(TaskPinConfig *cfg) {
             cfg->items[i].click_url, CFG_MAX_URL, path);
         GetPrivateProfileStringW(sec, L"lua_path", L"",
             cfg->items[i].lua_path, CFG_MAX_PATH, path);
+
+        /* Load params */
+        cfg->items[i].param_count = GetPrivateProfileIntW(sec, L"param_count", 0, path);
+        if (cfg->items[i].param_count > CFG_MAX_PARAMS)
+            cfg->items[i].param_count = CFG_MAX_PARAMS;
+        for (int j = 0; j < cfg->items[i].param_count; j++) {
+            WCHAR pk[32], pv[32], pl[32];
+            wsprintfW(pk, L"param_key_%d", j);
+            wsprintfW(pv, L"param_val_%d", j);
+            wsprintfW(pl, L"param_lbl_%d", j);
+            GetPrivateProfileStringW(sec, pk, L"",
+                cfg->items[i].params[j].key, CFG_MAX_PARAM_KEY, path);
+            GetPrivateProfileStringW(sec, pv, L"",
+                cfg->items[i].params[j].value, CFG_MAX_PARAM_VAL, path);
+            GetPrivateProfileStringW(sec, pl, L"",
+                cfg->items[i].params[j].label, CFG_MAX_NAME, path);
+        }
     }
 }
 
@@ -161,5 +178,19 @@ void config_save(const TaskPinConfig *cfg) {
         WritePrivateProfileStringW(sec, L"click_enabled", tmp, path);
         WritePrivateProfileStringW(sec, L"click_url", cfg->items[i].click_url, path);
         WritePrivateProfileStringW(sec, L"lua_path", cfg->items[i].lua_path, path);
+
+        /* Save params */
+        WCHAR pc[16];
+        wsprintfW(pc, L"%d", cfg->items[i].param_count);
+        WritePrivateProfileStringW(sec, L"param_count", pc, path);
+        for (int j = 0; j < cfg->items[i].param_count; j++) {
+            WCHAR pk[32], pv[32], pl[32];
+            wsprintfW(pk, L"param_key_%d", j);
+            wsprintfW(pv, L"param_val_%d", j);
+            wsprintfW(pl, L"param_lbl_%d", j);
+            WritePrivateProfileStringW(sec, pk, cfg->items[i].params[j].key, path);
+            WritePrivateProfileStringW(sec, pv, cfg->items[i].params[j].value, path);
+            WritePrivateProfileStringW(sec, pl, cfg->items[i].params[j].label, path);
+        }
     }
 }

@@ -2,6 +2,7 @@
 #define TASKPIN_SCRIPTING_H
 
 #include <windows.h>
+#include "config.h"
 
 typedef struct {
     WCHAR display[2048];     /* text to show in taskbar */
@@ -9,16 +10,24 @@ typedef struct {
     WCHAR click_url[1024];   /* URL to open on click */
 } ScriptResult;
 
+/* Parsed @param declaration from script header */
+typedef struct {
+    char key[64];
+    char type[16];   /* "string", "number" */
+    char label[128];
+} ScriptParamDecl;
+
 void script_init(void);
 void script_shutdown(void);
 
-/* Execute Lua code with `response` global set to response_raw.
-   Script should: return "display text", true/false, "url"
-   Returns TRUE if script executed successfully. */
 BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *result);
 
-/* Execute a Lua file. The file should return 3 values like script_exec.
-   No `response` global is set — the script fetches its own data via http.get(). */
-BOOL script_exec_file(const WCHAR *lua_path, ScriptResult *result);
+/* Execute a Lua file with params injected as `args` table. */
+BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param_count,
+                      ScriptResult *result);
+
+/* Parse @param declarations from a Lua file header.
+   Returns number of params found (up to max_decls). */
+int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_decls);
 
 #endif
