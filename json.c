@@ -24,14 +24,14 @@ static char *parse_string_raw(const char **pp) {
     if (*p != '"') return NULL;
     p++;
     const char *start = p;
-    /* find end, handle escapes */
+    /* find end, count max output length */
     int len = 0;
     const char *s = start;
     while (*s && *s != '"') {
-        if (*s == '\\') s++;
-        s++; len++;
+        if (*s == '\\') { s++; if (*s == 'u') { s += 4; len += 4; } else { s++; len++; } }
+        else { s++; len++; }
     }
-    char *out = (char *)malloc(len + 1);
+    char *out = (char *)malloc(len * 3 + 1); /* extra space for UTF-8 */
     int i = 0;
     p = start;
     while (*p && *p != '"') {
@@ -46,6 +46,48 @@ static char *parse_string_raw(const char **pp) {
             case 't': out[i++] = '\t'; break;
             case 'b': out[i++] = '\b'; break;
             case 'f': out[i++] = '\f'; break;
+            case 'u': {
+                /* Parse \uXXXX → UTF-8 */
+                unsigned int cp = 0;
+                for (int k = 0; k < 4 && p[1+k]; k++) {
+                    char c = p[1+k];
+                    cp <<= 4;
+                    if (c >= '0' && c <= '9') cp |= c - '0';
+                    else if (c >= 'a' && c <= 'f') cp |= c - 'a' + 10;
+                    else if (c >= 'A' && c <= 'F') cp |= c - 'A' + 10;
+                }
+                p += 4; /* skip 4 hex digits */
+                /* Surrogate pair handling */
+                if (cp >= 0xD800 && cp <= 0xDBFF && p[1] == '\\' && p[2] == 'u') {
+                    unsigned int lo = 0;
+                    for (int k = 0; k < 4 && p[3+k]; k++) {
+                        char c = p[3+k];
+                        lo <<= 4;
+                        if (c >= '0' && c <= '9') lo |= c - '0';
+                        else if (c >= 'a' && c <= 'f') lo |= c - 'a' + 10;
+                        else if (c >= 'A' && c <= 'F') lo |= c - 'A' + 10;
+                    }
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    p += 6; /* skip \uXXXX */
+                }
+                /* Encode as UTF-8 */
+                if (cp < 0x80) {
+                    out[i++] = (char)cp;
+                } else if (cp < 0x800) {
+                    out[i++] = (char)(0xC0 | (cp >> 6));
+                    out[i++] = (char)(0x80 | (cp & 0x3F));
+                } else if (cp < 0x10000) {
+                    out[i++] = (char)(0xE0 | (cp >> 12));
+                    out[i++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                    out[i++] = (char)(0x80 | (cp & 0x3F));
+                } else {
+                    out[i++] = (char)(0xF0 | (cp >> 18));
+                    out[i++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+                    out[i++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                    out[i++] = (char)(0x80 | (cp & 0x3F));
+                }
+                break;
+            }
             default: out[i++] = *p; break;
             }
         } else {
