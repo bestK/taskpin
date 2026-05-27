@@ -124,7 +124,7 @@ static void start_fetch(HWND hwnd) {
     if (it->type == ITEM_TYPE_LUA) {
         /* Lua file mode: execute script directly (blocking, but fast) */
         if (it->lua_path[0]) {
-            if (script_exec_file(it->lua_path, &g_script_result)) {
+            if (script_exec_file(it->lua_path, it->params, it->param_count, &g_script_result)) {
                 lstrcpynW(g_display, g_script_result.display, FETCH_BUF_SIZE);
             } else {
                 lstrcpyW(g_display, L"[script error]");
@@ -160,6 +160,10 @@ typedef struct {
     HWND hClickCheck, hClickUrl;
     HWND hLuaPath;
     HWND hUrlLabel, hLuaLabel, hLoadBtn;
+    /* Param fields for Lua scripts */
+    HWND hParamLabel[CFG_MAX_PARAMS];
+    HWND hParamEdit[CFG_MAX_PARAMS];
+    int  param_decl_count;
     int  item_index;   /* -1 = new item */
     char cached_response[FETCH_BUF_SIZE];
     JsonNode *json_root;
@@ -173,6 +177,43 @@ static WNDPROC g_orig_dlg_proc = NULL;
 /* Forward declarations */
 static void edit_load_response(EditDlgState *st);
 static void edit_update_preview(EditDlgState *st);
+
+static void edit_load_params(const WCHAR *lua_path, const PinItem *existing) {
+    if (!g_edit) return;
+    /* Hide all param slots first */
+    for (int i = 0; i < CFG_MAX_PARAMS; i++) {
+        ShowWindow(g_edit->hParamLabel[i], SW_HIDE);
+        ShowWindow(g_edit->hParamEdit[i], SW_HIDE);
+    }
+    g_edit->param_decl_count = 0;
+    if (!lua_path || !lua_path[0]) return;
+
+    ScriptParamDecl decls[CFG_MAX_PARAMS];
+    int n = script_parse_params(lua_path, decls, CFG_MAX_PARAMS);
+    g_edit->param_decl_count = n;
+
+    for (int i = 0; i < n; i++) {
+        /* Set label */
+        WCHAR lbl[128];
+        MultiByteToWideChar(CP_UTF8, 0, decls[i].label[0] ? decls[i].label : decls[i].key,
+            -1, lbl, 128);
+        SetWindowTextW(g_edit->hParamLabel[i], lbl);
+        ShowWindow(g_edit->hParamLabel[i], SW_SHOW);
+        ShowWindow(g_edit->hParamEdit[i], SW_SHOW);
+
+        /* Pre-fill from existing config if key matches */
+        if (existing) {
+            WCHAR wkey[64];
+            MultiByteToWideChar(CP_UTF8, 0, decls[i].key, -1, wkey, 64);
+            for (int j = 0; j < existing->param_count; j++) {
+                if (lstrcmpW(existing->params[j].key, wkey) == 0) {
+                    SetWindowTextW(g_edit->hParamEdit[i], existing->params[j].value);
+                    break;
+                }
+            }
+        }
+    }
+}
 
 static void edit_toggle_type(void) {
     if (!g_edit) return;
@@ -201,14 +242,19 @@ static void edit_toggle_type(void) {
         WCHAR cls[32];
         GetClassNameW(child, cls, 32);
         if (lstrcmpiW(cls, L"STATIC") == 0) {
-            /* Check if this label is URL-mode specific (below row 3) */
-            RECT rc;
-            GetWindowRect(child, &rc);
-            POINT pt = { rc.left, rc.top };
-            ScreenToClient(g_edit->hDlg, &pt);
-            /* Labels below y=95 are URL-mode specific */
-            if (pt.y > 95) {
-                ShowWindow(child, is_url ? SW_SHOW : SW_HIDE);
+            /* Skip param labels — they are managed by edit_load_params */
+            BOOL is_param_label = FALSE;
+            for (int pi = 0; pi < CFG_MAX_PARAMS; pi++) {
+                if (child == g_edit->hParamLabel[pi]) { is_param_label = TRUE; break; }
+            }
+            if (!is_param_label) {
+                RECT rc;
+                GetWindowRect(child, &rc);
+                POINT pt = { rc.left, rc.top };
+                ScreenToClient(g_edit->hDlg, &pt);
+                if (pt.y > 95) {
+                    ShowWindow(child, is_url ? SW_SHOW : SW_HIDE);
+                }
             }
         }
         child = GetWindow(child, GW_HWNDNEXT);
@@ -239,6 +285,7 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
             if (GetOpenFileNameW(&ofn)) {
                 SetWindowTextW(g_edit->hLuaPath, file);
+                edit_load_params(file, NULL);
             }
             return 0;
         }
@@ -833,6 +880,18 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         WS_CHILD | WS_VISIBLE | ES_NUMBER,
         70, y, 80, 22, st->hDlg, (HMENU)IDE_INT, g_hinst, NULL);
 
+    /* Create param input slots (hidden initially, below Interval) */
+    for (int pi = 0; pi < CFG_MAX_PARAMS; pi++) {
+        int py = y + 28 + pi * 26;
+        st->hParamLabel[pi] = CreateWindowExW(0, L"STATIC", L"",
+            WS_CHILD, 10, py + 2, 100, 18, st->hDlg, NULL, g_hinst, NULL);
+        st->hParamEdit[pi] = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | ES_AUTOHSCROLL, 115, py, 495, 22, st->hDlg, NULL, g_hinst, NULL);
+        SendMessageW(st->hParamLabel[pi], WM_SETFONT, (WPARAM)g_font, TRUE);
+        SendMessageW(st->hParamEdit[pi], WM_SETFONT, (WPARAM)g_font, TRUE);
+    }
+    st->param_decl_count = 0;
+
     y += 30;
     CreateWindowExW(0, L"STATIC", L"Response structure (click to insert):",
         WS_CHILD | WS_VISIBLE, 10, y, 350, 18, st->hDlg, NULL, g_hinst, NULL);
@@ -904,6 +963,8 @@ static void show_edit_dialog(HWND parent, int item_idx) {
             it->click_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
         SetWindowTextW(st->hClickUrl, it->click_url);
         SetWindowTextW(st->hLuaPath, it->lua_path);
+        if (it->type == ITEM_TYPE_LUA && it->lua_path[0])
+            edit_load_params(it->lua_path, it);
     }
 
     /* Set initial visibility based on type */
@@ -950,6 +1011,17 @@ static void show_edit_dialog(HWND parent, int item_idx) {
             it->click_enabled = (SendMessageW(st->hClickCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
             GetWindowTextW(st->hClickUrl, it->click_url, CFG_MAX_URL);
             GetWindowTextW(st->hLuaPath, it->lua_path, CFG_MAX_PATH);
+            /* Save params */
+            ScriptParamDecl decls[CFG_MAX_PARAMS];
+            int ndecls = script_parse_params(it->lua_path, decls, CFG_MAX_PARAMS);
+            it->param_count = ndecls;
+            for (int pi = 0; pi < ndecls && pi < CFG_MAX_PARAMS; pi++) {
+                MultiByteToWideChar(CP_UTF8, 0, decls[pi].key, -1,
+                    it->params[pi].key, CFG_MAX_PARAM_KEY);
+                MultiByteToWideChar(CP_UTF8, 0, decls[pi].label, -1,
+                    it->params[pi].label, CFG_MAX_NAME);
+                GetWindowTextW(st->hParamEdit[pi], it->params[pi].value, CFG_MAX_PARAM_VAL);
+            }
             config_save(&g_cfg);
             listview_populate();
         }
