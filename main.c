@@ -13,6 +13,9 @@
 #include "scripting.h"
 
 #define IDT_REFRESH        1
+#define IDT_SCROLL         2
+#define SCROLL_SPEED       2   /* pixels per tick */
+#define SCROLL_INTERVAL    50  /* ms between scroll ticks */
 
 #define IDM_SHOW    3001
 #define IDM_EXIT    3002
@@ -39,7 +42,9 @@ static WCHAR g_display[FETCH_BUF_SIZE];
 static HFONT g_font;
 static BOOL  g_fetching = FALSE;
 static char  g_last_response[FETCH_BUF_SIZE];
-static ScriptResult g_script_result = {0};  /* last script result for click handling */
+static ScriptResult g_script_result = {0};
+static int   g_scroll_offset = 0;
+static int   g_text_width = 0;  /* measured text width in pixels */  /* last script result for click handling */
 
 static HWND g_bar_hwnd  = NULL;
 static HWND g_main_hwnd = NULL;
@@ -694,7 +699,7 @@ static void show_settings_dialog(HWND parent) {
     HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", L"Settings",
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU,
-        200, 200, 360, 340, parent, NULL, g_hinst, NULL);
+        200, 200, 360, 370, parent, NULL, g_hinst, NULL);
     if (!hDlg) return;
 
     int y = 10;
@@ -748,6 +753,13 @@ static void show_settings_dialog(HWND parent) {
             RegCloseKey(hk);
         }
     }
+
+    y += 24;
+    HWND s_eScroll = CreateWindowExW(0, L"BUTTON", L"Auto-scroll long text",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        10, y, 200, 20, hDlg, (HMENU)5061, g_hinst, NULL);
+    SendMessageW(s_eScroll, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_eScroll, BM_SETCHECK, g_cfg.scroll_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
 
     y += 30;
     CreateWindowExW(0, L"BUTTON", L"OK",
@@ -815,6 +827,8 @@ static void show_settings_dialog(HWND parent) {
 
         GetWindowTextW(s_ePosY, tmp2, 32);
         g_cfg.pos_y = _wtoi(tmp2);
+
+        g_cfg.scroll_enabled = (SendMessageW(s_eScroll, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
         config_save(&g_cfg);
 
@@ -1088,6 +1102,7 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
         lstrcpyW(g_display, L"TaskPin");
+        SetTimer(hwnd, IDT_SCROLL, SCROLL_INTERVAL, NULL);
         return 0;
     }
 
@@ -1097,7 +1112,6 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
         RECT rc;
         GetClientRect(hwnd, &rc);
 
-        /* Clear background to prevent text stacking */
         HBRUSH hBrush = CreateSolidBrush(g_cfg.bg_color);
         FillRect(hdc, &rc, hBrush);
         DeleteObject(hBrush);
@@ -1106,9 +1120,28 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
         SetTextColor(hdc, g_cfg.font_color);
         SelectObject(hdc, g_font);
 
-        rc.left += 8; rc.right -= 4;
-        DrawTextW(hdc, g_display, -1, &rc,
-            DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+        /* Measure text width */
+        SIZE sz;
+        GetTextExtentPoint32W(hdc, g_display, lstrlenW(g_display), &sz);
+        g_text_width = sz.cx;
+
+        int avail = rc.right - rc.left - 12;
+        if (sz.cx <= avail) {
+            /* Text fits — no scroll needed */
+            g_scroll_offset = 0;
+            rc.left += 8; rc.right -= 4;
+            DrawTextW(hdc, g_display, -1, &rc,
+                DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+        } else {
+            /* Scrolling: draw text offset to the left */
+            RECT clip = rc;
+            clip.left += 4; clip.right -= 4;
+            IntersectClipRect(hdc, clip.left, clip.top, clip.right, clip.bottom);
+            rc.left = 8 - g_scroll_offset;
+            rc.right = rc.left + sz.cx + 50;
+            DrawTextW(hdc, g_display, -1, &rc,
+                DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOCLIP);
+        }
 
         EndPaint(hwnd, &ps);
         return 0;
@@ -1116,6 +1149,17 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
 
     case WM_TIMER:
         if (wp == IDT_REFRESH) start_fetch(hwnd);
+        if (wp == IDT_SCROLL && g_cfg.scroll_enabled) {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            int avail = rc.right - rc.left - 12;
+            if (g_text_width > avail) {
+                g_scroll_offset += SCROLL_SPEED;
+                if (g_scroll_offset > g_text_width + 40)
+                    g_scroll_offset = 0;
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
+        }
         return 0;
 
     case WM_FETCH_DONE: {
@@ -1151,6 +1195,7 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
         }
         HeapFree(GetProcessHeap(), 0, ctx);
         g_fetching = FALSE;
+        g_scroll_offset = 0;
         InvalidateRect(hwnd, NULL, TRUE);
         return 0;
     }
@@ -1188,6 +1233,7 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
 
     case WM_DESTROY:
         KillTimer(hwnd, IDT_REFRESH);
+        KillTimer(hwnd, IDT_SCROLL);
         appbar_remove(hwnd);
         if (g_main_hwnd) DestroyWindow(g_main_hwnd);
         if (g_font) DeleteObject(g_font);
