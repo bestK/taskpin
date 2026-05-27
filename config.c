@@ -1,6 +1,9 @@
 #include "config.h"
+#include "base64.h"
 #include <shlwapi.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static const WCHAR kGlobal[] = L"Global";
 static const WCHAR kFile[]   = L"config.ini";
@@ -34,16 +37,35 @@ void config_load(TaskPinConfig *cfg) {
         WCHAR sec[32];
         wsprintfW(sec, L"Item_%d", i);
 
+        cfg->items[i].type = GetPrivateProfileIntW(sec, L"type", ITEM_TYPE_URL, path);
         GetPrivateProfileStringW(sec, L"name", L"Untitled",
             cfg->items[i].name, CFG_MAX_NAME, path);
         GetPrivateProfileStringW(sec, L"url", L"http://localhost:8080/status",
             cfg->items[i].url, CFG_MAX_URL, path);
         cfg->items[i].interval_ms = (DWORD)GetPrivateProfileIntW(sec, L"interval_ms", 5000, path);
-        GetPrivateProfileStringW(sec, L"field_expr", L"",
-            cfg->items[i].field_expr, CFG_MAX_EXPR, path);
+
+        /* field_expr stored as base64 in INI */
+        WCHAR b64w[CFG_MAX_EXPR];
+        GetPrivateProfileStringW(sec, L"field_expr_b64", L"",
+            b64w, CFG_MAX_EXPR, path);
+        cfg->items[i].field_expr[0] = L'\0';
+        if (b64w[0]) {
+            char b64a[CFG_MAX_EXPR];
+            WideCharToMultiByte(CP_UTF8, 0, b64w, -1, b64a, CFG_MAX_EXPR, NULL, NULL);
+            int dec_len = 0;
+            char *decoded = base64_decode(b64a, &dec_len);
+            if (decoded) {
+                MultiByteToWideChar(CP_UTF8, 0, decoded, dec_len, cfg->items[i].field_expr, CFG_MAX_EXPR);
+                cfg->items[i].field_expr[dec_len < CFG_MAX_EXPR ? dec_len : CFG_MAX_EXPR-1] = L'\0';
+                free(decoded);
+            }
+        }
+
         cfg->items[i].click_enabled = GetPrivateProfileIntW(sec, L"click_enabled", 0, path);
         GetPrivateProfileStringW(sec, L"click_url", L"",
             cfg->items[i].click_url, CFG_MAX_URL, path);
+        GetPrivateProfileStringW(sec, L"lua_path", L"",
+            cfg->items[i].lua_path, CFG_MAX_PATH, path);
     }
 }
 
@@ -110,16 +132,34 @@ void config_save(const TaskPinConfig *cfg) {
         WCHAR sec[32];
         wsprintfW(sec, L"Item_%d", i);
 
+        wsprintfW(tmp, L"%d", cfg->items[i].type);
+        WritePrivateProfileStringW(sec, L"type", tmp, path);
         WritePrivateProfileStringW(sec, L"name", cfg->items[i].name, path);
         WritePrivateProfileStringW(sec, L"url", cfg->items[i].url, path);
 
         wsprintfW(tmp, L"%u", cfg->items[i].interval_ms);
         WritePrivateProfileStringW(sec, L"interval_ms", tmp, path);
 
-        WritePrivateProfileStringW(sec, L"field_expr", cfg->items[i].field_expr, path);
+        /* Encode field_expr as base64 */
+        if (cfg->items[i].field_expr[0]) {
+            char utf8[CFG_MAX_EXPR * 3];
+            int u8len = WideCharToMultiByte(CP_UTF8, 0, cfg->items[i].field_expr, -1,
+                utf8, sizeof(utf8), NULL, NULL);
+            if (u8len > 0) u8len--; /* exclude NUL */
+            char *b64 = base64_encode(utf8, u8len);
+            if (b64) {
+                WCHAR b64w[CFG_MAX_EXPR * 4];
+                MultiByteToWideChar(CP_UTF8, 0, b64, -1, b64w, CFG_MAX_EXPR * 4);
+                WritePrivateProfileStringW(sec, L"field_expr_b64", b64w, path);
+                free(b64);
+            }
+        } else {
+            WritePrivateProfileStringW(sec, L"field_expr_b64", L"", path);
+        }
 
         wsprintfW(tmp, L"%d", cfg->items[i].click_enabled ? 1 : 0);
         WritePrivateProfileStringW(sec, L"click_enabled", tmp, path);
         WritePrivateProfileStringW(sec, L"click_url", cfg->items[i].click_url, path);
+        WritePrivateProfileStringW(sec, L"lua_path", cfg->items[i].lua_path, path);
     }
 }

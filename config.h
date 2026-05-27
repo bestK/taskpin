@@ -5,17 +5,24 @@
 
 #define CFG_MAX_URL   1024
 #define CFG_MAX_NAME  128
-#define CFG_MAX_EXPR  512
+#define CFG_MAX_EXPR  4096
 #define CFG_MAX_PATH  512
 #define CFG_MAX_ITEMS 64
 
+#define ITEM_TYPE_URL  0
+#define ITEM_TYPE_LUA  1
+
 typedef struct {
+    int   type;                      /* ITEM_TYPE_URL or ITEM_TYPE_LUA */
     WCHAR name[CFG_MAX_NAME];
-    WCHAR url[CFG_MAX_URL];
     DWORD interval_ms;
-    WCHAR field_expr[CFG_MAX_EXPR];  /* template: "label:$.path" */
+    /* URL mode */
+    WCHAR url[CFG_MAX_URL];
+    WCHAR field_expr[CFG_MAX_EXPR];  /* Lua code or $.path template */
     BOOL  click_enabled;
-    WCHAR click_url[CFG_MAX_URL];    /* click URL template: "http://x/$.id" */
+    WCHAR click_url[CFG_MAX_URL];
+    /* Lua file mode */
+    WCHAR lua_path[CFG_MAX_PATH];    /* path to .lua script file */
 } PinItem;
 
 typedef struct {

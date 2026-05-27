@@ -2,3 +2,5 @@
 *.exe
 config.ini
 icon_gen.png
+zentao_task.py
+zentao_task.lua

@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
+#include <commdlg.h>
 #include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 #include "appbar.h"
 #include "fetcher.h"
 #include "json.h"
+#include "scripting.h"
 
 #define IDT_REFRESH        1
 
@@ -36,7 +38,8 @@ static TaskPinConfig g_cfg;
 static WCHAR g_display[FETCH_BUF_SIZE];
 static HFONT g_font;
 static BOOL  g_fetching = FALSE;
-static char  g_last_response[FETCH_BUF_SIZE]; /* cached for click URL rendering */
+static char  g_last_response[FETCH_BUF_SIZE];
+static ScriptResult g_script_result = {0};  /* last script result for click handling */
 
 static HWND g_bar_hwnd  = NULL;
 static HWND g_main_hwnd = NULL;
@@ -115,6 +118,25 @@ static void start_fetch(HWND hwnd) {
         InvalidateRect(hwnd, NULL, TRUE);
         return;
     }
+
+    PinItem *it = &g_cfg.items[g_cfg.selected];
+
+    if (it->type == ITEM_TYPE_LUA) {
+        /* Lua file mode: execute script directly (blocking, but fast) */
+        if (it->lua_path[0]) {
+            if (script_exec_file(it->lua_path, &g_script_result)) {
+                lstrcpynW(g_display, g_script_result.display, FETCH_BUF_SIZE);
+            } else {
+                lstrcpyW(g_display, L"[script error]");
+            }
+        } else {
+            lstrcpyW(g_display, L"(no script)");
+        }
+        InvalidateRect(hwnd, NULL, TRUE);
+        return;
+    }
+
+    /* URL mode: async HTTP fetch */
     g_fetching = TRUE;
 
     FetchContext *ctx = (FetchContext *)HeapAlloc(
@@ -122,7 +144,7 @@ static void start_fetch(HWND hwnd) {
     if (!ctx) { g_fetching = FALSE; return; }
 
     ctx->hwnd = hwnd;
-    lstrcpynW(ctx->url, g_cfg.items[g_cfg.selected].url, 1024);
+    lstrcpynW(ctx->url, it->url, 1024);
 
     HANDLE hThread = CreateThread(NULL, 0, fetcher_thread, ctx, 0, NULL);
     if (hThread) CloseHandle(hThread);
@@ -133,9 +155,11 @@ static void start_fetch(HWND hwnd) {
 
 typedef struct {
     HWND hDlg;
-    HWND hName, hUrl, hInt, hExpr;
+    HWND hType, hName, hUrl, hInt, hExpr;
     HWND hTree, hPreview;
     HWND hClickCheck, hClickUrl;
+    HWND hLuaPath;
+    HWND hUrlLabel, hLuaLabel, hLoadBtn;
     int  item_index;   /* -1 = new item */
     char cached_response[FETCH_BUF_SIZE];
     JsonNode *json_root;
@@ -150,12 +174,74 @@ static WNDPROC g_orig_dlg_proc = NULL;
 static void edit_load_response(EditDlgState *st);
 static void edit_update_preview(EditDlgState *st);
 
+static void edit_toggle_type(void) {
+    if (!g_edit) return;
+    int sel = (int)SendMessageW(g_edit->hType, CB_GETCURSEL, 0, 0);
+    BOOL is_url = (sel == ITEM_TYPE_URL);
+
+    /* URL mode: show all URL controls, hide Lua path */
+    ShowWindow(g_edit->hUrlLabel, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hUrl, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hLoadBtn, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hExpr, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hTree, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hPreview, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hClickCheck, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hClickUrl, is_url ? SW_SHOW : SW_HIDE);
+
+    /* Lua mode: show lua path, hide URL controls */
+    ShowWindow(g_edit->hLuaLabel, is_url ? SW_HIDE : SW_SHOW);
+    ShowWindow(g_edit->hLuaPath, is_url ? SW_HIDE : SW_SHOW);
+    HWND hBrowse = GetDlgItem(g_edit->hDlg, 5052);
+    if (hBrowse) ShowWindow(hBrowse, is_url ? SW_HIDE : SW_SHOW);
+
+    /* Hide/show all STATIC labels that belong to URL mode (by position) */
+    HWND child = GetWindow(g_edit->hDlg, GW_CHILD);
+    while (child) {
+        WCHAR cls[32];
+        GetClassNameW(child, cls, 32);
+        if (lstrcmpiW(cls, L"STATIC") == 0) {
+            /* Check if this label is URL-mode specific (below row 3) */
+            RECT rc;
+            GetWindowRect(child, &rc);
+            POINT pt = { rc.left, rc.top };
+            ScreenToClient(g_edit->hDlg, &pt);
+            /* Labels below y=95 are URL-mode specific */
+            if (pt.y > 95) {
+                ShowWindow(child, is_url ? SW_SHOW : SW_HIDE);
+            }
+        }
+        child = GetWindow(child, GW_HWNDNEXT);
+    }
+
+    InvalidateRect(g_edit->hDlg, NULL, TRUE);
+}
+
 /* Subclassed window proc for edit dialog */
 static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_COMMAND: {
         WORD id = LOWORD(wp);
         WORD code = HIWORD(wp);
+        if (id == 5050 && code == CBN_SELCHANGE) {
+            edit_toggle_type();
+            return 0;
+        }
+        if (id == 5052 && code == BN_CLICKED) {
+            /* Browse for .lua file */
+            WCHAR file[MAX_PATH] = {0};
+            OPENFILENAMEW ofn = {0};
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hwnd;
+            ofn.lpstrFilter = L"Lua Scripts (*.lua)\0*.lua\0All Files\0*.*\0";
+            ofn.lpstrFile = file;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+            if (GetOpenFileNameW(&ofn)) {
+                SetWindowTextW(g_edit->hLuaPath, file);
+            }
+            return 0;
+        }
         if (id == IDB_LOAD && code == BN_CLICKED) {
             edit_load_response(g_edit);
             return 0;
@@ -336,7 +422,21 @@ static void edit_update_preview(EditDlgState *st) {
     WCHAR expr[CFG_MAX_EXPR];
     GetWindowTextW(st->hExpr, expr, CFG_MAX_EXPR);
     WCHAR preview[FETCH_BUF_SIZE];
-    extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+    preview[0] = L'\0';
+
+    if (expr[0]) {
+        char lua_code[CFG_MAX_EXPR * 3];
+        WideCharToMultiByte(CP_UTF8, 0, expr, -1, lua_code, sizeof(lua_code), NULL, NULL);
+        ScriptResult sr = {0};
+        if (script_exec(lua_code, st->cached_response, &sr)) {
+            lstrcpynW(preview, sr.display, FETCH_BUF_SIZE);
+        } else {
+            /* Lua failed — fallback to $.path template engine */
+            extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+        }
+    } else {
+        MultiByteToWideChar(CP_UTF8, 0, st->cached_response, -1, preview, FETCH_BUF_SIZE);
+    }
     SetWindowTextW(st->hPreview, preview);
 }
 
@@ -370,13 +470,17 @@ static void listview_populate(void) {
         lvi.iItem   = i;
         lvi.pszText = g_cfg.items[i].name;
         ListView_InsertItem(g_listview, &lvi);
-        ListView_SetItemText(g_listview, i, 1, g_cfg.items[i].url);
+
+        WCHAR *type_str = (g_cfg.items[i].type == ITEM_TYPE_LUA) ? L"Lua" : L"URL";
+        ListView_SetItemText(g_listview, i, 1, type_str);
+
+        WCHAR *source = (g_cfg.items[i].type == ITEM_TYPE_LUA)
+            ? g_cfg.items[i].lua_path : g_cfg.items[i].url;
+        ListView_SetItemText(g_listview, i, 2, source);
 
         WCHAR ms[32];
         wsprintfW(ms, L"%u", g_cfg.items[i].interval_ms);
-        ListView_SetItemText(g_listview, i, 2, ms);
-
-        ListView_SetItemText(g_listview, i, 3, g_cfg.items[i].field_expr);
+        ListView_SetItemText(g_listview, i, 3, ms);
     }
     if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
         ListView_SetItemState(g_listview, g_cfg.selected,
@@ -397,11 +501,11 @@ static LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         col.mask = LVCF_TEXT | LVCF_WIDTH;
         col.pszText = L"Name"; col.cx = 100;
         ListView_InsertColumn(g_listview, 0, &col);
-        col.pszText = L"URL"; col.cx = 260;
+        col.pszText = L"Type"; col.cx = 50;
         ListView_InsertColumn(g_listview, 1, &col);
-        col.pszText = L"Interval"; col.cx = 70;
+        col.pszText = L"Source"; col.cx = 300;
         ListView_InsertColumn(g_listview, 2, &col);
-        col.pszText = L"Path"; col.cx = 160;
+        col.pszText = L"Interval"; col.cx = 70;
         ListView_InsertColumn(g_listview, 3, &col);
 
         SendMessageW(g_listview, WM_SETFONT, (WPARAM)g_font, TRUE);
@@ -684,24 +788,43 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     st->hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", title,
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
-        150, 80, 640, 640, parent, NULL, g_hinst, NULL);
+        150, 80, 640, 700, parent, NULL, g_hinst, NULL);
     if (!st->hDlg) { free(st); g_edit = NULL; return; }
 
     int y = 10;
+    CreateWindowExW(0, L"STATIC", L"Type:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 40, 20, st->hDlg, NULL, g_hinst, NULL);
+    st->hType = CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        55, y, 120, 100, st->hDlg, (HMENU)5050, g_hinst, NULL);
+    SendMessageW(st->hType, CB_ADDSTRING, 0, (LPARAM)L"URL");
+    SendMessageW(st->hType, CB_ADDSTRING, 0, (LPARAM)L"Lua File");
+    SendMessageW(st->hType, CB_SETCURSEL, 0, 0);
+    SendMessageW(st->hType, WM_SETFONT, (WPARAM)g_font, TRUE);
+
     CreateWindowExW(0, L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
-        10, y + 2, 50, 20, st->hDlg, NULL, g_hinst, NULL);
+        200, y + 2, 40, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-        70, y, 540, 22, st->hDlg, (HMENU)IDE_NAME, g_hinst, NULL);
+        245, y, 365, 22, st->hDlg, (HMENU)IDE_NAME, g_hinst, NULL);
 
     y += 30;
-    CreateWindowExW(0, L"STATIC", L"URL:", WS_CHILD | WS_VISIBLE,
+    st->hUrlLabel = CreateWindowExW(0, L"STATIC", L"URL:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 50, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"http://localhost:8080/status",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         70, y, 440, 22, st->hDlg, (HMENU)IDE_URL, g_hinst, NULL);
-    CreateWindowExW(0, L"BUTTON", L"Load",
+    st->hLoadBtn = CreateWindowExW(0, L"BUTTON", L"Load",
         WS_CHILD | WS_VISIBLE, 520, y, 60, 22, st->hDlg, (HMENU)IDB_LOAD, g_hinst, NULL);
+
+    st->hLuaLabel = CreateWindowExW(0, L"STATIC", L"Lua File:", WS_CHILD,
+        10, y + 2, 60, 20, st->hDlg, NULL, g_hinst, NULL);
+    st->hLuaPath = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | ES_AUTOHSCROLL,
+        75, y, 470, 22, st->hDlg, (HMENU)5051, g_hinst, NULL);
+    SendMessageW(st->hLuaPath, WM_SETFONT, (WPARAM)g_font, TRUE);
+    CreateWindowExW(0, L"BUTTON", L"...",
+        WS_CHILD, 550, y, 30, 22, st->hDlg, (HMENU)5052, g_hinst, NULL);
 
     y += 30;
     CreateWindowExW(0, L"STATIC", L"Interval:", WS_CHILD | WS_VISIBLE,
@@ -770,6 +893,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     /* Pre-fill if editing */
     if (item_idx >= 0) {
         PinItem *it = &g_cfg.items[item_idx];
+        SendMessageW(st->hType, CB_SETCURSEL, it->type, 0);
         SetWindowTextW(st->hName, it->name);
         SetWindowTextW(st->hUrl, it->url);
         WCHAR tmp[32];
@@ -779,7 +903,11 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         SendMessageW(st->hClickCheck, BM_SETCHECK,
             it->click_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
         SetWindowTextW(st->hClickUrl, it->click_url);
+        SetWindowTextW(st->hLuaPath, it->lua_path);
     }
+
+    /* Set initial visibility based on type */
+    edit_toggle_type();
 
     EnableWindow(parent, FALSE);
 
@@ -811,6 +939,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
             }
         }
         if (it) {
+            it->type = (int)SendMessageW(st->hType, CB_GETCURSEL, 0, 0);
             GetWindowTextW(st->hName, it->name, CFG_MAX_NAME);
             GetWindowTextW(st->hUrl, it->url, CFG_MAX_URL);
             WCHAR tmp[32];
@@ -820,6 +949,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
             GetWindowTextW(st->hExpr, it->field_expr, CFG_MAX_EXPR);
             it->click_enabled = (SendMessageW(st->hClickCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
             GetWindowTextW(st->hClickUrl, it->click_url, CFG_MAX_URL);
+            GetWindowTextW(st->hLuaPath, it->lua_path, CFG_MAX_PATH);
             config_save(&g_cfg);
             listview_populate();
         }
@@ -884,10 +1014,30 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
         FetchContext *ctx = (FetchContext *)lp;
         if (ctx->success) {
             memcpy(g_last_response, ctx->result, FETCH_BUF_SIZE);
-            WCHAR *expr = L"";
-            if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count)
-                expr = g_cfg.items[g_cfg.selected].field_expr;
-            extract_fields(ctx->result, expr, g_display, FETCH_BUF_SIZE);
+            BOOL handled = FALSE;
+            if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
+                PinItem *it = &g_cfg.items[g_cfg.selected];
+                if (it->field_expr[0]) {
+                    char lua_code[CFG_MAX_EXPR * 3];
+                    WideCharToMultiByte(CP_UTF8, 0, it->field_expr, -1,
+                        lua_code, sizeof(lua_code), NULL, NULL);
+                    if (script_exec(lua_code, ctx->result, &g_script_result)) {
+                        lstrcpynW(g_display, g_script_result.display, FETCH_BUF_SIZE);
+                        handled = TRUE;
+                    } else {
+                        /* Lua failed — fallback to $.path template */
+                        extract_fields(ctx->result, it->field_expr, g_display, FETCH_BUF_SIZE);
+                        g_script_result.clickable = it->click_enabled;
+                        if (it->click_enabled)
+                            extract_fields(ctx->result, it->click_url, g_script_result.click_url, 1024);
+                        handled = TRUE;
+                    }
+                }
+            }
+            if (!handled) {
+                MultiByteToWideChar(CP_UTF8, 0, ctx->result, -1,
+                    g_display, FETCH_BUF_SIZE);
+            }
         } else {
             lstrcpyW(g_display, L"[error]");
         }
@@ -898,13 +1048,8 @@ static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
     }
 
     case WM_LBUTTONUP: {
-        if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
-            PinItem *it = &g_cfg.items[g_cfg.selected];
-            if (it->click_enabled && it->click_url[0] && g_last_response[0]) {
-                WCHAR rendered[CFG_MAX_URL];
-                extract_fields(g_last_response, it->click_url, rendered, CFG_MAX_URL);
-                ShellExecuteW(NULL, L"open", rendered, NULL, NULL, SW_SHOWNORMAL);
-            }
+        if (g_script_result.clickable && g_script_result.click_url[0]) {
+            ShellExecuteW(NULL, L"open", g_script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
         }
         return 0;
     }
@@ -954,6 +1099,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     InitCommonControlsEx(&icc);
 
     config_load(&g_cfg);
+    script_init();
 
     /* Load app icon */
     HICON hIcon = LoadIconW(hInst, L"IDI_APPICON");
@@ -1001,5 +1147,6 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    script_shutdown();
     return (int)msg.wParam;
 }
