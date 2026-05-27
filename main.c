@@ -1,0 +1,1005 @@
+#include <windows.h>
+#include <windowsx.h>
+#include <commctrl.h>
+#include <shellapi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "config.h"
+#include "appbar.h"
+#include "fetcher.h"
+#include "json.h"
+
+#define IDT_REFRESH        1
+
+#define IDM_SHOW    3001
+#define IDM_EXIT    3002
+
+#define IDB_ADD     4001
+#define IDB_DEL     4002
+#define IDB_SELECT  4003
+#define IDB_SETTINGS 4004
+#define IDC_LIST    4010
+
+/* Edit dialog controls */
+#define IDE_NAME    5001
+#define IDE_URL     5002
+#define IDE_INT     5003
+#define IDE_EXPR    5004
+#define IDB_LOAD    5005
+#define IDC_TREE    5006
+#define IDC_PREVIEW 5007
+#define IDB_OK      5008
+#define IDB_CANCEL  5009
+
+static TaskPinConfig g_cfg;
+static WCHAR g_display[FETCH_BUF_SIZE];
+static HFONT g_font;
+static BOOL  g_fetching = FALSE;
+static char  g_last_response[FETCH_BUF_SIZE]; /* cached for click URL rendering */
+
+static HWND g_bar_hwnd  = NULL;
+static HWND g_main_hwnd = NULL;
+static HWND g_listview  = NULL;
+static HINSTANCE g_hinst;
+
+/* ─── field expression engine (template interpolation) ─── */
+/* Template syntax: literal text mixed with $.path expressions.
+   Example: "车辆:$.name 速度:$.speed km/h"
+   $. starts a JSONPath, ends at whitespace or end-of-string.
+   If no $ found, treat entire expr as raw JSONPath for backward compat. */
+
+static void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size) {
+    out[0] = L'\0';
+    if (!expr || !expr[0]) {
+        MultiByteToWideChar(CP_UTF8, 0, raw, -1, out, out_size);
+        return;
+    }
+
+    char expr8[CFG_MAX_EXPR];
+    WideCharToMultiByte(CP_UTF8, 0, expr, -1, expr8, CFG_MAX_EXPR, NULL, NULL);
+
+    JsonNode *root = json_parse(raw);
+
+    char result[FETCH_BUF_SIZE] = {0};
+    int rpos = 0;
+    const char *p = expr8;
+
+    while (*p && rpos < FETCH_BUF_SIZE - 2) {
+        if (*p == '$' && *(p + 1) == '.') {
+            /* Extract JSONPath: $. until whitespace, comma, or end */
+            const char *start = p;
+            p += 2;
+            while (*p && *p != ' ' && *p != '\t' && *p != ',' &&
+                   *p != '\n' && *p != '\r') p++;
+            int pathlen = (int)(p - start);
+            char path[512];
+            if (pathlen >= 512) pathlen = 511;
+            memcpy(path, start, pathlen);
+            path[pathlen] = '\0';
+
+            if (root) {
+                JsonNode *node = json_path_query(root, path);
+                if (node) {
+                    rpos += json_node_to_string(node, result + rpos, FETCH_BUF_SIZE - rpos);
+                } else {
+                    /* path not found, keep original */
+                    int copylen = pathlen;
+                    if (rpos + copylen >= FETCH_BUF_SIZE) copylen = FETCH_BUF_SIZE - rpos - 1;
+                    memcpy(result + rpos, start, copylen);
+                    rpos += copylen;
+                }
+            } else {
+                /* not JSON, keep original */
+                int copylen = pathlen;
+                if (rpos + copylen >= FETCH_BUF_SIZE) copylen = FETCH_BUF_SIZE - rpos - 1;
+                memcpy(result + rpos, start, copylen);
+                rpos += copylen;
+            }
+        } else {
+            result[rpos++] = *p++;
+        }
+    }
+    result[rpos] = '\0';
+    if (root) json_free(root);
+
+    MultiByteToWideChar(CP_UTF8, 0, result, -1, out, out_size);
+}
+
+/* ─── fetch logic ─── */
+
+static void start_fetch(HWND hwnd) {
+    if (g_fetching) return;
+    if (g_cfg.selected < 0 || g_cfg.selected >= g_cfg.count) {
+        lstrcpyW(g_display, L"(no item selected)");
+        InvalidateRect(hwnd, NULL, TRUE);
+        return;
+    }
+    g_fetching = TRUE;
+
+    FetchContext *ctx = (FetchContext *)HeapAlloc(
+        GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(FetchContext));
+    if (!ctx) { g_fetching = FALSE; return; }
+
+    ctx->hwnd = hwnd;
+    lstrcpynW(ctx->url, g_cfg.items[g_cfg.selected].url, 1024);
+
+    HANDLE hThread = CreateThread(NULL, 0, fetcher_thread, ctx, 0, NULL);
+    if (hThread) CloseHandle(hThread);
+    else { HeapFree(GetProcessHeap(), 0, ctx); g_fetching = FALSE; }
+}
+
+/* ─── edit dialog state ─── */
+
+typedef struct {
+    HWND hDlg;
+    HWND hName, hUrl, hInt, hExpr;
+    HWND hTree, hPreview;
+    HWND hClickCheck, hClickUrl;
+    int  item_index;   /* -1 = new item */
+    char cached_response[FETCH_BUF_SIZE];
+    JsonNode *json_root;
+} EditDlgState;
+
+static EditDlgState *g_edit = NULL;
+static BOOL g_edit_done = FALSE;
+static BOOL g_edit_accepted = FALSE;
+static WNDPROC g_orig_dlg_proc = NULL;
+
+/* Forward declarations */
+static void edit_load_response(EditDlgState *st);
+static void edit_update_preview(EditDlgState *st);
+
+/* Subclassed window proc for edit dialog */
+static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_COMMAND: {
+        WORD id = LOWORD(wp);
+        WORD code = HIWORD(wp);
+        if (id == IDB_LOAD && code == BN_CLICKED) {
+            edit_load_response(g_edit);
+            return 0;
+        }
+        if (id == IDE_EXPR && code == EN_CHANGE) {
+            edit_update_preview(g_edit);
+            return 0;
+        }
+        if (id == IDB_OK && code == BN_CLICKED) {
+            g_edit_accepted = TRUE;
+            g_edit_done = TRUE;
+            return 0;
+        }
+        if (id == IDB_CANCEL && code == BN_CLICKED) {
+            g_edit_done = TRUE;
+            return 0;
+        }
+        break;
+    }
+    case WM_NOTIFY: {
+        NMHDR *nm = (NMHDR *)lp;
+        if (g_edit && nm->hwndFrom == g_edit->hTree && nm->code == TVN_SELCHANGEDW) {
+            NMTREEVIEWW *ntv = (NMTREEVIEWW *)lp;
+            char *path = (char *)ntv->itemNew.lParam;
+            if (path) {
+                WCHAR wpath[512];
+                MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, 512);
+                /* Insert at cursor position in expr edit */
+                DWORD start = 0, end = 0;
+                SendMessageW(g_edit->hExpr, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
+                SendMessageW(g_edit->hExpr, EM_REPLACESEL, TRUE, (LPARAM)wpath);
+                edit_update_preview(g_edit);
+            }
+        }
+        break;
+    }
+    case WM_SIZE: {
+        if (!g_edit) break;
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int cw = rc.right, ch = rc.bottom;
+        int margin = 10, ctrl_w = cw - 2 * margin;
+        /* Resize TreeView to fill available space */
+        if (g_edit->hTree)
+            MoveWindow(g_edit->hTree, margin, 130, ctrl_w, ch - 340, TRUE);
+        /* Template below tree */
+        int tree_bottom = ch - 340 + 130;
+        if (g_edit->hExpr)
+            MoveWindow(g_edit->hExpr, margin, tree_bottom + 28, ctrl_w, 60, TRUE);
+        /* Preview below template */
+        int expr_bottom = tree_bottom + 28 + 68;
+        if (g_edit->hPreview)
+            MoveWindow(g_edit->hPreview, 70, expr_bottom, ctrl_w - 60, 22, TRUE);
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+    case WM_CLOSE:
+        g_edit_done = TRUE;
+        return 0;
+    }
+    return CallWindowProcW(g_orig_dlg_proc, hwnd, msg, wp, lp);
+}
+
+/* Build TreeView from JSON node recursively */
+static void tree_add_json(HWND hTree, HTREEITEM parent, JsonNode *node, char *path_buf, int path_len) {
+    (void)path_len;
+    if (!node) return;
+    for (JsonNode *c = (node->type == JSON_OBJECT || node->type == JSON_ARRAY) ? node->children : NULL;
+         c; c = c->next) {
+        char label[256];
+        char child_path[512];
+
+        if (node->type == JSON_OBJECT && c->key) {
+            snprintf(child_path, 512, "%s.%s", path_buf, c->key);
+            char val_str[128];
+            json_node_to_string(c, val_str, 128);
+            snprintf(label, 256, "%s: %s", c->key, val_str);
+        } else {
+            int idx = 0;
+            for (JsonNode *t = node->children; t && t != c; t = t->next) idx++;
+            snprintf(child_path, 512, "%s[%d]", path_buf, idx);
+            char val_str[128];
+            json_node_to_string(c, val_str, 128);
+            snprintf(label, 256, "[%d]: %s", idx, val_str);
+        }
+
+        WCHAR wlabel[256];
+        MultiByteToWideChar(CP_UTF8, 0, label, -1, wlabel, 256);
+
+        TVINSERTSTRUCTW tvis = {0};
+        tvis.hParent = parent;
+        tvis.hInsertAfter = TVI_LAST;
+        tvis.item.mask = TVIF_TEXT | TVIF_PARAM;
+        tvis.item.pszText = wlabel;
+        /* Store path string as lParam — allocate copy */
+        char *path_copy = _strdup(child_path);
+        tvis.item.lParam = (LPARAM)path_copy;
+
+        HTREEITEM hItem = TreeView_InsertItem(hTree, &tvis);
+
+        if (c->type == JSON_OBJECT || c->type == JSON_ARRAY) {
+            tree_add_json(hTree, hItem, c, child_path, (int)strlen(child_path));
+        }
+    }
+}
+
+static void edit_load_response(EditDlgState *st) {
+    /* Synchronous fetch for edit dialog */
+    WCHAR url[CFG_MAX_URL];
+    GetWindowTextW(st->hUrl, url, CFG_MAX_URL);
+
+    char url8[CFG_MAX_URL];
+    WideCharToMultiByte(CP_UTF8, 0, url, -1, url8, CFG_MAX_URL, NULL, NULL);
+
+    /* Use fetcher in blocking mode (simple: just call WinHTTP inline) */
+    FetchContext ctx = {0};
+    ctx.hwnd = NULL;
+    lstrcpynW(ctx.url, url, 1024);
+    fetcher_thread(&ctx);
+
+    if (ctx.success) {
+        memcpy(st->cached_response, ctx.result, FETCH_BUF_SIZE);
+    } else {
+        strcpy(st->cached_response, "[fetch error]");
+    }
+
+    /* Parse JSON */
+    if (st->json_root) { json_free(st->json_root); st->json_root = NULL; }
+    st->json_root = json_parse(st->cached_response);
+
+    /* Populate TreeView */
+    TreeView_DeleteAllItems(st->hTree);
+    if (st->json_root) {
+        tree_add_json(st->hTree, TVI_ROOT, st->json_root, "$", 1);
+    } else {
+        /* Not JSON — show as plain text fields split by | */
+        char *p = st->cached_response;
+        int idx = 0;
+        while (p && *p) {
+            char *sep = strchr(p, '|');
+            char label[256];
+            if (sep) {
+                int flen = (int)(sep - p);
+                if (flen > 200) flen = 200;
+                snprintf(label, 256, "[%d]: %.*s", idx, flen, p);
+            } else {
+                snprintf(label, 256, "[%d]: %.200s", idx, p);
+            }
+            WCHAR wlabel[256];
+            MultiByteToWideChar(CP_UTF8, 0, label, -1, wlabel, 256);
+
+            char path[32];
+            snprintf(path, 32, "%d", idx);
+
+            TVINSERTSTRUCTW tvis = {0};
+            tvis.hParent = TVI_ROOT;
+            tvis.hInsertAfter = TVI_LAST;
+            tvis.item.mask = TVIF_TEXT | TVIF_PARAM;
+            tvis.item.pszText = wlabel;
+            tvis.item.lParam = (LPARAM)_strdup(path);
+            TreeView_InsertItem(st->hTree, &tvis);
+
+            p = sep ? sep + 1 : NULL;
+            idx++;
+        }
+    }
+
+    /* Update preview */
+    WCHAR expr[CFG_MAX_EXPR];
+    GetWindowTextW(st->hExpr, expr, CFG_MAX_EXPR);
+    WCHAR preview[FETCH_BUF_SIZE];
+    extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+    SetWindowTextW(st->hPreview, preview);
+}
+
+static void edit_update_preview(EditDlgState *st) {
+    if (!st->cached_response[0]) return;
+    WCHAR expr[CFG_MAX_EXPR];
+    GetWindowTextW(st->hExpr, expr, CFG_MAX_EXPR);
+    WCHAR preview[FETCH_BUF_SIZE];
+    extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+    SetWindowTextW(st->hPreview, preview);
+}
+
+/* Free TreeView lParam strings */
+static void tree_free_params(HWND hTree, HTREEITEM hItem) {
+    if (!hItem) return;
+    TVITEMW tvi = {0};
+    tvi.mask = TVIF_PARAM;
+    tvi.hItem = hItem;
+    if (TreeView_GetItem(hTree, &tvi) && tvi.lParam) {
+        free((void *)tvi.lParam);
+    }
+    HTREEITEM child = TreeView_GetChild(hTree, hItem);
+    while (child) {
+        tree_free_params(hTree, child);
+        child = TreeView_GetNextSibling(hTree, child);
+    }
+}
+
+static void show_edit_dialog(HWND parent, int item_idx);
+static void show_settings_dialog(HWND parent);
+
+/* ─── main list window ─── */
+
+static void listview_populate(void) {
+    if (!g_listview) return;
+    ListView_DeleteAllItems(g_listview);
+    for (int i = 0; i < g_cfg.count; i++) {
+        LVITEMW lvi = {0};
+        lvi.mask    = LVIF_TEXT;
+        lvi.iItem   = i;
+        lvi.pszText = g_cfg.items[i].name;
+        ListView_InsertItem(g_listview, &lvi);
+        ListView_SetItemText(g_listview, i, 1, g_cfg.items[i].url);
+
+        WCHAR ms[32];
+        wsprintfW(ms, L"%u", g_cfg.items[i].interval_ms);
+        ListView_SetItemText(g_listview, i, 2, ms);
+
+        ListView_SetItemText(g_listview, i, 3, g_cfg.items[i].field_expr);
+    }
+    if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
+        ListView_SetItemState(g_listview, g_cfg.selected,
+            LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+    }
+}
+
+static LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE: {
+        g_listview = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
+            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+            0, 0, 620, 260, hwnd, (HMENU)IDC_LIST, g_hinst, NULL);
+        ListView_SetExtendedListViewStyle(g_listview,
+            LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+        LVCOLUMNW col = {0};
+        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.pszText = L"Name"; col.cx = 100;
+        ListView_InsertColumn(g_listview, 0, &col);
+        col.pszText = L"URL"; col.cx = 260;
+        ListView_InsertColumn(g_listview, 1, &col);
+        col.pszText = L"Interval"; col.cx = 70;
+        ListView_InsertColumn(g_listview, 2, &col);
+        col.pszText = L"Path"; col.cx = 160;
+        ListView_InsertColumn(g_listview, 3, &col);
+
+        SendMessageW(g_listview, WM_SETFONT, (WPARAM)g_font, TRUE);
+
+        CreateWindowExW(0, L"BUTTON", L"Add",
+            WS_CHILD | WS_VISIBLE, 10, 268, 70, 28, hwnd, (HMENU)IDB_ADD, g_hinst, NULL);
+        CreateWindowExW(0, L"BUTTON", L"Delete",
+            WS_CHILD | WS_VISIBLE, 90, 268, 70, 28, hwnd, (HMENU)IDB_DEL, g_hinst, NULL);
+        CreateWindowExW(0, L"BUTTON", L"Pin to Bar",
+            WS_CHILD | WS_VISIBLE, 170, 268, 90, 28, hwnd, (HMENU)IDB_SELECT, g_hinst, NULL);
+        CreateWindowExW(0, L"BUTTON", L"Settings",
+            WS_CHILD | WS_VISIBLE, 270, 268, 80, 28, hwnd, (HMENU)IDB_SETTINGS, g_hinst, NULL);
+
+        listview_populate();
+        return 0;
+    }
+
+    case WM_NOTIFY: {
+        NMHDR *nm = (NMHDR *)lp;
+        if (nm->hwndFrom == g_listview && nm->code == NM_DBLCLK) {
+            int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);
+            if (sel >= 0 && sel < g_cfg.count) {
+                show_edit_dialog(hwnd, sel);
+            }
+        }
+        return 0;
+    }
+
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDB_ADD:
+            show_edit_dialog(hwnd, -1);
+            break;
+        case IDB_SETTINGS:
+            show_settings_dialog(hwnd);
+            break;
+        case IDB_DEL: {
+            int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);
+            if (sel >= 0 && sel < g_cfg.count) {
+                for (int i = sel; i < g_cfg.count - 1; i++)
+                    g_cfg.items[i] = g_cfg.items[i + 1];
+                g_cfg.count--;
+                if (g_cfg.selected == sel) g_cfg.selected = -1;
+                else if (g_cfg.selected > sel) g_cfg.selected--;
+                config_save(&g_cfg);
+                listview_populate();
+                if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
+                    KillTimer(g_bar_hwnd, IDT_REFRESH);
+                    SetTimer(g_bar_hwnd, IDT_REFRESH, g_cfg.items[g_cfg.selected].interval_ms, NULL);
+                }
+                start_fetch(g_bar_hwnd);
+            }
+            break;
+        }
+        case IDB_SELECT: {
+            int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);
+            if (sel >= 0 && sel < g_cfg.count) {
+                g_cfg.selected = sel;
+                config_save(&g_cfg);
+                KillTimer(g_bar_hwnd, IDT_REFRESH);
+                SetTimer(g_bar_hwnd, IDT_REFRESH, g_cfg.items[sel].interval_ms, NULL);
+                g_fetching = FALSE;
+                start_fetch(g_bar_hwnd);
+                /* Immediate visual feedback */
+                WCHAR tmp[256];
+                wsprintfW(tmp, L"Pinned: %s", g_cfg.items[sel].name);
+                lstrcpynW(g_display, tmp, FETCH_BUF_SIZE);
+                InvalidateRect(g_bar_hwnd, NULL, TRUE);
+            } else {
+                MessageBoxW(hwnd, L"Please select an item first.", L"TaskPin", MB_OK | MB_ICONINFORMATION);
+            }
+            break;
+        }
+        }
+        return 0;
+
+    case WM_SIZE: {
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int cw = rc.right, ch = rc.bottom;
+        if (g_listview)
+            MoveWindow(g_listview, 0, 0, cw, ch - 36, TRUE);
+        return 0;
+    }
+
+    case WM_CLOSE:
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+
+    case WM_DESTROY:
+        g_main_hwnd = NULL;
+        g_listview  = NULL;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void show_main_window(void) {
+    if (g_main_hwnd) {
+        ShowWindow(g_main_hwnd, SW_SHOW);
+        SetForegroundWindow(g_main_hwnd);
+        listview_populate();
+        return;
+    }
+    g_main_hwnd = CreateWindowExW(0, L"TaskPinMainClass", L"TaskPin - Items",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 640, 340,
+        NULL, NULL, g_hinst, NULL);
+    ShowWindow(g_main_hwnd, SW_SHOW);
+    UpdateWindow(g_main_hwnd);
+}
+
+/* ─── settings dialog ─── */
+
+static BOOL g_settings_done = FALSE;
+static BOOL g_settings_accepted = FALSE;
+static WNDPROC g_settings_orig_proc = NULL;
+
+static HWND s_eFontSize, s_eFontColor, s_eBgColor, s_eWidth, s_ePosX, s_ePosY;
+
+static LRESULT CALLBACK settings_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_COMMAND) {
+        WORD id = LOWORD(wp);
+        if (id == IDOK && HIWORD(wp) == BN_CLICKED) {
+            g_settings_accepted = TRUE;
+            g_settings_done = TRUE;
+            return 0;
+        }
+        if (id == IDCANCEL && HIWORD(wp) == BN_CLICKED) {
+            g_settings_done = TRUE;
+            return 0;
+        }
+    }
+    if (msg == WM_CLOSE) { g_settings_done = TRUE; return 0; }
+    return CallWindowProcW(g_settings_orig_proc, hwnd, msg, wp, lp);
+}
+
+static void show_settings_dialog(HWND parent) {
+    HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+        L"#32770", L"Settings",
+        WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU,
+        200, 200, 360, 280, parent, NULL, g_hinst, NULL);
+    if (!hDlg) return;
+
+    int y = 10;
+    CreateWindowExW(0, L"STATIC", L"Font Size (pt):", WS_CHILD | WS_VISIBLE,
+        10, y+2, 100, 20, hDlg, NULL, g_hinst, NULL);
+    s_eFontSize = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER, 120, y, 50, 22, hDlg, NULL, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"Font Color (hex):", WS_CHILD | WS_VISIBLE,
+        10, y+2, 110, 20, hDlg, NULL, g_hinst, NULL);
+    s_eFontColor = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 120, y, 80, 22, hDlg, NULL, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"BG Color (hex):", WS_CHILD | WS_VISIBLE,
+        10, y+2, 100, 20, hDlg, NULL, g_hinst, NULL);
+    s_eBgColor = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 120, y, 80, 22, hDlg, NULL, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"Width (px):", WS_CHILD | WS_VISIBLE,
+        10, y+2, 80, 20, hDlg, NULL, g_hinst, NULL);
+    s_eWidth = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER, 120, y, 60, 22, hDlg, NULL, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"Pos X (-1=auto):", WS_CHILD | WS_VISIBLE,
+        10, y+2, 105, 20, hDlg, NULL, g_hinst, NULL);
+    s_ePosX = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE, 120, y, 60, 22, hDlg, NULL, g_hinst, NULL);
+
+    CreateWindowExW(0, L"STATIC", L"Y:", WS_CHILD | WS_VISIBLE,
+        195, y+2, 20, 20, hDlg, NULL, g_hinst, NULL);
+    s_ePosY = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE, 218, y, 60, 22, hDlg, NULL, g_hinst, NULL);
+
+    y += 40;
+    CreateWindowExW(0, L"BUTTON", L"OK",
+        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        90, y, 70, 28, hDlg, (HMENU)IDOK, g_hinst, NULL);
+    CreateWindowExW(0, L"BUTTON", L"Cancel",
+        WS_CHILD | WS_VISIBLE,
+        170, y, 70, 28, hDlg, (HMENU)IDCANCEL, g_hinst, NULL);
+
+    /* Fill current values */
+    WCHAR tmp[32];
+    wsprintfW(tmp, L"%d", g_cfg.font_size);
+    SetWindowTextW(s_eFontSize, tmp);
+    wsprintfW(tmp, L"%06X", g_cfg.font_color & 0xFFFFFF);
+    SetWindowTextW(s_eFontColor, tmp);
+    wsprintfW(tmp, L"%06X", g_cfg.bg_color & 0xFFFFFF);
+    SetWindowTextW(s_eBgColor, tmp);
+    wsprintfW(tmp, L"%d", g_cfg.width);
+    SetWindowTextW(s_eWidth, tmp);
+    wsprintfW(tmp, L"%d", g_cfg.pos_x);
+    SetWindowTextW(s_ePosX, tmp);
+    wsprintfW(tmp, L"%d", g_cfg.pos_y);
+    SetWindowTextW(s_ePosY, tmp);
+
+    /* Set font */
+    SendMessageW(s_eFontSize, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_eFontColor, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_eBgColor, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_eWidth, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_ePosX, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_ePosY, WM_SETFONT, (WPARAM)g_font, TRUE);
+
+    g_settings_orig_proc = (WNDPROC)SetWindowLongPtrW(hDlg, GWLP_WNDPROC, (LONG_PTR)settings_dlg_proc);
+    g_settings_done = FALSE;
+    g_settings_accepted = FALSE;
+
+    EnableWindow(parent, FALSE);
+    MSG msg;
+    while (!g_settings_done && GetMessageW(&msg, NULL, 0, 0)) {
+        if (!IsDialogMessageW(hDlg, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    if (g_settings_accepted) {
+        WCHAR tmp2[32];
+        GetWindowTextW(s_eFontSize, tmp2, 32);
+        g_cfg.font_size = _wtoi(tmp2);
+        if (g_cfg.font_size < 6) g_cfg.font_size = 6;
+        if (g_cfg.font_size > 72) g_cfg.font_size = 72;
+
+        GetWindowTextW(s_eFontColor, tmp2, 32);
+        g_cfg.font_color = (COLORREF)wcstoul(tmp2, NULL, 16);
+
+        GetWindowTextW(s_eBgColor, tmp2, 32);
+        g_cfg.bg_color = (COLORREF)wcstoul(tmp2, NULL, 16);
+
+        GetWindowTextW(s_eWidth, tmp2, 32);
+        g_cfg.width = _wtoi(tmp2);
+        if (g_cfg.width < 50) g_cfg.width = 50;
+
+        GetWindowTextW(s_ePosX, tmp2, 32);
+        g_cfg.pos_x = _wtoi(tmp2);
+
+        GetWindowTextW(s_ePosY, tmp2, 32);
+        g_cfg.pos_y = _wtoi(tmp2);
+
+        config_save(&g_cfg);
+
+        /* Recreate font and reposition bar */
+        if (g_font) DeleteObject(g_font);
+        int fh = -MulDiv(g_cfg.font_size, 96, 72);
+        g_font = CreateFontW(fh, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+        /* Reposition embedded bar */
+        appbar_remove(g_bar_hwnd);
+        LONG style = GetWindowLongW(g_bar_hwnd, GWL_STYLE);
+        style = (style & ~WS_CHILD) | WS_POPUP;
+        SetWindowLongW(g_bar_hwnd, GWL_STYLE, style);
+        appbar_embed(g_bar_hwnd, g_cfg.width, g_cfg.pos_x, g_cfg.pos_y);
+        InvalidateRect(g_bar_hwnd, NULL, TRUE);
+    }
+
+    EnableWindow(parent, TRUE);
+    DestroyWindow(hDlg);
+    g_settings_orig_proc = NULL;
+    SetForegroundWindow(parent);
+}
+
+/* ─── edit dialog ─── */
+
+static void show_edit_dialog(HWND parent, int item_idx) {
+    EditDlgState *st = (EditDlgState *)calloc(1, sizeof(EditDlgState));
+    if (!st) return;
+    st->item_index = item_idx;
+    g_edit = st;
+
+    const WCHAR *title = (item_idx >= 0) ? L"Edit Item" : L"Add Item";
+    st->hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+        L"#32770", title,
+        WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
+        150, 80, 640, 640, parent, NULL, g_hinst, NULL);
+    if (!st->hDlg) { free(st); g_edit = NULL; return; }
+
+    int y = 10;
+    CreateWindowExW(0, L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 50, 20, st->hDlg, NULL, g_hinst, NULL);
+    st->hName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        70, y, 540, 22, st->hDlg, (HMENU)IDE_NAME, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"URL:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 50, 20, st->hDlg, NULL, g_hinst, NULL);
+    st->hUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"http://localhost:8080/status",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        70, y, 440, 22, st->hDlg, (HMENU)IDE_URL, g_hinst, NULL);
+    CreateWindowExW(0, L"BUTTON", L"Load",
+        WS_CHILD | WS_VISIBLE, 520, y, 60, 22, st->hDlg, (HMENU)IDB_LOAD, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"Interval:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 55, 20, st->hDlg, NULL, g_hinst, NULL);
+    st->hInt = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"5000",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER,
+        70, y, 80, 22, st->hDlg, (HMENU)IDE_INT, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"STATIC", L"Response structure (click to insert):",
+        WS_CHILD | WS_VISIBLE, 10, y, 350, 18, st->hDlg, NULL, g_hinst, NULL);
+
+    y += 20;
+    st->hTree = CreateWindowExW(WS_EX_CLIENTEDGE, WC_TREEVIEWW, L"",
+        WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
+        10, y, 600, 180, st->hDlg, (HMENU)IDC_TREE, g_hinst, NULL);
+
+    y += 188;
+    CreateWindowExW(0, L"STATIC", L"Template:", WS_CHILD | WS_VISIBLE,
+        10, y, 60, 18, st->hDlg, NULL, g_hinst, NULL);
+
+    y += 20;
+    st->hExpr = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
+        10, y, 600, 60, st->hDlg, (HMENU)IDE_EXPR, g_hinst, NULL);
+
+    y += 68;
+    CreateWindowExW(0, L"STATIC", L"Preview:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 55, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hPreview = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY,
+        70, y, 540, 22, st->hDlg, (HMENU)IDC_PREVIEW, g_hinst, NULL);
+
+    y += 30;
+    st->hClickCheck = CreateWindowExW(0, L"BUTTON", L"Enable click to open URL",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        10, y, 200, 20, st->hDlg, NULL, g_hinst, NULL);
+
+    y += 24;
+    CreateWindowExW(0, L"STATIC", L"Click URL:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 70, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hClickUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        85, y, 525, 22, st->hDlg, NULL, g_hinst, NULL);
+
+    y += 30;
+    CreateWindowExW(0, L"BUTTON", L"OK",
+        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        230, y, 80, 28, st->hDlg, (HMENU)IDB_OK, g_hinst, NULL);
+    CreateWindowExW(0, L"BUTTON", L"Cancel",
+        WS_CHILD | WS_VISIBLE,
+        320, y, 80, 28, st->hDlg, (HMENU)IDB_CANCEL, g_hinst, NULL);
+
+    /* Set font on all children */
+    EnumChildWindows(st->hDlg, (WNDENUMPROC)(void*)SendMessageW,
+        (LPARAM)0); /* can't easily set font this way, do manually */
+    SendMessageW(st->hName, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hUrl, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hInt, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hExpr, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hTree, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hPreview, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hClickCheck, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hClickUrl, WM_SETFONT, (WPARAM)g_font, TRUE);
+
+    /* Pre-fill if editing */
+    if (item_idx >= 0) {
+        PinItem *it = &g_cfg.items[item_idx];
+        SetWindowTextW(st->hName, it->name);
+        SetWindowTextW(st->hUrl, it->url);
+        WCHAR tmp[32];
+        wsprintfW(tmp, L"%u", it->interval_ms);
+        SetWindowTextW(st->hInt, tmp);
+        SetWindowTextW(st->hExpr, it->field_expr);
+        SendMessageW(st->hClickCheck, BM_SETCHECK,
+            it->click_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+        SetWindowTextW(st->hClickUrl, it->click_url);
+    }
+
+    EnableWindow(parent, FALSE);
+
+    /* Subclass the dialog to handle WM_COMMAND/WM_NOTIFY */
+    g_orig_dlg_proc = (WNDPROC)SetWindowLongPtrW(st->hDlg, GWLP_WNDPROC, (LONG_PTR)edit_dlg_proc);
+    g_edit_done = FALSE;
+    g_edit_accepted = FALSE;
+
+    /* Modal message loop */
+    MSG msg;
+    while (!g_edit_done && GetMessageW(&msg, NULL, 0, 0)) {
+        if (!IsDialogMessageW(st->hDlg, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    /* Save if accepted */
+    if (g_edit_accepted) {
+        PinItem *it;
+        if (item_idx >= 0) {
+            it = &g_cfg.items[item_idx];
+        } else {
+            if (g_cfg.count < CFG_MAX_ITEMS) {
+                it = &g_cfg.items[g_cfg.count];
+                g_cfg.count++;
+            } else {
+                it = NULL;
+            }
+        }
+        if (it) {
+            GetWindowTextW(st->hName, it->name, CFG_MAX_NAME);
+            GetWindowTextW(st->hUrl, it->url, CFG_MAX_URL);
+            WCHAR tmp[32];
+            GetWindowTextW(st->hInt, tmp, 32);
+            it->interval_ms = (DWORD)_wtoi(tmp);
+            if (it->interval_ms < 1000) it->interval_ms = 1000;
+            GetWindowTextW(st->hExpr, it->field_expr, CFG_MAX_EXPR);
+            it->click_enabled = (SendMessageW(st->hClickCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            GetWindowTextW(st->hClickUrl, it->click_url, CFG_MAX_URL);
+            config_save(&g_cfg);
+            listview_populate();
+        }
+    }
+
+    EnableWindow(parent, TRUE);
+    /* Free tree lParam strings */
+    HTREEITEM root_item = TreeView_GetRoot(st->hTree);
+    while (root_item) {
+        tree_free_params(st->hTree, root_item);
+        root_item = TreeView_GetNextSibling(st->hTree, root_item);
+    }
+    if (st->json_root) json_free(st->json_root);
+    DestroyWindow(st->hDlg);
+    free(st);
+    g_edit = NULL;
+    g_orig_dlg_proc = NULL;
+    SetForegroundWindow(parent);
+}
+
+/* ─── appbar (taskbar embedded) window ─── */
+
+static LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE: {
+        int font_height = -MulDiv(g_cfg.font_size, 96, 72);
+        g_font = CreateFontW(font_height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+        lstrcpyW(g_display, L"TaskPin");
+        return 0;
+    }
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+
+        /* Clear background to prevent text stacking */
+        HBRUSH hBrush = CreateSolidBrush(g_cfg.bg_color);
+        FillRect(hdc, &rc, hBrush);
+        DeleteObject(hBrush);
+
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, g_cfg.font_color);
+        SelectObject(hdc, g_font);
+
+        rc.left += 8; rc.right -= 4;
+        DrawTextW(hdc, g_display, -1, &rc,
+            DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+
+    case WM_TIMER:
+        if (wp == IDT_REFRESH) start_fetch(hwnd);
+        return 0;
+
+    case WM_FETCH_DONE: {
+        FetchContext *ctx = (FetchContext *)lp;
+        if (ctx->success) {
+            memcpy(g_last_response, ctx->result, FETCH_BUF_SIZE);
+            WCHAR *expr = L"";
+            if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count)
+                expr = g_cfg.items[g_cfg.selected].field_expr;
+            extract_fields(ctx->result, expr, g_display, FETCH_BUF_SIZE);
+        } else {
+            lstrcpyW(g_display, L"[error]");
+        }
+        HeapFree(GetProcessHeap(), 0, ctx);
+        g_fetching = FALSE;
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+
+    case WM_LBUTTONUP: {
+        if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
+            PinItem *it = &g_cfg.items[g_cfg.selected];
+            if (it->click_enabled && it->click_url[0] && g_last_response[0]) {
+                WCHAR rendered[CFG_MAX_URL];
+                extract_fields(g_last_response, it->click_url, rendered, CFG_MAX_URL);
+                ShellExecuteW(NULL, L"open", rendered, NULL, NULL, SW_SHOWNORMAL);
+            }
+        }
+        return 0;
+    }
+
+    case WM_LBUTTONDBLCLK:
+        show_main_window();
+        return 0;
+
+    case WM_RBUTTONUP: {
+        POINT pt;
+        GetCursorPos(&pt);
+        HMENU hMenu = CreatePopupMenu();
+        AppendMenuW(hMenu, MF_STRING, IDM_SHOW, L"Manage Items...");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+        AppendMenuW(hMenu, MF_STRING, IDM_EXIT, L"Exit");
+        SetForegroundWindow(hwnd);
+        TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+        DestroyMenu(hMenu);
+        return 0;
+    }
+
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDM_SHOW: show_main_window(); break;
+        case IDM_EXIT: DestroyWindow(hwnd); break;
+        }
+        return 0;
+
+    case WM_DESTROY:
+        KillTimer(hwnd, IDT_REFRESH);
+        appbar_remove(hwnd);
+        if (g_main_hwnd) DestroyWindow(g_main_hwnd);
+        if (g_font) DeleteObject(g_font);
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+/* ─── entry ─── */
+
+int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow) {
+    (void)hPrev; (void)cmdLine; (void)nShow;
+    g_hinst = hInst;
+
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES };
+    InitCommonControlsEx(&icc);
+
+    config_load(&g_cfg);
+
+    /* Load app icon */
+    HICON hIcon = LoadIconW(hInst, L"IDI_APPICON");
+
+    /* Register bar class */
+    WNDCLASSEXW wc = {0};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = bar_wnd_proc;
+    wc.hInstance     = hInst;
+    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+    wc.hIcon         = hIcon;
+    wc.hIconSm       = hIcon;
+    wc.lpszClassName = L"TaskPinBarClass";
+    wc.style         = CS_DBLCLKS;
+    RegisterClassExW(&wc);
+
+    /* Register main window class */
+    wc.lpfnWndProc   = main_wnd_proc;
+    wc.lpszClassName = L"TaskPinMainClass";
+    wc.style         = 0;
+    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    RegisterClassExW(&wc);
+
+    /* Create bar window */
+    g_bar_hwnd = CreateWindowExW(
+        WS_EX_TOOLWINDOW,
+        L"TaskPinBarClass", L"TaskPin",
+        WS_POPUP,
+        0, 0, g_cfg.width, 40,
+        NULL, NULL, hInst, NULL);
+    if (!g_bar_hwnd) return 1;
+
+    appbar_embed(g_bar_hwnd, g_cfg.width, g_cfg.pos_x, g_cfg.pos_y);
+    ShowWindow(g_bar_hwnd, SW_SHOWNOACTIVATE);
+    UpdateWindow(g_bar_hwnd);
+
+    DWORD interval = 5000;
+    if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count)
+        interval = g_cfg.items[g_cfg.selected].interval_ms;
+    SetTimer(g_bar_hwnd, IDT_REFRESH, interval, NULL);
+    start_fetch(g_bar_hwnd);
+
+    MSG msg;
+    while (GetMessageW(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+    return (int)msg.wParam;
+}
