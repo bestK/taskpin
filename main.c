@@ -694,7 +694,7 @@ static void show_settings_dialog(HWND parent) {
     HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", L"Settings",
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU,
-        200, 200, 360, 280, parent, NULL, g_hinst, NULL);
+        200, 200, 360, 340, parent, NULL, g_hinst, NULL);
     if (!hDlg) return;
 
     int y = 10;
@@ -732,7 +732,24 @@ static void show_settings_dialog(HWND parent) {
     s_ePosY = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE, 218, y, 60, 22, hDlg, NULL, g_hinst, NULL);
 
-    y += 40;
+    y += 30;
+    HWND s_eAutoStart = CreateWindowExW(0, L"BUTTON", L"Start with Windows",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        10, y, 180, 20, hDlg, (HMENU)5060, g_hinst, NULL);
+    SendMessageW(s_eAutoStart, WM_SETFONT, (WPARAM)g_font, TRUE);
+    /* Check current autostart state */
+    {
+        HKEY hk;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                0, KEY_READ, &hk) == ERROR_SUCCESS) {
+            if (RegQueryValueExW(hk, L"TaskPin", NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+                SendMessageW(s_eAutoStart, BM_SETCHECK, BST_CHECKED, 0);
+            RegCloseKey(hk);
+        }
+    }
+
+    y += 30;
     CreateWindowExW(0, L"BUTTON", L"OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         90, y, 70, 28, hDlg, (HMENU)IDOK, g_hinst, NULL);
@@ -800,6 +817,25 @@ static void show_settings_dialog(HWND parent) {
         g_cfg.pos_y = _wtoi(tmp2);
 
         config_save(&g_cfg);
+
+        /* Handle autostart registry */
+        {
+            HKEY hk;
+            BOOL want_auto = (SendMessageW(s_eAutoStart, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    0, KEY_SET_VALUE, &hk) == ERROR_SUCCESS) {
+                if (want_auto) {
+                    WCHAR exe_path[MAX_PATH];
+                    GetModuleFileNameW(NULL, exe_path, MAX_PATH);
+                    RegSetValueExW(hk, L"TaskPin", 0, REG_SZ,
+                        (BYTE *)exe_path, (DWORD)((lstrlenW(exe_path) + 1) * sizeof(WCHAR)));
+                } else {
+                    RegDeleteValueW(hk, L"TaskPin");
+                }
+                RegCloseKey(hk);
+            }
+        }
 
         /* Recreate font and reposition bar */
         if (g_font) DeleteObject(g_font);
