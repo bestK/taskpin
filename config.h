@@ -27,6 +27,7 @@ typedef struct {
     DWORD interval_ms;
     /* URL mode */
     WCHAR url[CFG_MAX_URL];
+    WCHAR req_headers[CFG_MAX_URL];  /* custom HTTP headers for URL mode */
     WCHAR field_expr[CFG_MAX_EXPR];  /* Lua code or $.path template */
     BOOL  click_enabled;
     WCHAR click_url[CFG_MAX_URL];

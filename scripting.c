@@ -72,8 +72,11 @@ static void http_ensure_session(void) {
 static int http_request(lua_State *ls, const WCHAR *method) {
     const char *url_str = luaL_checkstring(ls, 1);
     const char *body = NULL;
+    const char *extra_headers = NULL;
     if (lua_gettop(ls) >= 2 && !lua_isnil(ls, 2))
         body = luaL_checkstring(ls, 2);
+    if (lua_gettop(ls) >= 3 && !lua_isnil(ls, 3))
+        extra_headers = luaL_checkstring(ls, 3);
 
     WCHAR wurl[2048];
     MultiByteToWideChar(CP_UTF8, 0, url_str, -1, wurl, 2048);
@@ -99,9 +102,17 @@ static int http_request(lua_State *ls, const WCHAR *method) {
 
     /* Send */
     DWORD body_len = body ? (DWORD)strlen(body) : 0;
-    WCHAR *headers = NULL;
-    if (body) headers = L"Content-Type: application/x-www-form-urlencoded\r\n";
-    if (!WinHttpSendRequest(hReq, headers, headers ? (DWORD)-1 : 0,
+    WCHAR wheaders[2048] = {0};
+    if (body) lstrcpyW(wheaders, L"Content-Type: application/x-www-form-urlencoded\r\n");
+    if (extra_headers) {
+        WCHAR weh[1024];
+        MultiByteToWideChar(CP_UTF8, 0, extra_headers, -1, weh, 1024);
+        lstrcatW(wheaders, weh);
+        if (weh[lstrlenW(weh)-1] != L'\n') lstrcatW(wheaders, L"\r\n");
+    }
+    WCHAR *hdr_ptr = wheaders[0] ? wheaders : WINHTTP_NO_ADDITIONAL_HEADERS;
+    DWORD hdr_len = wheaders[0] ? (DWORD)-1 : 0;
+    if (!WinHttpSendRequest(hReq, hdr_ptr, hdr_len,
             (LPVOID)body, body_len, body_len, 0)) {
         WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn);
         lua_pushnil(ls); return 1;

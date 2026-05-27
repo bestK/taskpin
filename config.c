@@ -43,6 +43,8 @@ void config_load(TaskPinConfig *cfg) {
             cfg->items[i].name, CFG_MAX_NAME, path);
         GetPrivateProfileStringW(sec, L"url", L"http://localhost:8080/status",
             cfg->items[i].url, CFG_MAX_URL, path);
+        GetPrivateProfileStringW(sec, L"req_headers", L"",
+            cfg->items[i].req_headers, CFG_MAX_URL, path);
         cfg->items[i].interval_ms = (DWORD)GetPrivateProfileIntW(sec, L"interval_ms", 5000, path);
 
         /* field_expr stored as base64 in INI */
@@ -157,6 +159,7 @@ void config_save(const TaskPinConfig *cfg) {
         WritePrivateProfileStringW(sec, L"type", tmp, path);
         WritePrivateProfileStringW(sec, L"name", cfg->items[i].name, path);
         WritePrivateProfileStringW(sec, L"url", cfg->items[i].url, path);
+        WritePrivateProfileStringW(sec, L"req_headers", cfg->items[i].req_headers, path);
 
         wsprintfW(tmp, L"%u", cfg->items[i].interval_ms);
         WritePrivateProfileStringW(sec, L"interval_ms", tmp, path);

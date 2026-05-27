@@ -9,6 +9,7 @@
 typedef struct {
     HWND  hwnd;
     WCHAR url[1024];
+    WCHAR headers[1024];  /* custom headers, \r\n separated */
     char  result[FETCH_BUF_SIZE];
     BOOL  success;
 } FetchContext;

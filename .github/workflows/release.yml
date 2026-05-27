@@ -17,16 +17,23 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: mingw-w64-x86_64-gcc make
+          install: mingw-w64-x86_64-gcc make zip
 
       - name: Build
         run: make all
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp taskpin.exe dist/
+          cp -r examples dist/
+          cd dist && zip -r ../taskpin-x64.zip .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: taskpin-x64
-          path: taskpin.exe
+          path: taskpin-x64.zip
 
   release:
     needs: build
@@ -44,5 +51,5 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: taskpin.exe
+          files: taskpin-x64.zip
           generate_release_notes: true

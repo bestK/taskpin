@@ -150,6 +150,7 @@ static void start_fetch(HWND hwnd) {
 
     ctx->hwnd = hwnd;
     lstrcpynW(ctx->url, it->url, 1024);
+    lstrcpynW(ctx->headers, it->req_headers, 1024);
 
     HANDLE hThread = CreateThread(NULL, 0, fetcher_thread, ctx, 0, NULL);
     if (hThread) CloseHandle(hThread);
@@ -165,6 +166,7 @@ typedef struct {
     HWND hClickCheck, hClickUrl;
     HWND hLuaPath;
     HWND hUrlLabel, hLuaLabel, hLoadBtn;
+    HWND hHeaders, hHeadersLabel;
     /* Param fields for Lua scripts */
     HWND hParamLabel[CFG_MAX_PARAMS];
     HWND hParamEdit[CFG_MAX_PARAMS];
@@ -229,6 +231,8 @@ static void edit_toggle_type(void) {
     ShowWindow(g_edit->hUrlLabel, is_url ? SW_SHOW : SW_HIDE);
     ShowWindow(g_edit->hUrl, is_url ? SW_SHOW : SW_HIDE);
     ShowWindow(g_edit->hLoadBtn, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hHeaders, is_url ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_edit->hHeadersLabel, is_url ? SW_SHOW : SW_HIDE);
     ShowWindow(g_edit->hExpr, is_url ? SW_SHOW : SW_HIDE);
     ShowWindow(g_edit->hTree, is_url ? SW_SHOW : SW_HIDE);
     ShowWindow(g_edit->hPreview, is_url ? SW_SHOW : SW_HIDE);
@@ -885,7 +889,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     st->hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", title,
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
-        150, 80, 640, 700, parent, NULL, g_hinst, NULL);
+        150, 80, 640, 730, parent, NULL, g_hinst, NULL);
     if (!st->hDlg) { free(st); g_edit = NULL; return; }
 
     int y = 10;
@@ -913,6 +917,14 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         70, y, 440, 22, st->hDlg, (HMENU)IDE_URL, g_hinst, NULL);
     st->hLoadBtn = CreateWindowExW(0, L"BUTTON", L"Load",
         WS_CHILD | WS_VISIBLE, 520, y, 60, 22, st->hDlg, (HMENU)IDB_LOAD, g_hinst, NULL);
+
+    y += 28;
+    st->hHeadersLabel = CreateWindowExW(0, L"STATIC", L"Headers:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 55, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hHeaders = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
+        70, y, 540, 48, st->hDlg, NULL, g_hinst, NULL);
+    SendMessageW(st->hHeaders, WM_SETFONT, (WPARAM)g_font, TRUE);
 
     st->hLuaLabel = CreateWindowExW(0, L"STATIC", L"Lua File:", WS_CHILD,
         10, y + 2, 60, 20, st->hDlg, NULL, g_hinst, NULL);
@@ -1005,6 +1017,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         SendMessageW(st->hType, CB_SETCURSEL, it->type, 0);
         SetWindowTextW(st->hName, it->name);
         SetWindowTextW(st->hUrl, it->url);
+        SetWindowTextW(st->hHeaders, it->req_headers);
         WCHAR tmp[32];
         wsprintfW(tmp, L"%u", it->interval_ms);
         SetWindowTextW(st->hInt, tmp);
@@ -1053,6 +1066,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
             it->type = (int)SendMessageW(st->hType, CB_GETCURSEL, 0, 0);
             GetWindowTextW(st->hName, it->name, CFG_MAX_NAME);
             GetWindowTextW(st->hUrl, it->url, CFG_MAX_URL);
+            GetWindowTextW(st->hHeaders, it->req_headers, CFG_MAX_URL);
             WCHAR tmp[32];
             GetWindowTextW(st->hInt, tmp, 32);
             it->interval_ms = (DWORD)_wtoi(tmp);
