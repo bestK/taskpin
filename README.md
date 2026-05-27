@@ -1,6 +1,8 @@
 # TaskPin
 
-Windows 任务栏嵌入工具，纯 C + Win32 API 实现。将自定义信息直接显示在任务栏内部。
+Windows 任务栏嵌入工具，纯 C + Win32 API + Lua 5.4 实现。将自定义信息直接显示在任务栏内部。
+
+![preview](docs/preview.png)
 
 ## 功能
 

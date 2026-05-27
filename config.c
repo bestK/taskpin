@@ -43,8 +43,21 @@ void config_load(TaskPinConfig *cfg) {
             cfg->items[i].name, CFG_MAX_NAME, path);
         GetPrivateProfileStringW(sec, L"url", L"http://localhost:8080/status",
             cfg->items[i].url, CFG_MAX_URL, path);
-        GetPrivateProfileStringW(sec, L"req_headers", L"",
-            cfg->items[i].req_headers, CFG_MAX_URL, path);
+        /* req_headers stored as base64 */
+        WCHAR hdr_b64[CFG_MAX_URL];
+        GetPrivateProfileStringW(sec, L"req_headers_b64", L"", hdr_b64, CFG_MAX_URL, path);
+        cfg->items[i].req_headers[0] = L'\0';
+        if (hdr_b64[0]) {
+            char b64a[CFG_MAX_URL];
+            WideCharToMultiByte(CP_UTF8, 0, hdr_b64, -1, b64a, CFG_MAX_URL, NULL, NULL);
+            int dec_len = 0;
+            char *decoded = base64_decode(b64a, &dec_len);
+            if (decoded) {
+                MultiByteToWideChar(CP_UTF8, 0, decoded, dec_len, cfg->items[i].req_headers, CFG_MAX_URL);
+                cfg->items[i].req_headers[dec_len < CFG_MAX_URL ? dec_len : CFG_MAX_URL-1] = L'\0';
+                free(decoded);
+            }
+        }
         cfg->items[i].interval_ms = (DWORD)GetPrivateProfileIntW(sec, L"interval_ms", 5000, path);
 
         /* field_expr stored as base64 in INI */
@@ -159,7 +172,22 @@ void config_save(const TaskPinConfig *cfg) {
         WritePrivateProfileStringW(sec, L"type", tmp, path);
         WritePrivateProfileStringW(sec, L"name", cfg->items[i].name, path);
         WritePrivateProfileStringW(sec, L"url", cfg->items[i].url, path);
-        WritePrivateProfileStringW(sec, L"req_headers", cfg->items[i].req_headers, path);
+        /* Save req_headers as base64 */
+        if (cfg->items[i].req_headers[0]) {
+            char utf8[CFG_MAX_URL * 3];
+            int u8len = WideCharToMultiByte(CP_UTF8, 0, cfg->items[i].req_headers, -1,
+                utf8, sizeof(utf8), NULL, NULL);
+            if (u8len > 0) u8len--;
+            char *b64 = base64_encode(utf8, u8len);
+            if (b64) {
+                WCHAR b64w[CFG_MAX_URL * 4];
+                MultiByteToWideChar(CP_UTF8, 0, b64, -1, b64w, CFG_MAX_URL * 4);
+                WritePrivateProfileStringW(sec, L"req_headers_b64", b64w, path);
+                free(b64);
+            }
+        } else {
+            WritePrivateProfileStringW(sec, L"req_headers_b64", L"", path);
+        }
 
         wsprintfW(tmp, L"%u", cfg->items[i].interval_ms);
         WritePrivateProfileStringW(sec, L"interval_ms", tmp, path);
