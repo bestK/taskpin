@@ -1,0 +1,45 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
+      - name: Build
+        run: make all
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskpin-x64
+          path: taskpin.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: taskpin-x64
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: taskpin.exe
+          generate_release_notes: true
