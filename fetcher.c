@@ -53,8 +53,20 @@ DWORD WINAPI fetcher_thread(LPVOID param) {
         NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); goto done; }
 
-    WCHAR *hdr = (ctx->headers[0]) ? ctx->headers : WINHTTP_NO_ADDITIONAL_HEADERS;
-    DWORD hdr_len = (ctx->headers[0]) ? (DWORD)-1 : 0;
+    /* Ensure headers end with \r\n for WinHTTP */
+    WCHAR hdr_buf[1024];
+    WCHAR *hdr = WINHTTP_NO_ADDITIONAL_HEADERS;
+    DWORD hdr_len = 0;
+    if (ctx->headers[0]) {
+        lstrcpynW(hdr_buf, ctx->headers, 1020);
+        int len = lstrlenW(hdr_buf);
+        /* Trim trailing whitespace */
+        while (len > 0 && (hdr_buf[len-1] == L'\r' || hdr_buf[len-1] == L'\n' || hdr_buf[len-1] == L' '))
+            len--;
+        hdr_buf[len] = L'\r'; hdr_buf[len+1] = L'\n'; hdr_buf[len+2] = L'\0';
+        hdr = hdr_buf;
+        hdr_len = (DWORD)-1;
+    }
     if (!WinHttpSendRequest(hRequest, hdr, hdr_len,
             WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
         goto cleanup;

@@ -409,13 +409,11 @@ static void edit_load_response(EditDlgState *st) {
     WCHAR url[CFG_MAX_URL];
     GetWindowTextW(st->hUrl, url, CFG_MAX_URL);
 
-    char url8[CFG_MAX_URL];
-    WideCharToMultiByte(CP_UTF8, 0, url, -1, url8, CFG_MAX_URL, NULL, NULL);
-
-    /* Use fetcher in blocking mode (simple: just call WinHTTP inline) */
+    /* Use fetcher in blocking mode */
     FetchContext ctx = {0};
     ctx.hwnd = NULL;
     lstrcpynW(ctx.url, url, 1024);
+    GetWindowTextW(st->hHeaders, ctx.headers, 1024);
     fetcher_thread(&ctx);
 
     if (ctx.success) {
@@ -889,7 +887,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     st->hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", title,
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
-        150, 80, 640, 730, parent, NULL, g_hinst, NULL);
+        150, 80, 640, 760, parent, NULL, g_hinst, NULL);
     if (!st->hDlg) { free(st); g_edit = NULL; return; }
 
     int y = 10;
@@ -922,7 +920,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     st->hHeadersLabel = CreateWindowExW(0, L"STATIC", L"Headers:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hHeaders = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
         70, y, 540, 48, st->hDlg, NULL, g_hinst, NULL);
     SendMessageW(st->hHeaders, WM_SETFONT, (WPARAM)g_font, TRUE);
 
@@ -935,7 +933,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     CreateWindowExW(0, L"BUTTON", L"...",
         WS_CHILD, 550, y, 30, 22, st->hDlg, (HMENU)5052, g_hinst, NULL);
 
-    y += 30;
+    y += 56;
     CreateWindowExW(0, L"STATIC", L"Interval:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hInt = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"5000",
