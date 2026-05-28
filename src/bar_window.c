@@ -251,6 +251,42 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         show_main_window();
         return 0;
 
+    case WM_MOUSEWHEEL: {
+        if (!bar || bar->item_index < 0) break;
+        int delta = GET_WHEEL_DELTA_WPARAM(wp);
+        int idx = bar->item_index;
+        BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+
+        if (shift) {
+            /* Shift+wheel: adjust X position within taskbar */
+            RECT wr; GetWindowRect(hwnd, &wr);
+            POINT pt = { wr.left, wr.top };
+            HWND parent = GetParent(hwnd);
+            if (parent) ScreenToClient(parent, &pt);
+            pt.x += (delta > 0) ? -10 : 10;
+            /* Clamp within parent */
+            if (pt.x < 0) pt.x = 0;
+            RECT prc; GetClientRect(parent ? parent : GetDesktopWindow(), &prc);
+            if (pt.x > prc.right - 50) pt.x = prc.right - 50;
+            g_cfg.items[idx].bar_x = pt.x;
+            SetWindowPos(hwnd, NULL, pt.x, pt.y, 0, 0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        } else {
+            /* Normal wheel: adjust width */
+            int cur_w = g_cfg.items[idx].bar_width > 0 ? g_cfg.items[idx].bar_width : g_cfg.width;
+            cur_w += (delta > 0) ? 5 : -5;
+            if (cur_w < 50) cur_w = 50;
+            if (cur_w > 800) cur_w = 800;
+            g_cfg.items[idx].bar_width = cur_w;
+            RECT wr; GetWindowRect(hwnd, &wr);
+            SetWindowPos(hwnd, NULL, 0, 0, cur_w, wr.bottom - wr.top,
+                SWP_NOMOVE | SWP_NOZORDER);
+            InvalidateRect(hwnd, NULL, TRUE);
+        }
+        config_save(&g_cfg);
+        return 0;
+    }
+
     case WM_RBUTTONUP: {
         POINT pt;
         GetCursorPos(&pt);
