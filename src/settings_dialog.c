@@ -181,12 +181,9 @@ void show_settings_dialog(HWND parent) {
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 
-        appbar_remove(g_bar_hwnd);
-        LONG style = GetWindowLongW(g_bar_hwnd, GWL_STYLE);
-        style = (style & ~WS_CHILD) | WS_POPUP;
-        SetWindowLongW(g_bar_hwnd, GWL_STYLE, style);
-        appbar_embed(g_bar_hwnd, g_cfg.width, g_cfg.pos_x, g_cfg.pos_y);
-        InvalidateRect(g_bar_hwnd, NULL, TRUE);
+        /* Recreate all bars with new settings */
+        bars_destroy_all();
+        bars_create_all();
     }
 
     EnableWindow(parent, TRUE);
