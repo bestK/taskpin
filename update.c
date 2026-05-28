@@ -117,32 +117,39 @@ DWORD WINAPI check_update_thread(LPVOID param) {
     (void)param;
     Sleep(3000);
 
-    /* Detect region first — affects all subsequent GitHub requests */
     g_china = is_in_china();
 
-    /* Fetch version.txt via gh-proxy if in China */
-    WCHAR ver_url[512];
-    gh_url(L"bestK/taskpin/raw/master/version.txt", ver_url, 512);
-    char *resp = http_get_sync(ver_url, NULL);
-    if (!resp) return 0;
+    for (;;) {
+        WCHAR ver_url[512];
+        gh_url(L"bestK/taskpin/raw/master/version.txt", ver_url, 512);
+        char *resp = http_get_sync(ver_url, NULL);
+        if (!resp) goto next;
 
-    /* Trim whitespace */
-    char *tag = resp;
-    while (*tag == ' ' || *tag == '\r' || *tag == '\n') tag++;
-    char *end = tag + strlen(tag) - 1;
-    while (end > tag && (*end == ' ' || *end == '\r' || *end == '\n')) *end-- = '\0';
+        /* Trim whitespace */
+        char *tag = resp;
+        while (*tag == ' ' || *tag == '\r' || *tag == '\n') tag++;
+        char *end = tag + strlen(tag) - 1;
+        while (end > tag && (*end == ' ' || *end == '\r' || *end == '\n')) *end-- = '\0';
 
-    if (strcmp(tag, TASKPIN_VERSION) > 0) {
-        WCHAR msg[512];
-        WCHAR wtag[64];
-        MultiByteToWideChar(CP_UTF8, 0, tag, -1, wtag, 64);
-        wsprintfW(msg, L"New version v%s available (current: v" L"" TASKPIN_VERSION L")\n\nUpdate now?", wtag);
+        if (strcmp(tag, TASKPIN_VERSION) > 0) {
+            WCHAR msg[512];
+            WCHAR wtag[64];
+            MultiByteToWideChar(CP_UTF8, 0, tag, -1, wtag, 64);
+            wsprintfW(msg, L"New version v%s available (current: v" L"" TASKPIN_VERSION L")\n\nUpdate now?", wtag);
 
-        if (MessageBoxW(NULL, msg, L"TaskPin Update", MB_YESNO | MB_ICONINFORMATION) == IDYES) {
-            do_silent_update();
+            if (MessageBoxW(NULL, msg, L"TaskPin Update", MB_YESNO | MB_ICONINFORMATION) == IDYES) {
+                free(resp);
+                do_silent_update();
+                return 0; /* ExitProcess called inside */
+            }
+            /* User declined — stop checking */
+            free(resp);
+            return 0;
         }
-    }
 
-    free(resp);
-    return 0;
+        free(resp);
+next:
+        /* No update found — wait 30 minutes and check again */
+        Sleep(30 * 60 * 1000);
+    }
 }
