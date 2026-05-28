@@ -50,9 +50,19 @@ static BOOL download_file(const WCHAR *url, const WCHAR *dest) {
 }
 
 static void do_silent_update(void) {
-    /* Build download URL */
+    /* Determine architecture suffix */
+    const WCHAR *arch_suffix;
+#ifdef _WIN64
+    arch_suffix = L"x64";
+#else
+    arch_suffix = L"x86";
+#endif
+
+    WCHAR dl_path[256];
+    wsprintfW(dl_path, L"bestK/taskpin/releases/latest/download/taskpin-%s.exe", arch_suffix);
+
     WCHAR base[512];
-    gh_url(L"bestK/taskpin/releases/latest/download/taskpin.exe", base, 512);
+    gh_url(dl_path, base, 512);
 
     /* Download to temp */
     WCHAR tmp_dir[MAX_PATH], tmp_exe[MAX_PATH], tmp_bat[MAX_PATH];
@@ -63,8 +73,10 @@ static void do_silent_update(void) {
     if (!download_file(base, tmp_exe)) {
         MessageBoxW(NULL, L"Download failed. Opening browser for manual download.",
             L"TaskPin Update", MB_OK | MB_ICONWARNING);
+        WCHAR zip_path[256];
+        wsprintfW(zip_path, L"bestK/taskpin/releases/latest/download/taskpin-%s.zip", arch_suffix);
         WCHAR zip_url[512];
-        gh_url(L"bestK/taskpin/releases/latest/download/taskpin-x64.zip", zip_url, 512);
+        gh_url(zip_path, zip_url, 512);
         ShellExecuteW(NULL, L"open", zip_url, NULL, NULL, SW_SHOWNORMAL);
         return;
     }
