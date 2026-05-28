@@ -14,6 +14,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     (void)hPrev; (void)cmdLine; (void)nShow;
     g_hinst = hInst;
 
+    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"Global\\TaskPin_SingleInstance");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
     INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES };
     InitCommonControlsEx(&icc);
 
