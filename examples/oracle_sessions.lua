@@ -53,15 +53,26 @@ if #parts == 0 then
     return font("[无数据]", "#888888", 9), false, ""
 end
 
-local cols = 2
-local rows = math.ceil(#parts / cols)
-local output = ""
-for r = 1, rows do
-    if r > 1 then output = output .. font("\n") end
-    output = output .. parts[r]
-    local ri = r + rows
-    if ri <= #parts then
-        output = output .. font("   ") .. parts[ri]
+local rows = 2
+local cols = math.ceil(#parts / rows)
+local line1 = {}
+local line2 = {}
+for c = 1, cols do
+    local i1 = (c - 1) * rows + 1
+    local i2 = (c - 1) * rows + 2
+    if i1 <= #parts then table.insert(line1, parts[i1]) end
+    if i2 <= #parts then table.insert(line2, parts[i2]) end
+end
+
+local sep = font("  ")
+local output = line1[1]
+for i = 2, #line1 do
+    output = output .. sep .. line1[i]
+end
+if #line2 > 0 then
+    output = output .. font("\n") .. line2[1]
+    for i = 2, #line2 do
+        output = output .. sep .. line2[i]
     end
 end
 return output, false, ""
