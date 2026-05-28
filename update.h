@@ -3,7 +3,9 @@
 
 #include <windows.h>
 
-#define TASKPIN_VERSION "1.2.0"
+#ifndef TASKPIN_VERSION
+#define TASKPIN_VERSION "0.0.0"
+#endif
 
 /* Background thread: check GitHub for new version, prompt user if available. */
 DWORD WINAPI check_update_thread(LPVOID param);
