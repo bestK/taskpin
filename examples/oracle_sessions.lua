@@ -1,42 +1,67 @@
 -- @param EXPORTER_URLS string Exporter地址(格式: 别名=URL 逗号分隔,如 生产=http://db1:9161,测试=http://db2:9161)
 -- oracle_sessions.lua - 从多个 Oracle Exporter 提取数据库会话数
+-- 使用 font() 富文本: 绿色=正常, 橙色=警告(>70%), 红色=危险(>90%)
 
 local URLS = args.EXPORTER_URLS or "http://localhost:9161"
 
 local function parse_metrics(resp)
-    local sessions_cur = 0
-    local sessions_limit = 0
-
+    local cur, limit = 0, 0
     for line in resp:gmatch("[^\n]+") do
         local val
         val = line:match('oracledb_resource_current_utilization{resource_name="sessions"}%s+([%d%.e%+]+)')
-        if val then sessions_cur = tonumber(val) or 0 end
-
+        if val then cur = tonumber(val) or 0 end
         val = line:match('oracledb_resource_limit_value{resource_name="sessions"}%s+([%d%.e%+]+)')
-        if val then sessions_limit = tonumber(val) or 0 end
+        if val then limit = tonumber(val) or 0 end
     end
-
-    return sessions_cur, sessions_limit
+    return cur, limit
 end
 
-local results = {}
+local function status_color(cur, limit)
+    if limit <= 0 then return "#888888" end
+    local pct = cur / limit
+    if pct >= 0.9 then return "#FF3333" end
+    if pct >= 0.7 then return "#FFAA00" end
+    return "#33CC33"
+end
+
+local parts = {}
 for entry in URLS:gmatch("[^,]+") do
-    entry = entry:match("^%s*(.-)%s*$")  -- trim
-    -- 支持 别名=URL 或 纯URL
+    entry = entry:match("^%s*(.-)%s*$")
     local name, url = entry:match("^(.-)=(.+)$")
     if not name or name == "" then
         url = entry
         name = url:match("//([^:/]+)") or url
     end
+
     local resp = http.get(url .. "/metrics")
     if resp then
         local cur, limit = parse_metrics(resp)
-        table.insert(results, string.format("%s:%d/%d", name, cur, limit))
+        local color = status_color(cur, limit)
+        table.insert(parts,
+            font(name .. " ", "#AAAAAA")
+            .. font(tostring(cur), color)
+            .. font("/" .. limit, "#888888")
+        )
     else
-        table.insert(results, name .. ":ERR")
+        table.insert(parts,
+            font(name .. " ", "#AAAAAA") .. font("ERR", "#FF3333")
+        )
     end
 end
 
-local text = table.concat(results, " | ")
-if text == "" then text = "[无数据]" end
-return text, false, ""
+if #parts == 0 then
+    return font("[无数据]", "#888888", 9), false, ""
+end
+
+local cols = 2
+local rows = math.ceil(#parts / cols)
+local output = ""
+for r = 1, rows do
+    if r > 1 then output = output .. font("\n") end
+    output = output .. parts[r]
+    local ri = r + rows
+    if ri <= #parts then
+        output = output .. font("   ") .. parts[ri]
+    end
+end
+return output, false, ""
