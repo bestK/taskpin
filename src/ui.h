@@ -48,6 +48,7 @@
 /* Shared global state */
 extern TaskPinConfig g_cfg;
 extern WCHAR g_display[FETCH_BUF_SIZE];
+extern DisplayContent g_display_rich;
 extern HFONT g_font;
 extern BOOL  g_fetching;
 extern char  g_last_response[FETCH_BUF_SIZE];

@@ -3,6 +3,7 @@
 /* Global variable definitions */
 TaskPinConfig g_cfg;
 WCHAR g_display[FETCH_BUF_SIZE];
+DisplayContent g_display_rich = {0};
 HFONT g_font;
 BOOL  g_fetching = FALSE;
 char  g_last_response[FETCH_BUF_SIZE];
