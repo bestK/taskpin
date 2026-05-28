@@ -45,18 +45,27 @@
 #define IDB_OK      5008
 #define IDB_CANCEL  5009
 
+/* Bar instance (one per pinned item) */
+#define MAX_BARS 16
+
+typedef struct {
+    int item_index;
+    HWND hwnd;
+    WCHAR display[FETCH_BUF_SIZE];
+    DisplayContent rich;
+    ScriptResult script_result;
+    int scroll_offset;
+    int text_width;
+    BOOL fetching;
+    char last_response[FETCH_BUF_SIZE];
+} BarInstance;
+
+extern BarInstance g_bars[MAX_BARS];
+extern int g_bar_count;
+
 /* Shared global state */
 extern TaskPinConfig g_cfg;
-extern WCHAR g_display[FETCH_BUF_SIZE];
-extern DisplayContent g_display_rich;
 extern HFONT g_font;
-extern BOOL  g_fetching;
-extern char  g_last_response[FETCH_BUF_SIZE];
-extern ScriptResult g_script_result;
-extern int   g_scroll_offset;
-extern int   g_text_width;
-
-extern HWND g_bar_hwnd;
 extern HWND g_main_hwnd;
 extern HWND g_listview;
 extern HINSTANCE g_hinst;
@@ -65,7 +74,9 @@ extern HINSTANCE g_hinst;
 void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size);
 
 /* bar_window.c */
-void start_fetch(HWND hwnd);
+void start_fetch(BarInstance *bar);
+void bars_create_all(void);
+void bars_destroy_all(void);
 LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
 /* main_window.c */

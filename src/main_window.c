@@ -20,10 +20,20 @@ void listview_populate(void) {
         WCHAR ms[32];
         wsprintfW(ms, L"%u", g_cfg.items[i].interval_ms);
         ListView_SetItemText(g_listview, i, 3, ms);
-    }
-    if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
-        ListView_SetItemState(g_listview, g_cfg.selected,
-            LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+
+        ListView_SetItemText(g_listview, i, 4, g_cfg.items[i].pinned ? L"Y" : L"");
+
+        WCHAR xy[32];
+        wsprintfW(xy, L"%d,%d", g_cfg.items[i].bar_x, g_cfg.items[i].bar_y);
+        ListView_SetItemText(g_listview, i, 5, xy);
+
+        WCHAR bw[16];
+        wsprintfW(bw, L"%d", g_cfg.items[i].bar_width);
+        ListView_SetItemText(g_listview, i, 6, bw);
+
+        WCHAR bg[16];
+        wsprintfW(bg, L"%08X", (unsigned int)g_cfg.items[i].bar_bg_color);
+        ListView_SetItemText(g_listview, i, 7, bg);
     }
 }
 
@@ -42,10 +52,18 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         ListView_InsertColumn(g_listview, 0, &col);
         col.pszText = L"Type"; col.cx = 50;
         ListView_InsertColumn(g_listview, 1, &col);
-        col.pszText = L"Source"; col.cx = 300;
+        col.pszText = L"Source"; col.cx = 250;
         ListView_InsertColumn(g_listview, 2, &col);
-        col.pszText = L"Interval"; col.cx = 70;
+        col.pszText = L"Interval"; col.cx = 60;
         ListView_InsertColumn(g_listview, 3, &col);
+        col.pszText = L"Pin"; col.cx = 30;
+        ListView_InsertColumn(g_listview, 4, &col);
+        col.pszText = L"X,Y"; col.cx = 60;
+        ListView_InsertColumn(g_listview, 5, &col);
+        col.pszText = L"W"; col.cx = 35;
+        ListView_InsertColumn(g_listview, 6, &col);
+        col.pszText = L"BG"; col.cx = 65;
+        ListView_InsertColumn(g_listview, 7, &col);
 
         SendMessageW(g_listview, WM_SETFONT, (WPARAM)g_font, TRUE);
 
@@ -53,7 +71,7 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             WS_CHILD | WS_VISIBLE, 10, 268, 70, 28, hwnd, (HMENU)IDB_ADD, g_hinst, NULL);
         CreateWindowExW(0, L"BUTTON", L"Delete",
             WS_CHILD | WS_VISIBLE, 90, 268, 70, 28, hwnd, (HMENU)IDB_DEL, g_hinst, NULL);
-        CreateWindowExW(0, L"BUTTON", L"Pin to Bar",
+        CreateWindowExW(0, L"BUTTON", L"Pin",
             WS_CHILD | WS_VISIBLE, 170, 268, 90, 28, hwnd, (HMENU)IDB_SELECT, g_hinst, NULL);
         CreateWindowExW(0, L"BUTTON", L"Settings",
             WS_CHILD | WS_VISIBLE, 270, 268, 80, 28, hwnd, (HMENU)IDB_SETTINGS, g_hinst, NULL);
@@ -74,6 +92,16 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 show_edit_dialog(hwnd, sel);
             }
         }
+        if (nm->hwndFrom == g_listview && nm->code == LVN_ITEMCHANGED) {
+            int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);
+            HWND hBtn = GetDlgItem(hwnd, IDB_SELECT);
+            if (hBtn) {
+                if (sel >= 0 && sel < g_cfg.count && g_cfg.items[sel].pinned)
+                    SetWindowTextW(hBtn, L"Unpin");
+                else
+                    SetWindowTextW(hBtn, L"Pin");
+            }
+        }
         return 0;
     }
 
@@ -91,34 +119,27 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDB_DEL: {
             int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);
             if (sel >= 0 && sel < g_cfg.count) {
+                BOOL was_pinned = g_cfg.items[sel].pinned;
                 for (int i = sel; i < g_cfg.count - 1; i++)
                     g_cfg.items[i] = g_cfg.items[i + 1];
                 g_cfg.count--;
-                if (g_cfg.selected == sel) g_cfg.selected = -1;
-                else if (g_cfg.selected > sel) g_cfg.selected--;
                 config_save(&g_cfg);
                 listview_populate();
-                if (g_cfg.selected >= 0 && g_cfg.selected < g_cfg.count) {
-                    KillTimer(g_bar_hwnd, IDT_REFRESH);
-                    SetTimer(g_bar_hwnd, IDT_REFRESH, g_cfg.items[g_cfg.selected].interval_ms, NULL);
+                if (was_pinned) {
+                    bars_destroy_all();
+                    bars_create_all();
                 }
-                start_fetch(g_bar_hwnd);
             }
             break;
         }
         case IDB_SELECT: {
             int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);
             if (sel >= 0 && sel < g_cfg.count) {
-                g_cfg.selected = sel;
+                g_cfg.items[sel].pinned = !g_cfg.items[sel].pinned;
                 config_save(&g_cfg);
-                KillTimer(g_bar_hwnd, IDT_REFRESH);
-                SetTimer(g_bar_hwnd, IDT_REFRESH, g_cfg.items[sel].interval_ms, NULL);
-                g_fetching = FALSE;
-                start_fetch(g_bar_hwnd);
-                WCHAR tmp[256];
-                wsprintfW(tmp, L"Pinned: %s", g_cfg.items[sel].name);
-                lstrcpynW(g_display, tmp, FETCH_BUF_SIZE);
-                InvalidateRect(g_bar_hwnd, NULL, TRUE);
+                listview_populate();
+                bars_destroy_all();
+                bars_create_all();
             } else {
                 MessageBoxW(hwnd, L"Please select an item first.", L"TaskPin", MB_OK | MB_ICONINFORMATION);
             }

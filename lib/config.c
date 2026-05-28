@@ -19,7 +19,6 @@ void config_load(TaskPinConfig *cfg) {
     config_get_path(path, CFG_MAX_PATH);
 
     cfg->width    = GetPrivateProfileIntW(kGlobal, L"width", 320, path);
-    cfg->selected = GetPrivateProfileIntW(kGlobal, L"selected", -1, path);
     cfg->count    = GetPrivateProfileIntW(kGlobal, L"count", 0, path);
     cfg->pos_x    = GetPrivateProfileIntW(kGlobal, L"pos_x", -1, path);
     cfg->pos_y    = GetPrivateProfileIntW(kGlobal, L"pos_y", -1, path);
@@ -87,6 +86,13 @@ void config_load(TaskPinConfig *cfg) {
         cfg->items[i].param_count = GetPrivateProfileIntW(sec, L"param_count", 0, path);
         if (cfg->items[i].param_count > CFG_MAX_PARAMS)
             cfg->items[i].param_count = CFG_MAX_PARAMS;
+        cfg->items[i].pinned = GetPrivateProfileIntW(sec, L"pinned", 0, path);
+        cfg->items[i].bar_width = GetPrivateProfileIntW(sec, L"bar_width", 0, path);
+        cfg->items[i].bar_x = GetPrivateProfileIntW(sec, L"bar_x", -1, path);
+        cfg->items[i].bar_y = GetPrivateProfileIntW(sec, L"bar_y", -1, path);
+        WCHAR bg_buf[16];
+        GetPrivateProfileStringW(sec, L"bar_bg_color", L"FFFFFFFF", bg_buf, 16, path);
+        cfg->items[i].bar_bg_color = (COLORREF)wcstoul(bg_buf, NULL, 16);
         for (int j = 0; j < cfg->items[i].param_count; j++) {
             WCHAR pk[32], pv[32], pl[32];
             wsprintfW(pk, L"param_key_%d", j);
@@ -98,6 +104,18 @@ void config_load(TaskPinConfig *cfg) {
                 cfg->items[i].params[j].value, CFG_MAX_PARAM_VAL, path);
             GetPrivateProfileStringW(sec, pl, L"",
                 cfg->items[i].params[j].label, CFG_MAX_NAME, path);
+        }
+    }
+
+    /* Backward compat: if no item has pinned flag, use legacy 'selected' */
+    BOOL any_pinned = FALSE;
+    for (int i = 0; i < cfg->count; i++) {
+        if (cfg->items[i].pinned) { any_pinned = TRUE; break; }
+    }
+    if (!any_pinned) {
+        int legacy_sel = GetPrivateProfileIntW(kGlobal, L"selected", -1, path);
+        if (legacy_sel >= 0 && legacy_sel < cfg->count) {
+            cfg->items[legacy_sel].pinned = TRUE;
         }
     }
 }
@@ -140,11 +158,17 @@ void config_save(const TaskPinConfig *cfg) {
     wsprintfW(tmp, L"%d", cfg->width);
     WritePrivateProfileStringW(kGlobal, L"width", tmp, path);
 
-    wsprintfW(tmp, L"%d", cfg->selected);
-    WritePrivateProfileStringW(kGlobal, L"selected", tmp, path);
 
     wsprintfW(tmp, L"%d", cfg->count);
     WritePrivateProfileStringW(kGlobal, L"count", tmp, path);
+
+    /* Write selected as first pinned item for backward compat */
+    int first_pinned = -1;
+    for (int i = 0; i < cfg->count; i++) {
+        if (cfg->items[i].pinned) { first_pinned = i; break; }
+    }
+    wsprintfW(tmp, L"%d", first_pinned);
+    WritePrivateProfileStringW(kGlobal, L"selected", tmp, path);
 
     wsprintfW(tmp, L"%d", cfg->pos_x);
     WritePrivateProfileStringW(kGlobal, L"pos_x", tmp, path);
@@ -218,6 +242,16 @@ void config_save(const TaskPinConfig *cfg) {
         WCHAR pc[16];
         wsprintfW(pc, L"%d", cfg->items[i].param_count);
         WritePrivateProfileStringW(sec, L"param_count", pc, path);
+        wsprintfW(tmp, L"%d", cfg->items[i].pinned ? 1 : 0);
+        WritePrivateProfileStringW(sec, L"pinned", tmp, path);
+        wsprintfW(tmp, L"%d", cfg->items[i].bar_width);
+        WritePrivateProfileStringW(sec, L"bar_width", tmp, path);
+        wsprintfW(tmp, L"%d", cfg->items[i].bar_x);
+        WritePrivateProfileStringW(sec, L"bar_x", tmp, path);
+        wsprintfW(tmp, L"%d", cfg->items[i].bar_y);
+        WritePrivateProfileStringW(sec, L"bar_y", tmp, path);
+        wsprintfW(tmp, L"%08X", (unsigned int)cfg->items[i].bar_bg_color);
+        WritePrivateProfileStringW(sec, L"bar_bg_color", tmp, path);
         for (int j = 0; j < cfg->items[i].param_count; j++) {
             WCHAR pk[32], pv[32], pl[32];
             wsprintfW(pk, L"param_key_%d", j);

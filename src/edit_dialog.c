@@ -11,6 +11,10 @@ typedef struct {
     HWND hTypeLabel, hNameLabel;
     HWND hIntLabel, hRespLabel, hTemplateLabel, hPreviewLabel, hClickUrlLabel;
     HWND hBrowseBtn;
+    HWND hBarWidthLabel, hBarWidth;
+    HWND hBarXLabel, hBarX;
+    HWND hBarYLabel, hBarY;
+    HWND hBarBgLabel, hBarBg;
     HWND hParamLabel[CFG_MAX_PARAMS];
     HWND hParamEdit[CFG_MAX_PARAMS];
     int  param_decl_count;
@@ -71,6 +75,16 @@ static void edit_relayout(void) {
     int sel = (int)SendMessageW(g_edit->hType, CB_GETCURSEL, 0, 0);
     BOOL is_url = (sel == ITEM_TYPE_URL);
 
+    /* URL mode needs minimum height for TreeView; ensure window is tall enough first */
+    if (is_url) {
+        RECT wr; GetWindowRect(g_edit->hDlg, &wr);
+        int cur_h = wr.bottom - wr.top;
+        if (cur_h < 800) {
+            SetWindowPos(g_edit->hDlg, NULL, 0, 0, wr.right - wr.left, 800,
+                SWP_NOMOVE | SWP_NOZORDER);
+        }
+    }
+
     RECT dlg_rc;
     GetClientRect(g_edit->hDlg, &dlg_rc);
     int cw = dlg_rc.right;
@@ -130,7 +144,7 @@ static void edit_relayout(void) {
         MoveWindow(g_edit->hRespLabel, margin, y, 350, 18, TRUE);
         y += 20;
 
-        int bottom_reserve = 230;
+        int bottom_reserve = 270;
         int tree_h = dlg_rc.bottom - y - bottom_reserve;
         if (tree_h < 80) tree_h = 80;
         MoveWindow(g_edit->hTree, margin, y, w, tree_h, TRUE);
@@ -169,6 +183,17 @@ static void edit_relayout(void) {
         y += 10;
     }
 
+    /* Bar config row (both modes) */
+    MoveWindow(g_edit->hBarWidthLabel, margin, y + 2, 40, 18, TRUE);
+    MoveWindow(g_edit->hBarWidth, margin + 42, y, 50, 22, TRUE);
+    MoveWindow(g_edit->hBarXLabel, margin + 105, y + 2, 15, 18, TRUE);
+    MoveWindow(g_edit->hBarX, margin + 122, y, 50, 22, TRUE);
+    MoveWindow(g_edit->hBarYLabel, margin + 185, y + 2, 15, 18, TRUE);
+    MoveWindow(g_edit->hBarY, margin + 202, y, 50, 22, TRUE);
+    MoveWindow(g_edit->hBarBgLabel, margin + 265, y + 2, 25, 18, TRUE);
+    MoveWindow(g_edit->hBarBg, margin + 292, y, 70, 22, TRUE);
+    y += 30;
+
     HWND hOk = GetDlgItem(g_edit->hDlg, IDB_OK);
     HWND hCancel = GetDlgItem(g_edit->hDlg, IDB_CANCEL);
     if (hOk) MoveWindow(hOk, cw / 2 - 85, y, 80, 28, TRUE);
@@ -178,7 +203,7 @@ static void edit_relayout(void) {
     RECT wr; GetWindowRect(g_edit->hDlg, &wr);
     int frame_h = (wr.bottom - wr.top) - dlg_rc.bottom;
     int target_h = y + frame_h;
-    if (is_url && target_h < 760) target_h = 760;
+    if (is_url && target_h < 800) target_h = 800;
     SetWindowPos(g_edit->hDlg, NULL, 0, 0, wr.right - wr.left, target_h,
         SWP_NOMOVE | SWP_NOZORDER);
 
@@ -407,7 +432,7 @@ void show_edit_dialog(HWND parent, int item_idx) {
     st->hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", title,
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
-        150, 80, 640, 760, parent, NULL, g_hinst, NULL);
+        150, 80, 640, 800, parent, NULL, g_hinst, NULL);
     if (!st->hDlg) { free(st); g_edit = NULL; return; }
 
     int y = 10;
@@ -509,6 +534,28 @@ void show_edit_dialog(HWND parent, int item_idx) {
         85, y, 525, 22, st->hDlg, NULL, g_hinst, NULL);
 
     y += 30;
+    st->hBarWidthLabel = CreateWindowExW(0, L"STATIC", L"Bar W:", WS_CHILD | WS_VISIBLE,
+        10, y + 2, 40, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarWidth = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0",
+        WS_CHILD | WS_VISIBLE | ES_NUMBER, 52, y, 50, 22, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarXLabel = CreateWindowExW(0, L"STATIC", L"X:", WS_CHILD | WS_VISIBLE,
+        115, y + 2, 15, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarX = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"-1",
+        WS_CHILD | WS_VISIBLE, 132, y, 50, 22, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarYLabel = CreateWindowExW(0, L"STATIC", L"Y:", WS_CHILD | WS_VISIBLE,
+        195, y + 2, 15, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarY = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"-1",
+        WS_CHILD | WS_VISIBLE, 212, y, 50, 22, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarBgLabel = CreateWindowExW(0, L"STATIC", L"BG:", WS_CHILD | WS_VISIBLE,
+        275, y + 2, 25, 18, st->hDlg, NULL, g_hinst, NULL);
+    st->hBarBg = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"FFFFFFFF",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 302, y, 70, 22, st->hDlg, NULL, g_hinst, NULL);
+    SendMessageW(st->hBarWidth, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hBarX, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hBarY, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(st->hBarBg, WM_SETFONT, (WPARAM)g_font, TRUE);
+
+    y += 30;
     CreateWindowExW(0, L"BUTTON", L"OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         230, y, 80, 28, st->hDlg, (HMENU)IDB_OK, g_hinst, NULL);
@@ -541,6 +588,16 @@ void show_edit_dialog(HWND parent, int item_idx) {
         SetWindowTextW(st->hLuaPath, it->lua_path);
         if (it->type == ITEM_TYPE_LUA && it->lua_path[0])
             edit_load_params(it->lua_path, it);
+        /* Bar config fields */
+        WCHAR bw[16];
+        wsprintfW(bw, L"%d", it->bar_width);
+        SetWindowTextW(st->hBarWidth, bw);
+        wsprintfW(bw, L"%d", it->bar_x);
+        SetWindowTextW(st->hBarX, bw);
+        wsprintfW(bw, L"%d", it->bar_y);
+        SetWindowTextW(st->hBarY, bw);
+        wsprintfW(bw, L"%08X", (unsigned int)it->bar_bg_color);
+        SetWindowTextW(st->hBarBg, bw);
     }
 
     edit_relayout();
@@ -594,8 +651,24 @@ void show_edit_dialog(HWND parent, int item_idx) {
                     it->params[pi].label, CFG_MAX_NAME);
                 GetWindowTextW(st->hParamEdit[pi], it->params[pi].value, CFG_MAX_PARAM_VAL);
             }
+            /* Save bar config */
+            WCHAR bv[32];
+            GetWindowTextW(st->hBarWidth, bv, 32);
+            it->bar_width = _wtoi(bv);
+            GetWindowTextW(st->hBarX, bv, 32);
+            it->bar_x = _wtoi(bv);
+            GetWindowTextW(st->hBarY, bv, 32);
+            it->bar_y = _wtoi(bv);
+            GetWindowTextW(st->hBarBg, bv, 32);
+            it->bar_bg_color = (COLORREF)wcstoul(bv, NULL, 16);
+
             config_save(&g_cfg);
             listview_populate();
+            /* Recreate bars if this item is pinned */
+            if (it->pinned) {
+                bars_destroy_all();
+                bars_create_all();
+            }
         }
     }
 
