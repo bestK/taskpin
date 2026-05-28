@@ -8,6 +8,15 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - msystem: MINGW64
+            arch: x64
+            pkg: mingw-w64-x86_64-gcc
+          - msystem: MINGW32
+            arch: x86
+            pkg: mingw-w64-i686-gcc
     defaults:
       run:
         shell: msys2 {0}
@@ -16,25 +25,25 @@ jobs:
 
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
-          install: mingw-w64-x86_64-gcc make zip
+          msystem: ${{ matrix.msystem }}
+          install: ${{ matrix.pkg }} make zip
 
       - name: Build
-        run: make all
+        run: make clean && make all
 
       - name: Package
         run: |
           mkdir -p dist
           cp taskpin.exe dist/
           cp -r examples dist/
-          cd dist && zip -r ../taskpin-x64.zip .
+          cd dist && zip -r ../taskpin-${{ matrix.arch }}.zip .
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: taskpin-x64
+          name: taskpin-${{ matrix.arch }}
           path: |
-            taskpin-x64.zip
+            taskpin-${{ matrix.arch }}.zip
             taskpin.exe
 
   release:
@@ -45,15 +54,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download artifact
+      - name: Download x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: taskpin-x64
+          path: artifacts/x64
+
+      - name: Download x86 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: taskpin-x86
+          path: artifacts/x86
+
+      - name: Prepare release files
+        run: |
+          cp artifacts/x64/taskpin-x64.zip .
+          cp artifacts/x64/taskpin.exe taskpin-x64.exe
+          cp artifacts/x86/taskpin-x86.zip .
+          cp artifacts/x86/taskpin.exe taskpin-x86.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             taskpin-x64.zip
-            taskpin.exe
+            taskpin-x64.exe
+            taskpin-x86.zip
+            taskpin-x86.exe
           generate_release_notes: true
