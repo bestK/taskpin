@@ -205,10 +205,15 @@ static void edit_load_params(const WCHAR *lua_path, const PinItem *existing) {
     g_edit->param_decl_count = n;
 
     for (int i = 0; i < n; i++) {
-        /* Set label */
+        /* Set label (truncate to max display length) */
         WCHAR lbl[128];
         MultiByteToWideChar(CP_UTF8, 0, decls[i].label[0] ? decls[i].label : decls[i].key,
             -1, lbl, 128);
+        const int MAX_LABEL_CHARS = 12;
+        if (lstrlenW(lbl) > MAX_LABEL_CHARS) {
+            lbl[MAX_LABEL_CHARS] = L'\0';
+            lstrcatW(lbl, L"...");
+        }
         SetWindowTextW(g_edit->hParamLabel[i], lbl);
         ShowWindow(g_edit->hParamLabel[i], SW_SHOW);
         ShowWindow(g_edit->hParamEdit[i], SW_SHOW);
