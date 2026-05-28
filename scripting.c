@@ -62,7 +62,7 @@ static HINTERNET g_http_session = NULL;
 static void http_ensure_session(void) {
     if (!g_http_session) {
         g_http_session = WinHttpOpen(L"TaskPin/1.0",
-            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_ACCESS_TYPE_NO_PROXY,
             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (g_http_session)
             WinHttpSetTimeouts(g_http_session, 8000, 8000, 8000, 8000);
@@ -122,14 +122,16 @@ static int http_request(lua_State *ls, const WCHAR *method) {
         lua_pushnil(ls); return 1;
     }
 
-    /* Read response */
-    char buf[8192] = {0};
+    /* Read response (dynamic buffer, up to 256KB) */
+    #define HTTP_BUF_SIZE (256 * 1024)
+    char *buf = (char *)calloc(1, HTTP_BUF_SIZE);
+    if (!buf) { WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn); lua_pushnil(ls); return 1; }
     DWORD total = 0, avail, rd;
     while (WinHttpQueryDataAvailable(hReq, &avail) && avail > 0) {
-        if (total + avail >= sizeof(buf) - 1) avail = sizeof(buf) - 1 - total;
+        if (total + avail >= HTTP_BUF_SIZE - 1) avail = HTTP_BUF_SIZE - 1 - total;
         WinHttpReadData(hReq, buf + total, avail, &rd);
         total += rd;
-        if (total >= sizeof(buf) - 1) break;
+        if (total >= HTTP_BUF_SIZE - 1) break;
     }
     buf[total] = '\0';
 
@@ -137,6 +139,7 @@ static int http_request(lua_State *ls, const WCHAR *method) {
     WinHttpCloseHandle(hConn);
 
     lua_pushstring(ls, buf);
+    free(buf);
     return 1;
 }
 
