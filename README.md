@@ -9,15 +9,20 @@ Windows 任务栏嵌入信息显示工具。纯 C + Win32 API + Lua 5.4，单文
 ## 功能
 
 - **任务栏嵌入** — 窗口直接嵌入底部任务栏内部
+- **多 Bar 支持** — 同时 Pin 多个 item，各自独立显示、独立刷新
 - **双模式 Item** — URL 模式（HTTP GET + Lua/模板处理）或 Lua 文件模式（脚本全权控制）
+- **富文本渲染** — `font(text, color, size, align)` 支持多色、多字号、左右对齐、双行显示
+- **系统监控 API** — 内置 `sys.cpu/memory/disk/battery/net_speed` 等函数
 - **Lua 5.4 脚本引擎** — 内置 `json.decode`、`http.get/post/put/delete`（带 session cookie）
 - **@param 声明** — 脚本头部声明参数，UI 自动生成输入框，填一次永久生效
 - **自定义请求头** — URL 模式支持多行 Headers
 - **模板引擎** — `$.path` JSONPath 插值 + 完整 Lua 代码，自动 fallback
 - **点击跳转** — 脚本 return 三个值：显示文本、是否可点击、跳转 URL
+- **鼠标滚轮调整** — hover 在 bar 上滚轮调宽度，Shift+滚轮调水平位置
 - **自动滚动** — 文字超出宽度时横向滚动（可关闭）
 - **静默自动更新** — 检测新版本后下载替换重启，中国用户走 gh-proxy
-- **可配置外观** — 字体大小/颜色、背景色、位置、宽度
+- **Per-Item 外观** — 每个 item 可独立配置宽度、坐标、背景色
+- **可配置外观** — 字体大小/颜色、背景色、位置、宽度（全局默认值）
 - **开机自启** — Settings 一键开关
 
 ## 快速开始
