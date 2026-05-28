@@ -5,7 +5,7 @@ CFLAGS_LUA = -O2 -DLUA_COMPAT_5_3 -DWIN32_LEAN_AND_MEAN
 LDFLAGS = -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32
 TARGET = taskpin.exe
 
-SRCS = main.c appbar.c fetcher.c config.c json.c scripting.c base64.c
+SRCS = main.c appbar.c fetcher.c config.c json.c scripting.c base64.c update.c httputil.c
 OBJS = $(SRCS:.c=.o) taskpin_res.o
 
 LUA_SRCS = $(wildcard lua/*.c)

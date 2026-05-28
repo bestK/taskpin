@@ -29,11 +29,13 @@ jobs:
           cp -r examples dist/
           cd dist && zip -r ../taskpin-x64.zip .
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: taskpin-x64
-          path: taskpin-x64.zip
+          path: |
+            taskpin-x64.zip
+            taskpin.exe
 
   release:
     needs: build
@@ -51,5 +53,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: taskpin-x64.zip
+          files: |
+            taskpin-x64.zip
+            taskpin.exe
           generate_release_notes: true
