@@ -101,6 +101,86 @@ Sends an HTTP DELETE request. Same usage as `http.post`.
 
 ---
 
+## sys.cpu()
+
+Returns current CPU usage (0-100 integer). First call returns 0 (needs two samples to compute delta).
+
+```lua
+local cpu = sys.cpu()  -- 45
+```
+
+## sys.memory()
+
+Returns memory usage info table.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| total_mb | number | Total physical memory (MB) |
+| used_mb | number | Used memory (MB) |
+| percent | number | Usage percentage (0-100) |
+
+```lua
+local mem = sys.memory()
+-- mem.total_mb = 16384, mem.used_mb = 8192, mem.percent = 50
+```
+
+## sys.disk(drive)
+
+Returns disk usage info table.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| drive | string | Drive letter, e.g. `"C:"` (optional, defaults to `"C:"`) |
+
+| Return Field | Type | Description |
+|--------------|------|-------------|
+| total_gb | number | Total capacity (GB) |
+| free_gb | number | Free space (GB) |
+| percent | number | Used percentage (0-100) |
+
+## sys.battery()
+
+Returns battery status table. Returns percent=-1 on desktops without battery.
+
+| Return Field | Type | Description |
+|--------------|------|-------------|
+| percent | number | Battery level (0-100), -1 if no battery |
+| charging | boolean | Whether AC power is connected |
+| seconds_left | number | Remaining seconds, -1 if unknown |
+
+## sys.uptime()
+
+Returns system uptime in seconds.
+
+## sys.process_count()
+
+Returns current number of running processes.
+
+## sys.net()
+
+Returns cumulative network byte counters.
+
+| Return Field | Type | Description |
+|--------------|------|-------------|
+| recv_bytes | number | Total bytes received |
+| send_bytes | number | Total bytes sent |
+
+## sys.net_speed()
+
+Returns real-time network speed (bytes/sec). Requires two calls with interval to compute delta.
+
+| Return Field | Type | Description |
+|--------------|------|-------------|
+| download | number | Download speed (bytes/sec) |
+| upload | number | Upload speed (bytes/sec) |
+
+```lua
+local net = sys.net_speed()
+-- net.download = 1048576 (1MB/s), net.upload = 51200 (50KB/s)
+```
+
+---
+
 ## Global Variables
 
 | Variable | Description |
