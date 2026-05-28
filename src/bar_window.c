@@ -6,6 +6,15 @@ static BarInstance *bar_from_hwnd(HWND hwnd) {
     return (BarInstance *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 }
 
+/* ─── Lua worker thread ─── */
+
+static DWORD WINAPI lua_worker_thread(LPVOID param) {
+    LuaContext *ctx = (LuaContext *)param;
+    ctx->success = script_exec_file(ctx->lua_path, ctx->params, ctx->param_count, &ctx->result);
+    PostMessageW(ctx->hwnd, WM_LUA_DONE, 0, (LPARAM)ctx);
+    return 0;
+}
+
 /* ─── Fetch logic (per-instance) ─── */
 
 void start_fetch(BarInstance *bar) {
@@ -20,19 +29,23 @@ void start_fetch(BarInstance *bar) {
     PinItem *it = &g_cfg.items[idx];
 
     if (it->type == ITEM_TYPE_LUA) {
-        if (it->lua_path[0]) {
-            if (script_exec_file(it->lua_path, it->params, it->param_count, &bar->script_result)) {
-                lstrcpynW(bar->display, bar->script_result.display, FETCH_BUF_SIZE);
-                bar->rich = bar->script_result.rich;
-            } else {
-                lstrcpyW(bar->display, L"[script error]");
-                bar->rich.count = 0;
-            }
-        } else {
+        if (!it->lua_path[0]) {
             lstrcpyW(bar->display, L"(no script)");
             bar->rich.count = 0;
+            InvalidateRect(bar->hwnd, NULL, TRUE);
+            return;
         }
-        InvalidateRect(bar->hwnd, NULL, TRUE);
+        bar->fetching = TRUE;
+        LuaContext *lctx = (LuaContext *)HeapAlloc(
+            GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(LuaContext));
+        if (!lctx) { bar->fetching = FALSE; return; }
+        lctx->hwnd = bar->hwnd;
+        lstrcpynW(lctx->lua_path, it->lua_path, MAX_PATH);
+        memcpy(lctx->params, it->params, sizeof(it->params));
+        lctx->param_count = it->param_count;
+        HANDLE hThread = CreateThread(NULL, 0, lua_worker_thread, lctx, 0, NULL);
+        if (hThread) CloseHandle(hThread);
+        else { HeapFree(GetProcessHeap(), 0, lctx); bar->fetching = FALSE; }
         return;
     }
 
@@ -181,6 +194,18 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
+        if (bar->show_border) {
+            HPEN pen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
+            HPEN old_pen = (HPEN)SelectObject(hdc, pen);
+            HBRUSH old_br = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+            RECT brc;
+            GetClientRect(hwnd, &brc);
+            Rectangle(hdc, brc.left, brc.top, brc.right, brc.bottom);
+            SelectObject(hdc, old_br);
+            SelectObject(hdc, old_pen);
+            DeleteObject(pen);
+        }
+
         EndPaint(hwnd, &ps);
         return 0;
     }
@@ -188,6 +213,11 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER:
         if (!bar) break;
         if (wp == IDT_REFRESH) start_fetch(bar);
+        if (wp == IDT_BORDER) {
+            KillTimer(hwnd, IDT_BORDER);
+            bar->show_border = FALSE;
+            InvalidateRect(hwnd, NULL, TRUE);
+        }
         if (wp == IDT_SCROLL && g_cfg.scroll_enabled) {
             RECT rc;
             GetClientRect(hwnd, &rc);
@@ -241,6 +271,24 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    case WM_LUA_DONE: {
+        if (!bar) break;
+        LuaContext *lctx = (LuaContext *)lp;
+        if (lctx->success) {
+            bar->script_result = lctx->result;
+            lstrcpynW(bar->display, lctx->result.display, FETCH_BUF_SIZE);
+            bar->rich = lctx->result.rich;
+        } else {
+            lstrcpyW(bar->display, L"[script error]");
+            bar->rich.count = 0;
+        }
+        HeapFree(GetProcessHeap(), 0, lctx);
+        bar->fetching = FALSE;
+        bar->scroll_offset = 0;
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+
     case WM_LBUTTONUP:
         if (bar && bar->script_result.clickable && bar->script_result.click_url[0]) {
             ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
@@ -256,6 +304,9 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         int idx = bar->item_index;
         BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+
+        bar->show_border = TRUE;
+        SetTimer(hwnd, IDT_BORDER, 800, NULL);
 
         if (shift) {
             /* Shift+wheel: adjust X position within taskbar */

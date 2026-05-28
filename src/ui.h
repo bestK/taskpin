@@ -20,6 +20,7 @@
 /* Timer IDs */
 #define IDT_REFRESH        1
 #define IDT_SCROLL         2
+#define IDT_BORDER         3
 #define SCROLL_SPEED       2
 #define SCROLL_INTERVAL    50
 
@@ -50,6 +51,15 @@
 #define MAX_BARS 16
 
 typedef struct {
+    HWND  hwnd;
+    WCHAR lua_path[MAX_PATH];
+    ParamEntry params[CFG_MAX_PARAMS];
+    int   param_count;
+    ScriptResult result;
+    BOOL  success;
+} LuaContext;
+
+typedef struct {
     int item_index;
     HWND hwnd;
     WCHAR display[FETCH_BUF_SIZE];
@@ -58,6 +68,7 @@ typedef struct {
     int scroll_offset;
     int text_width;
     BOOL fetching;
+    BOOL show_border;
     char last_response[FETCH_BUF_SIZE];
 } BarInstance;
 

@@ -5,6 +5,7 @@
 
 #define FETCH_BUF_SIZE 2048
 #define WM_FETCH_DONE  (WM_USER + 100)
+#define WM_LUA_DONE    (WM_USER + 101)
 
 typedef struct {
     HWND  hwnd;
