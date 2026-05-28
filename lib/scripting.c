@@ -11,6 +11,23 @@
 static lua_State *L = NULL;
 static CRITICAL_SECTION g_lua_cs;
 
+static void script_log_error(const char *err) {
+    if (!err) return;
+    WCHAR log_path[MAX_PATH];
+    GetModuleFileNameW(NULL, log_path, MAX_PATH);
+    WCHAR *slash = wcsrchr(log_path, L'\\');
+    if (slash) *(slash + 1) = L'\0';
+    lstrcatW(log_path, L"taskpin.log");
+    FILE *f = _wfopen(log_path, L"a");
+    if (!f) return;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    fprintf(f, "[%04d-%02d-%02d %02d:%02d:%02d] %s\n",
+        st.wYear, st.wMonth, st.wDay,
+        st.wHour, st.wMinute, st.wSecond, err);
+    fclose(f);
+}
+
 /* ─── built-in json.decode for Lua ─── */
 
 static void push_json_node(lua_State *ls, JsonNode *node);
@@ -395,6 +412,8 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
         "return (function()\n%s\nend)()", lua_code);
 
     if (luaL_dostring(L, wrapped) != LUA_OK) {
+        const char *err = lua_tostring(L, -1);
+        script_log_error(err);
         lua_pop(L, 1);
         LeaveCriticalSection(&g_lua_cs);
         return FALSE;
@@ -475,6 +494,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
 
     if (luaL_dofile(L, path8) != LUA_OK) {
         const char *err = lua_tostring(L, -1);
+        script_log_error(err);
         if (err) MultiByteToWideChar(CP_UTF8, 0, err, -1, result->display, 2048);
         else lstrcpyW(result->display, L"[lua error]");
         lua_settop(L, 0);
