@@ -9,6 +9,7 @@
 #include <string.h>
 
 static lua_State *L = NULL;
+static CRITICAL_SECTION g_lua_cs;
 
 /* ─── built-in json.decode for Lua ─── */
 
@@ -339,6 +340,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
 }
 
 void script_init(void) {
+    InitializeCriticalSection(&g_lua_cs);
     L = luaL_newstate();
     if (!L) return;
     luaL_openlibs(L);
@@ -370,6 +372,7 @@ void script_init(void) {
 
 void script_shutdown(void) {
     if (L) { lua_close(L); L = NULL; }
+    DeleteCriticalSection(&g_lua_cs);
 }
 
 /* ─── execute template code ─── */
@@ -377,6 +380,7 @@ void script_shutdown(void) {
 BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *result) {
     if (!L || !lua_code || !lua_code[0] || !result) return FALSE;
 
+    EnterCriticalSection(&g_lua_cs);
     result->display[0] = L'\0';
     result->clickable = FALSE;
     result->click_url[0] = L'\0';
@@ -392,6 +396,7 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 
     if (luaL_dostring(L, wrapped) != LUA_OK) {
         lua_pop(L, 1);
+        LeaveCriticalSection(&g_lua_cs);
         return FALSE;
     }
 
@@ -422,6 +427,7 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
     }
 
     lua_settop(L, 0);
+    LeaveCriticalSection(&g_lua_cs);
     return (result->display[0] != L'\0' || result->rich.count > 0);
 }
 
@@ -443,6 +449,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
                       ScriptResult *result) {
     if (!L || !lua_path || !lua_path[0] || !result) return FALSE;
 
+    EnterCriticalSection(&g_lua_cs);
     result->display[0] = L'\0';
     result->clickable = FALSE;
     result->click_url[0] = L'\0';
@@ -471,6 +478,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
         if (err) MultiByteToWideChar(CP_UTF8, 0, err, -1, result->display, 2048);
         else lstrcpyW(result->display, L"[lua error]");
         lua_settop(L, 0);
+        LeaveCriticalSection(&g_lua_cs);
         return TRUE;
     }
 
@@ -495,6 +503,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
     }
 
     lua_settop(L, 0);
+    LeaveCriticalSection(&g_lua_cs);
     return (result->display[0] != L'\0' || result->rich.count > 0);
 }
 
