@@ -1,6 +1,6 @@
 CC = gcc
 RC = windres
-VERSION = $(shell cat version.txt 2>/dev/null || type version.txt 2>nul || echo 0.0.0)
+VERSION = $(strip $(file < version.txt))
 CFLAGS = -std=c99 -O2 -Wall -Wextra -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN -DTASKPIN_VERSION=\"$(VERSION)\"
 CFLAGS_LUA = -O2 -DLUA_COMPAT_5_3 -DWIN32_LEAN_AND_MEAN
 LDFLAGS = -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32
