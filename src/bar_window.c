@@ -213,11 +213,6 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER:
         if (!bar) break;
         if (wp == IDT_REFRESH) start_fetch(bar);
-        if (wp == IDT_BORDER) {
-            KillTimer(hwnd, IDT_BORDER);
-            bar->show_border = FALSE;
-            InvalidateRect(hwnd, NULL, TRUE);
-        }
         if (wp == IDT_SCROLL && g_cfg.scroll_enabled) {
             RECT rc;
             GetClientRect(hwnd, &rc);
@@ -289,6 +284,22 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    case WM_MOUSEMOVE:
+        if (bar && !bar->show_border) {
+            TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
+            TrackMouseEvent(&tme);
+            bar->show_border = TRUE;
+            InvalidateRect(hwnd, NULL, TRUE);
+        }
+        return 0;
+
+    case WM_MOUSELEAVE:
+        if (bar && bar->show_border) {
+            bar->show_border = FALSE;
+            InvalidateRect(hwnd, NULL, TRUE);
+        }
+        return 0;
+
     case WM_LBUTTONUP:
         if (bar && bar->script_result.clickable && bar->script_result.click_url[0]) {
             ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
@@ -304,9 +315,6 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         int idx = bar->item_index;
         BOOL shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-
-        bar->show_border = TRUE;
-        SetTimer(hwnd, IDT_BORDER, 800, NULL);
 
         if (shift) {
             /* Shift+wheel: adjust X position within taskbar */
