@@ -55,19 +55,7 @@ static int l_json_decode(lua_State *ls) {
 
 /* ─── built-in http.get / http.post for Lua ─── */
 
-#include <winhttp.h>
-
-static HINTERNET g_http_session = NULL;
-
-static void http_ensure_session(void) {
-    if (!g_http_session) {
-        g_http_session = WinHttpOpen(L"TaskPin/1.0",
-            WINHTTP_ACCESS_TYPE_NO_PROXY,
-            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-        if (g_http_session)
-            WinHttpSetTimeouts(g_http_session, 8000, 8000, 8000, 8000);
-    }
-}
+#include "httputil.h"
 
 static int http_request(lua_State *ls, const WCHAR *method) {
     const char *url_str = luaL_checkstring(ls, 1);
@@ -81,70 +69,26 @@ static int http_request(lua_State *ls, const WCHAR *method) {
     WCHAR wurl[2048];
     MultiByteToWideChar(CP_UTF8, 0, url_str, -1, wurl, 2048);
 
-    http_ensure_session();
-    if (!g_http_session) { lua_pushnil(ls); return 1; }
-
-    /* Parse URL */
-    WCHAR host[256] = {0}, path[1024] = {0};
-    URL_COMPONENTS uc = {0};
-    uc.dwStructSize = sizeof(uc);
-    uc.lpszHostName = host; uc.dwHostNameLength = 256;
-    uc.lpszUrlPath = path; uc.dwUrlPathLength = 1024;
-    if (!WinHttpCrackUrl(wurl, 0, 0, &uc)) { lua_pushnil(ls); return 1; }
-
-    HINTERNET hConn = WinHttpConnect(g_http_session, host, uc.nPort, 0);
-    if (!hConn) { lua_pushnil(ls); return 1; }
-
-    DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET hReq = WinHttpOpenRequest(hConn, method, path,
-        NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hReq) { WinHttpCloseHandle(hConn); lua_pushnil(ls); return 1; }
-
-    /* Send */
-    DWORD body_len = body ? (DWORD)strlen(body) : 0;
     WCHAR wheaders[2048] = {0};
-    if (body) lstrcpyW(wheaders, L"Content-Type: application/x-www-form-urlencoded\r\n");
     if (extra_headers) {
-        WCHAR weh[1024];
-        MultiByteToWideChar(CP_UTF8, 0, extra_headers, -1, weh, 1024);
-        lstrcatW(wheaders, weh);
-        if (weh[lstrlenW(weh)-1] != L'\n') lstrcatW(wheaders, L"\r\n");
-    }
-    WCHAR *hdr_ptr = wheaders[0] ? wheaders : WINHTTP_NO_ADDITIONAL_HEADERS;
-    DWORD hdr_len = wheaders[0] ? (DWORD)-1 : 0;
-    if (!WinHttpSendRequest(hReq, hdr_ptr, hdr_len,
-            (LPVOID)body, body_len, body_len, 0)) {
-        WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn);
-        lua_pushnil(ls); return 1;
-    }
-    if (!WinHttpReceiveResponse(hReq, NULL)) {
-        WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn);
-        lua_pushnil(ls); return 1;
+        MultiByteToWideChar(CP_UTF8, 0, extra_headers, -1, wheaders, 2048);
     }
 
-    /* Read response (dynamic buffer, up to 256KB) */
-    #define HTTP_BUF_SIZE (256 * 1024)
-    char *buf = (char *)calloc(1, HTTP_BUF_SIZE);
-    if (!buf) { WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn); lua_pushnil(ls); return 1; }
-    DWORD total = 0, avail, rd;
-    while (WinHttpQueryDataAvailable(hReq, &avail) && avail > 0) {
-        if (total + avail >= HTTP_BUF_SIZE - 1) avail = HTTP_BUF_SIZE - 1 - total;
-        WinHttpReadData(hReq, buf + total, avail, &rd);
-        total += rd;
-        if (total >= HTTP_BUF_SIZE - 1) break;
+    char *resp = http_request_sync(wurl, method, body,
+        wheaders[0] ? wheaders : NULL, NULL, 0);
+    if (resp) {
+        lua_pushstring(ls, resp);
+        free(resp);
+    } else {
+        lua_pushnil(ls);
     }
-    buf[total] = '\0';
-
-    WinHttpCloseHandle(hReq);
-    WinHttpCloseHandle(hConn);
-
-    lua_pushstring(ls, buf);
-    free(buf);
     return 1;
 }
 
 static int l_http_get(lua_State *ls) { return http_request(ls, L"GET"); }
 static int l_http_post(lua_State *ls) { return http_request(ls, L"POST"); }
+static int l_http_put(lua_State *ls) { return http_request(ls, L"PUT"); }
+static int l_http_delete(lua_State *ls) { return http_request(ls, L"DELETE"); }
 
 /* ─── init / shutdown ─── */
 
@@ -165,12 +109,15 @@ void script_init(void) {
     lua_setfield(L, -2, "get");
     lua_pushcfunction(L, l_http_post);
     lua_setfield(L, -2, "post");
+    lua_pushcfunction(L, l_http_put);
+    lua_setfield(L, -2, "put");
+    lua_pushcfunction(L, l_http_delete);
+    lua_setfield(L, -2, "delete");
     lua_setglobal(L, "http");
 }
 
 void script_shutdown(void) {
     if (L) { lua_close(L); L = NULL; }
-    if (g_http_session) { WinHttpCloseHandle(g_http_session); g_http_session = NULL; }
 }
 
 /* ─── execute template code ─── */

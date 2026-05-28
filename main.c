@@ -3,6 +3,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <winhttp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "fetcher.h"
 #include "json.h"
 #include "scripting.h"
+#include "update.h"
 
 #define IDT_REFRESH        1
 #define IDT_SCROLL         2
@@ -572,6 +574,11 @@ static LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             WS_CHILD | WS_VISIBLE, 170, 268, 90, 28, hwnd, (HMENU)IDB_SELECT, g_hinst, NULL);
         CreateWindowExW(0, L"BUTTON", L"Settings",
             WS_CHILD | WS_VISIBLE, 270, 268, 80, 28, hwnd, (HMENU)IDB_SETTINGS, g_hinst, NULL);
+
+        /* Version label */
+        CreateWindowExW(0, L"STATIC", L"v" TASKPIN_VERSION,
+            WS_CHILD | WS_VISIBLE | SS_RIGHT,
+            520, 274, 100, 18, hwnd, NULL, g_hinst, NULL);
 
         listview_populate();
         return 0;
@@ -1307,6 +1314,10 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
         interval = g_cfg.items[g_cfg.selected].interval_ms;
     SetTimer(g_bar_hwnd, IDT_REFRESH, interval, NULL);
     start_fetch(g_bar_hwnd);
+
+    /* Background update check */
+    HANDLE hUpd = CreateThread(NULL, 0, check_update_thread, NULL, 0, NULL);
+    if (hUpd) CloseHandle(hUpd);
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
