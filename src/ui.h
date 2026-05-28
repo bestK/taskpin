@@ -26,6 +26,7 @@
 /* Menu IDs */
 #define IDM_SHOW    3001
 #define IDM_EXIT    3002
+#define IDM_UNPIN   3003
 
 /* Main window control IDs */
 #define IDB_ADD     4001

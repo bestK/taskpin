@@ -255,6 +255,8 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt;
         GetCursorPos(&pt);
         HMENU hMenu = CreatePopupMenu();
+        if (bar && bar->item_index >= 0)
+            AppendMenuW(hMenu, MF_STRING, IDM_UNPIN, L"Unpin");
         AppendMenuW(hMenu, MF_STRING, IDM_SHOW, L"Manage Items...");
         AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
         AppendMenuW(hMenu, MF_STRING, IDM_EXIT, L"Exit");
@@ -268,6 +270,15 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         switch (LOWORD(wp)) {
         case IDM_SHOW: show_main_window(); break;
         case IDM_EXIT: bars_destroy_all(); PostQuitMessage(0); break;
+        case IDM_UNPIN:
+            if (bar && bar->item_index >= 0 && bar->item_index < g_cfg.count) {
+                g_cfg.items[bar->item_index].pinned = FALSE;
+                config_save(&g_cfg);
+                bars_destroy_all();
+                bars_create_all();
+                listview_populate();
+            }
+            break;
         }
         return 0;
 

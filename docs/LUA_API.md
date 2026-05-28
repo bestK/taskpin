@@ -101,6 +101,95 @@ local resp = http.post(
 
 ---
 
+## sys.cpu()
+
+返回当前 CPU 使用率（0-100 整数）。首次调用返回 0（需要两次采样计算差值）。
+
+```lua
+local cpu = sys.cpu()  -- 45
+```
+
+## sys.memory()
+
+返回内存使用信息表。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| total_mb | number | 物理内存总量 (MB) |
+| used_mb | number | 已使用内存 (MB) |
+| percent | number | 使用百分比 (0-100) |
+
+```lua
+local mem = sys.memory()
+-- mem.total_mb = 16384, mem.used_mb = 8192, mem.percent = 50
+```
+
+## sys.disk(drive)
+
+返回磁盘使用信息表。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| drive | string | 盘符，如 `"C:"` (可选，默认 `"C:"`) |
+
+| 返回字段 | 类型 | 说明 |
+|----------|------|------|
+| total_gb | number | 总容量 (GB) |
+| free_gb | number | 可用空间 (GB) |
+| percent | number | 已用百分比 (0-100) |
+
+```lua
+local d = sys.disk("D:")
+-- d.total_gb = 500.0, d.free_gb = 120.5, d.percent = 75
+```
+
+## sys.battery()
+
+返回电池状态表。台式机无电池时 percent 为 -1。
+
+| 返回字段 | 类型 | 说明 |
+|----------|------|------|
+| percent | number | 电量百分比 (0-100)，无电池为 -1 |
+| charging | boolean | 是否正在充电 |
+| seconds_left | number | 剩余秒数，未知为 -1 |
+
+## sys.uptime()
+
+返回系统运行时间（秒）。
+
+```lua
+local up = sys.uptime()  -- 86400 (1天)
+```
+
+## sys.process_count()
+
+返回当前系统进程数。
+
+## sys.net()
+
+返回网络累计字节数表。
+
+| 返回字段 | 类型 | 说明 |
+|----------|------|------|
+| recv_bytes | number | 累计接收字节 |
+| send_bytes | number | 累计发送字节 |
+
+## sys.net_speed()
+
+返回实时网络速率（bytes/sec）。需要两次调用间隔才能计算差值。
+
+| 返回字段 | 类型 | 说明 |
+|----------|------|------|
+| download | number | 下载速率 (bytes/sec) |
+| upload | number | 上传速率 (bytes/sec) |
+
+```lua
+local net = sys.net_speed()
+-- net.download = 1048576 (1MB/s), net.upload = 51200 (50KB/s)
+```
+
+---
+
 ## 全局变量
 
 | 变量 | 说明 |
