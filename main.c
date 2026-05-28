@@ -575,10 +575,10 @@ static LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         CreateWindowExW(0, L"BUTTON", L"Settings",
             WS_CHILD | WS_VISIBLE, 270, 268, 80, 28, hwnd, (HMENU)IDB_SETTINGS, g_hinst, NULL);
 
-        /* Version label */
+        /* Version label (clickable → opens GitHub) */
         CreateWindowExW(0, L"STATIC", L"v" TASKPIN_VERSION,
-            WS_CHILD | WS_VISIBLE | SS_RIGHT,
-            520, 274, 100, 18, hwnd, NULL, g_hinst, NULL);
+            WS_CHILD | WS_VISIBLE | SS_RIGHT | SS_NOTIFY,
+            520, 274, 100, 18, hwnd, (HMENU)4099, g_hinst, NULL);
 
         listview_populate();
         return 0;
@@ -599,6 +599,9 @@ static LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         switch (LOWORD(wp)) {
         case IDB_ADD:
             show_edit_dialog(hwnd, -1);
+            break;
+        case 4099: /* Version label clicked */
+            ShellExecuteW(NULL, L"open", L"https://github.com/bestK/taskpin", NULL, NULL, SW_SHOWNORMAL);
             break;
         case IDB_SETTINGS:
             show_settings_dialog(hwnd);
