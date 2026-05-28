@@ -169,6 +169,9 @@ typedef struct {
     HWND hLuaPath;
     HWND hUrlLabel, hLuaLabel, hLoadBtn;
     HWND hHeaders, hHeadersLabel;
+    HWND hTypeLabel, hNameLabel;
+    HWND hIntLabel, hRespLabel, hTemplateLabel, hPreviewLabel, hClickUrlLabel;
+    HWND hBrowseBtn;
     /* Param fields for Lua scripts */
     HWND hParamLabel[CFG_MAX_PARAMS];
     HWND hParamEdit[CFG_MAX_PARAMS];
@@ -224,52 +227,143 @@ static void edit_load_params(const WCHAR *lua_path, const PinItem *existing) {
     }
 }
 
-static void edit_toggle_type(void) {
+static void edit_relayout(void) {
     if (!g_edit) return;
     int sel = (int)SendMessageW(g_edit->hType, CB_GETCURSEL, 0, 0);
     BOOL is_url = (sel == ITEM_TYPE_URL);
 
-    /* URL mode: show all URL controls, hide Lua path */
-    ShowWindow(g_edit->hUrlLabel, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hUrl, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hLoadBtn, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hHeaders, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hHeadersLabel, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hExpr, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hTree, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hPreview, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hClickCheck, is_url ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_edit->hClickUrl, is_url ? SW_SHOW : SW_HIDE);
+    RECT dlg_rc;
+    GetClientRect(g_edit->hDlg, &dlg_rc);
+    int cw = dlg_rc.right;
+    int margin = 10;
+    int w = cw - 2 * margin;
 
-    /* Lua mode: show lua path, hide URL controls */
-    ShowWindow(g_edit->hLuaLabel, is_url ? SW_HIDE : SW_SHOW);
-    ShowWindow(g_edit->hLuaPath, is_url ? SW_HIDE : SW_SHOW);
-    HWND hBrowse = GetDlgItem(g_edit->hDlg, 5052);
-    if (hBrowse) ShowWindow(hBrowse, is_url ? SW_HIDE : SW_SHOW);
+    /* --- Visibility --- */
+    int url_sw = is_url ? SW_SHOW : SW_HIDE;
+    int lua_sw = is_url ? SW_HIDE : SW_SHOW;
 
-    /* Hide/show all STATIC labels that belong to URL mode (by position) */
-    HWND child = GetWindow(g_edit->hDlg, GW_CHILD);
-    while (child) {
-        WCHAR cls[32];
-        GetClassNameW(child, cls, 32);
-        if (lstrcmpiW(cls, L"STATIC") == 0) {
-            /* Skip param labels — they are managed by edit_load_params */
-            BOOL is_param_label = FALSE;
-            for (int pi = 0; pi < CFG_MAX_PARAMS; pi++) {
-                if (child == g_edit->hParamLabel[pi]) { is_param_label = TRUE; break; }
-            }
-            if (!is_param_label) {
-                RECT rc;
-                GetWindowRect(child, &rc);
-                POINT pt = { rc.left, rc.top };
-                ScreenToClient(g_edit->hDlg, &pt);
-                if (pt.y > 95) {
-                    ShowWindow(child, is_url ? SW_SHOW : SW_HIDE);
-                }
-            }
-        }
-        child = GetWindow(child, GW_HWNDNEXT);
+    ShowWindow(g_edit->hUrlLabel, url_sw);
+    ShowWindow(g_edit->hUrl, url_sw);
+    ShowWindow(g_edit->hLoadBtn, url_sw);
+    ShowWindow(g_edit->hHeaders, url_sw);
+    ShowWindow(g_edit->hHeadersLabel, url_sw);
+    ShowWindow(g_edit->hExpr, url_sw);
+    ShowWindow(g_edit->hTree, url_sw);
+    ShowWindow(g_edit->hPreview, url_sw);
+    ShowWindow(g_edit->hPreviewLabel, url_sw);
+    ShowWindow(g_edit->hClickCheck, url_sw);
+    ShowWindow(g_edit->hClickUrl, url_sw);
+    ShowWindow(g_edit->hClickUrlLabel, url_sw);
+    ShowWindow(g_edit->hRespLabel, url_sw);
+    ShowWindow(g_edit->hTemplateLabel, url_sw);
+
+    ShowWindow(g_edit->hLuaLabel, lua_sw);
+    ShowWindow(g_edit->hLuaPath, lua_sw);
+    ShowWindow(g_edit->hBrowseBtn, lua_sw);
+
+    /* Params: visible only in Lua mode and only declared ones */
+    for (int i = 0; i < CFG_MAX_PARAMS; i++) {
+        int ps = (!is_url && i < g_edit->param_decl_count) ? SW_SHOW : SW_HIDE;
+        ShowWindow(g_edit->hParamLabel[i], ps);
+        ShowWindow(g_edit->hParamEdit[i], ps);
     }
+
+    /* --- Layout: top-down Y accumulation --- */
+    int y = margin;
+
+    /* Row: Type + Name (always visible) */
+    MoveWindow(g_edit->hTypeLabel, margin, y + 2, 40, 18, TRUE);
+    MoveWindow(g_edit->hType, margin + 45, y, 120, 200, TRUE);
+    MoveWindow(g_edit->hNameLabel, 190, y + 2, 40, 18, TRUE);
+    MoveWindow(g_edit->hName, 235, y, cw - 235 - margin, 22, TRUE);
+    y += 30;
+
+    if (is_url) {
+        /* URL row */
+        MoveWindow(g_edit->hUrlLabel, margin, y + 2, 50, 18, TRUE);
+        MoveWindow(g_edit->hUrl, 65, y, w - 120, 22, TRUE);
+        MoveWindow(g_edit->hLoadBtn, cw - margin - 60, y, 60, 22, TRUE);
+        y += 28;
+
+        /* Headers row */
+        MoveWindow(g_edit->hHeadersLabel, margin, y + 2, 55, 18, TRUE);
+        MoveWindow(g_edit->hHeaders, 65, y, w - 55, 48, TRUE);
+        y += 56;
+
+        /* Interval row */
+        MoveWindow(g_edit->hIntLabel, margin, y + 2, 55, 18, TRUE);
+        MoveWindow(g_edit->hInt, 65, y, 80, 22, TRUE);
+        y += 30;
+
+        /* Response structure label */
+        MoveWindow(g_edit->hRespLabel, margin, y, 350, 18, TRUE);
+        y += 20;
+
+        /* TreeView: fill available vertical space, reserve room for controls below */
+        int bottom_reserve = 230;
+        int tree_h = dlg_rc.bottom - y - bottom_reserve;
+        if (tree_h < 80) tree_h = 80;
+        MoveWindow(g_edit->hTree, margin, y, w, tree_h, TRUE);
+        y += tree_h + 8;
+
+        /* Template label + expr */
+        MoveWindow(g_edit->hTemplateLabel, margin, y, 60, 18, TRUE);
+        y += 20;
+        MoveWindow(g_edit->hExpr, margin, y, w, 60, TRUE);
+        y += 68;
+
+        /* Preview row */
+        MoveWindow(g_edit->hPreviewLabel, margin, y + 2, 55, 18, TRUE);
+        MoveWindow(g_edit->hPreview, 65, y, w - 55, 22, TRUE);
+        y += 30;
+
+        /* Click checkbox */
+        MoveWindow(g_edit->hClickCheck, margin, y, 200, 20, TRUE);
+        y += 24;
+
+        /* Click URL row */
+        MoveWindow(g_edit->hClickUrlLabel, margin, y + 2, 70, 18, TRUE);
+        MoveWindow(g_edit->hClickUrl, 80, y, w - 70, 22, TRUE);
+        y += 30;
+    } else {
+        /* Lua File row */
+        MoveWindow(g_edit->hLuaLabel, margin, y + 2, 55, 18, TRUE);
+        MoveWindow(g_edit->hLuaPath, 70, y, w - 100, 22, TRUE);
+        MoveWindow(g_edit->hBrowseBtn, cw - margin - 30, y, 30, 22, TRUE);
+        y += 30;
+
+        /* Interval row */
+        MoveWindow(g_edit->hIntLabel, margin, y + 2, 55, 18, TRUE);
+        MoveWindow(g_edit->hInt, 70, y, 80, 22, TRUE);
+        y += 30;
+
+        /* Param rows */
+        for (int i = 0; i < g_edit->param_decl_count; i++) {
+            MoveWindow(g_edit->hParamLabel[i], margin, y + 2, 100, 18, TRUE);
+            MoveWindow(g_edit->hParamEdit[i], 115, y, w - 105, 22, TRUE);
+            y += 28;
+        }
+        y += 10;
+    }
+
+    /* OK / Cancel buttons */
+    HWND hOk = GetDlgItem(g_edit->hDlg, IDB_OK);
+    HWND hCancel = GetDlgItem(g_edit->hDlg, IDB_CANCEL);
+    if (hOk) MoveWindow(hOk, cw / 2 - 85, y, 80, 28, TRUE);
+    if (hCancel) MoveWindow(hCancel, cw / 2 + 5, y, 80, 28, TRUE);
+    y += 40;
+
+    /* Resize dialog height to fit content */
+    RECT wr; GetWindowRect(g_edit->hDlg, &wr);
+    int frame_h = (wr.bottom - wr.top) - dlg_rc.bottom;
+    int target_h = y + frame_h;
+    if (is_url && target_h < 760) target_h = 760;
+    SetWindowPos(g_edit->hDlg, NULL, 0, 0, wr.right - wr.left, target_h,
+        SWP_NOMOVE | SWP_NOZORDER);
+
+    /* Interval label always visible */
+    ShowWindow(g_edit->hIntLabel, SW_SHOW);
+    ShowWindow(g_edit->hInt, SW_SHOW);
 
     InvalidateRect(g_edit->hDlg, NULL, TRUE);
 }
@@ -281,7 +375,7 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         WORD id = LOWORD(wp);
         WORD code = HIWORD(wp);
         if (id == 5050 && code == CBN_SELCHANGE) {
-            edit_toggle_type();
+            edit_relayout();
             return 0;
         }
         if (id == 5052 && code == BN_CLICKED) {
@@ -337,23 +431,7 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         break;
     }
     case WM_SIZE: {
-        if (!g_edit) break;
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        int cw = rc.right, ch = rc.bottom;
-        int margin = 10, ctrl_w = cw - 2 * margin;
-        /* Resize TreeView to fill available space */
-        if (g_edit->hTree)
-            MoveWindow(g_edit->hTree, margin, 130, ctrl_w, ch - 340, TRUE);
-        /* Template below tree */
-        int tree_bottom = ch - 340 + 130;
-        if (g_edit->hExpr)
-            MoveWindow(g_edit->hExpr, margin, tree_bottom + 28, ctrl_w, 60, TRUE);
-        /* Preview below template */
-        int expr_bottom = tree_bottom + 28 + 68;
-        if (g_edit->hPreview)
-            MoveWindow(g_edit->hPreview, 70, expr_bottom, ctrl_w - 60, 22, TRUE);
-        InvalidateRect(hwnd, NULL, TRUE);
+        edit_relayout();
         return 0;
     }
     case WM_CLOSE:
@@ -901,7 +979,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     if (!st->hDlg) { free(st); g_edit = NULL; return; }
 
     int y = 10;
-    CreateWindowExW(0, L"STATIC", L"Type:", WS_CHILD | WS_VISIBLE,
+    st->hTypeLabel = CreateWindowExW(0, L"STATIC", L"Type:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 40, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hType = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
@@ -911,7 +989,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     SendMessageW(st->hType, CB_SETCURSEL, 0, 0);
     SendMessageW(st->hType, WM_SETFONT, (WPARAM)g_font, TRUE);
 
-    CreateWindowExW(0, L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
+    st->hNameLabel = CreateWindowExW(0, L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
         200, y + 2, 40, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -940,11 +1018,11 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         WS_CHILD | ES_AUTOHSCROLL,
         75, y, 470, 22, st->hDlg, (HMENU)5051, g_hinst, NULL);
     SendMessageW(st->hLuaPath, WM_SETFONT, (WPARAM)g_font, TRUE);
-    CreateWindowExW(0, L"BUTTON", L"...",
+    st->hBrowseBtn = CreateWindowExW(0, L"BUTTON", L"...",
         WS_CHILD, 550, y, 30, 22, st->hDlg, (HMENU)5052, g_hinst, NULL);
 
     y += 56;
-    CreateWindowExW(0, L"STATIC", L"Interval:", WS_CHILD | WS_VISIBLE,
+    st->hIntLabel = CreateWindowExW(0, L"STATIC", L"Interval:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hInt = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"5000",
         WS_CHILD | WS_VISIBLE | ES_NUMBER,
@@ -963,7 +1041,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     st->param_decl_count = 0;
 
     y += 30;
-    CreateWindowExW(0, L"STATIC", L"Response structure (click to insert):",
+    st->hRespLabel = CreateWindowExW(0, L"STATIC", L"Response structure (click to insert):",
         WS_CHILD | WS_VISIBLE, 10, y, 350, 18, st->hDlg, NULL, g_hinst, NULL);
 
     y += 20;
@@ -972,7 +1050,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         10, y, 600, 180, st->hDlg, (HMENU)IDC_TREE, g_hinst, NULL);
 
     y += 188;
-    CreateWindowExW(0, L"STATIC", L"Template:", WS_CHILD | WS_VISIBLE,
+    st->hTemplateLabel = CreateWindowExW(0, L"STATIC", L"Template:", WS_CHILD | WS_VISIBLE,
         10, y, 60, 18, st->hDlg, NULL, g_hinst, NULL);
 
     y += 20;
@@ -981,7 +1059,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         10, y, 600, 60, st->hDlg, (HMENU)IDE_EXPR, g_hinst, NULL);
 
     y += 68;
-    CreateWindowExW(0, L"STATIC", L"Preview:", WS_CHILD | WS_VISIBLE,
+    st->hPreviewLabel = CreateWindowExW(0, L"STATIC", L"Preview:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hPreview = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY,
@@ -993,7 +1071,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
         10, y, 200, 20, st->hDlg, NULL, g_hinst, NULL);
 
     y += 24;
-    CreateWindowExW(0, L"STATIC", L"Click URL:", WS_CHILD | WS_VISIBLE,
+    st->hClickUrlLabel = CreateWindowExW(0, L"STATIC", L"Click URL:", WS_CHILD | WS_VISIBLE,
         10, y + 2, 70, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hClickUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -1039,7 +1117,7 @@ static void show_edit_dialog(HWND parent, int item_idx) {
     }
 
     /* Set initial visibility based on type */
-    edit_toggle_type();
+    edit_relayout();
 
     EnableWindow(parent, FALSE);
 
