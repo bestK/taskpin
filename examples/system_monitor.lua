@@ -2,9 +2,9 @@
 -- Uses sys.* built-in API + font() rich text
 -- Recommended bar_width: 250+
 
-local cpu = sys.cpu()
-local mem = sys.memory()
-local net = sys.net_speed()
+local cpu = sys.cpu() or 0
+local mem = sys.memory() or {}
+local net = sys.net_speed() or {}
 
 local function fmt_speed(bytes)
     bytes = bytes or 0
@@ -13,8 +13,10 @@ local function fmt_speed(bytes)
     return string.format("%dB/s", bytes)
 end
 
+local mem_pct = mem.percent or 0
+
 return font("↑: ", "#888", 9) .. font(fmt_speed(net.upload), "#81C784", 9)
     .. font("CPU: " .. cpu .. "%", nil, 9, "right")
     .. font("\n")
     .. font("↓: ", "#888", 9) .. font(fmt_speed(net.download), "#4FC3F7", 9)
-    .. font("内存: " .. mem.percent .. "%", nil, 9, "right")
+    .. font("内存: " .. mem_pct .. "%", nil, 9, "right")
