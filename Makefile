@@ -8,14 +8,14 @@ LUA_DIR = lib/lua
 
 CFLAGS = -std=c99 -O2 -Wall -Wextra -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN -DTASKPIN_VERSION=\"$(VERSION)\" -I$(LIB_DIR) -I$(SRC_DIR)
 CFLAGS_LUA = -O2 -DLUA_COMPAT_5_3 -DWIN32_LEAN_AND_MEAN
-LDFLAGS = -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32
+LDFLAGS = -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32 -liphlpapi
 TARGET = taskpin.exe
 
 SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/expression.c $(SRC_DIR)/edit_dialog.c \
        $(SRC_DIR)/settings_dialog.c $(SRC_DIR)/main_window.c $(SRC_DIR)/bar_window.c
 LIB_SRCS = $(LIB_DIR)/appbar.c $(LIB_DIR)/fetcher.c $(LIB_DIR)/config.c \
            $(LIB_DIR)/json.c $(LIB_DIR)/scripting.c $(LIB_DIR)/base64.c \
-           $(LIB_DIR)/update.c $(LIB_DIR)/httputil.c
+           $(LIB_DIR)/update.c $(LIB_DIR)/httputil.c $(LIB_DIR)/sysinfo.c
 LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)
 
 OBJS = $(SRCS:.c=.o) $(LIB_SRCS:.c=.o) taskpin_res.o
