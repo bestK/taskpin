@@ -10,7 +10,7 @@ local function fmt_speed(bytes)
     bytes = bytes or 0
     if bytes > 1048576 then return string.format("%.1fM/s", bytes / 1048576) end
     if bytes > 1024 then return string.format("%.1fK/s", bytes / 1024) end
-    return string.format("%dB/s", bytes)
+    return string.format("%dB/s", math.floor(bytes))
 end
 
 local mem_pct = mem.percent or 0
