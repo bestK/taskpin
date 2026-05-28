@@ -6,12 +6,33 @@
 #include <string.h>
 #include <stdlib.h>
 
+static BOOL g_china = FALSE;
+
 static BOOL is_in_china(void) {
     char *resp = http_get_sync(L"https://api.ip.sb/geoip", NULL);
     if (!resp) return FALSE;
     BOOL cn = (strstr(resp, "\"country_code\":\"CN\"") != NULL);
     free(resp);
     return cn;
+}
+
+/* Wrap GitHub URL with gh-proxy if in China */
+static void gh_url(const WCHAR *path, WCHAR *out, int out_size) {
+    if (g_china) {
+        wsprintfW(out, L"https://gh-proxy.com/https://github.com/%s", path);
+    } else {
+        wsprintfW(out, L"https://github.com/%s", path);
+    }
+}
+
+static char *gh_api_get(const WCHAR *api_path) {
+    WCHAR url[512];
+    if (g_china) {
+        wsprintfW(url, L"https://gh-proxy.com/https://api.github.com%s", api_path);
+    } else {
+        wsprintfW(url, L"https://api.github.com%s", api_path);
+    }
+    return http_get_sync(url, NULL);
 }
 
 static BOOL download_file(const WCHAR *url, const WCHAR *dest) {
@@ -28,11 +49,10 @@ static BOOL download_file(const WCHAR *url, const WCHAR *dest) {
     return (written == (DWORD)len);
 }
 
-static void do_silent_update(BOOL china) {
+static void do_silent_update(void) {
     /* Build download URL */
-    const WCHAR *base = china
-        ? L"https://gh-proxy.com/https://github.com/bestK/taskpin/releases/latest/download/taskpin.exe"
-        : L"https://github.com/bestK/taskpin/releases/latest/download/taskpin.exe";
+    WCHAR base[512];
+    gh_url(L"bestK/taskpin/releases/latest/download/taskpin.exe", base, 512);
 
     /* Download to temp */
     WCHAR tmp_dir[MAX_PATH], tmp_exe[MAX_PATH], tmp_bat[MAX_PATH];
@@ -43,10 +63,9 @@ static void do_silent_update(BOOL china) {
     if (!download_file(base, tmp_exe)) {
         MessageBoxW(NULL, L"Download failed. Opening browser for manual download.",
             L"TaskPin Update", MB_OK | MB_ICONWARNING);
-        ShellExecuteW(NULL, L"open",
-            china ? L"https://gh-proxy.com/https://github.com/bestK/taskpin/releases/latest/download/taskpin-x64.zip"
-                  : L"https://github.com/bestK/taskpin/releases/latest/download/taskpin-x64.zip",
-            NULL, NULL, SW_SHOWNORMAL);
+        WCHAR zip_url[512];
+        gh_url(L"bestK/taskpin/releases/latest/download/taskpin-x64.zip", zip_url, 512);
+        ShellExecuteW(NULL, L"open", zip_url, NULL, NULL, SW_SHOWNORMAL);
         return;
     }
 
@@ -98,44 +117,32 @@ DWORD WINAPI check_update_thread(LPVOID param) {
     (void)param;
     Sleep(3000);
 
-    char *resp = http_get_sync(L"https://api.github.com/repos/bestK/taskpin/releases/latest", NULL);
+    /* Detect region first — affects all subsequent GitHub requests */
+    g_china = is_in_china();
+
+    /* Fetch version.txt via gh-proxy if in China */
+    WCHAR ver_url[512];
+    gh_url(L"bestK/taskpin/raw/master/version.txt", ver_url, 512);
+    char *resp = http_get_sync(ver_url, NULL);
     if (!resp) return 0;
 
-    JsonNode *root = json_parse(resp);
-    if (!root) { free(resp); return 0; }
-
-    JsonNode *tag_node = json_path_query(root, "$.tag_name");
-    if (!tag_node || tag_node->type != JSON_STRING || !tag_node->str_val) {
-        json_free(root); free(resp); return 0;
-    }
-
-    const char *tag = tag_node->str_val;
-    if (*tag == 'v') tag++;
+    /* Trim whitespace */
+    char *tag = resp;
+    while (*tag == ' ' || *tag == '\r' || *tag == '\n') tag++;
+    char *end = tag + strlen(tag) - 1;
+    while (end > tag && (*end == ' ' || *end == '\r' || *end == '\n')) *end-- = '\0';
 
     if (strcmp(tag, TASKPIN_VERSION) > 0) {
-        BOOL china = is_in_china();
-
-        /* Get release description */
-        char body_text[1024] = {0};
-        JsonNode *body_node = json_path_query(root, "$.body");
-        if (body_node && body_node->type == JSON_STRING && body_node->str_val) {
-            strncpy(body_text, body_node->str_val, 800);
-        }
-
-        WCHAR msg[2048];
-        WCHAR wtag[64], wbody[1024];
+        WCHAR msg[512];
+        WCHAR wtag[64];
         MultiByteToWideChar(CP_UTF8, 0, tag, -1, wtag, 64);
-        MultiByteToWideChar(CP_UTF8, 0, body_text, -1, wbody, 1024);
-        wsprintfW(msg, L"New version v%s available\n\n%s\n\nUpdate now?", wtag, wbody);
+        wsprintfW(msg, L"New version v%s available (current: v" L"" TASKPIN_VERSION L")\n\nUpdate now?", wtag);
 
         if (MessageBoxW(NULL, msg, L"TaskPin Update", MB_YESNO | MB_ICONINFORMATION) == IDYES) {
-            do_silent_update(china);
-        } else {
-            /* User declined — no action */
+            do_silent_update();
         }
     }
 
-    json_free(root);
     free(resp);
     return 0;
 }

@@ -19,9 +19,20 @@ char *http_request_sync(const WCHAR *url, const WCHAR *method,
     uc.lpszUrlPath = path; uc.dwUrlPathLength = 2048;
     if (!WinHttpCrackUrl(url, 0, 0, &uc)) return NULL;
 
-    HINTERNET hSession = WinHttpOpen(L"TaskPin/1.0",
-        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    /* Use named proxy from IE/system settings */
+    WINHTTP_CURRENT_USER_IE_PROXY_CONFIG ie_cfg = {0};
+    HINTERNET hSession;
+    if (WinHttpGetIEProxyConfigForCurrentUser(&ie_cfg) && ie_cfg.lpszProxy) {
+        hSession = WinHttpOpen(L"TaskPin/1.0",
+            WINHTTP_ACCESS_TYPE_NAMED_PROXY, ie_cfg.lpszProxy, ie_cfg.lpszProxyBypass, 0);
+        if (ie_cfg.lpszProxy) GlobalFree(ie_cfg.lpszProxy);
+        if (ie_cfg.lpszProxyBypass) GlobalFree(ie_cfg.lpszProxyBypass);
+        if (ie_cfg.lpszAutoConfigUrl) GlobalFree(ie_cfg.lpszAutoConfigUrl);
+    } else {
+        hSession = WinHttpOpen(L"TaskPin/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    }
     if (!hSession) return NULL;
     WinHttpSetTimeouts(hSession, 8000, 8000, 8000, 8000);
 
