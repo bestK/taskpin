@@ -92,7 +92,6 @@ else
         rows = rows,
     }
 end
-end
 
 local info = dialog({
     title = "禅道任务",

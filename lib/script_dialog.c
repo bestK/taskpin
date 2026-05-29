@@ -272,7 +272,7 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
                 int text_cols = item->col_count;
                 int btn_w_px = 0;
-                if (item->row_urls[r][0]) {
+                if (item->row_urls[r][0] || item->row_cmds[r][0]) {
                     btn_w_px = 50;
                     text_cols = item->col_count;
                 }
@@ -284,12 +284,12 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                 }
 
                 /* Row action button */
-                if (item->row_urls[r][0] && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
+                if ((item->row_urls[r][0] || item->row_cmds[r][0]) && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
                     int btn_id = DLG_TBL_BTN_BASE_ID + state->tbl_button_count;
                     int bx = client_w - PADDING_X - btn_w_px;
                     HWND hbtn = state->tbl_buttons[state->tbl_button_count];
                     if (!hbtn) {
-                        hbtn = CreateWindowExW(0, L"BUTTON", L"\x2192",
+                        hbtn = CreateWindowExW(WS_EX_TRANSPARENT, L"BUTTON", L"Open",
                             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                             bx, y, btn_w_px, row_h,
                             hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
@@ -432,9 +432,10 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         if (!state || dis->CtlType != ODT_BUTTON) break;
         int id = (int)dis->CtlID;
 
-        /* Table row buttons */
+        /* Table row buttons - transparent bg matching row */
         if (id >= DLG_TBL_BTN_BASE_ID && id < DLG_TBL_BTN_BASE_ID + DLG_MAX_TBL_BUTTONS) {
-            COLORREF bg = (dis->itemState & ODS_SELECTED) ? RGB(80, 80, 80) : RGB(55, 55, 55);
+            int row_idx = id - DLG_TBL_BTN_BASE_ID;
+            COLORREF bg = (row_idx % 2 == 0) ? TABLE_ROW_EVEN : TABLE_ROW_ODD;
             HBRUSH hbr = CreateSolidBrush(bg);
             FillRect(dis->hDC, &dis->rcItem, hbr);
             DeleteObject(hbr);
@@ -442,7 +443,7 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             SetTextColor(dis->hDC, RGB(100, 180, 255));
             HFONT hf = create_dialog_font(9, FALSE);
             HFONT old = (HFONT)SelectObject(dis->hDC, hf);
-            DrawTextW(dis->hDC, L"\x2192 Open", -1, &dis->rcItem, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+            DrawTextW(dis->hDC, L"Open", -1, &dis->rcItem, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
             SelectObject(dis->hDC, old);
             DeleteObject(hf);
             return TRUE;
@@ -535,11 +536,24 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 if (state->spec.items[i].type != DI_TABLE) continue;
                 DialogItem *tbl = &state->spec.items[i];
                 for (int r = 0; r < tbl->row_count; r++) {
-                    if (tbl->row_urls[r][0]) {
+                    if (tbl->row_urls[r][0] || tbl->row_cmds[r][0]) {
                         if (tbl_count == tbl_idx) {
-                            WCHAR wurl[256];
-                            MultiByteToWideChar(CP_UTF8, 0, tbl->row_urls[r], -1, wurl, 256);
-                            ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
+                            if (tbl->row_urls[r][0]) {
+                                WCHAR wurl[256];
+                                MultiByteToWideChar(CP_UTF8, 0, tbl->row_urls[r], -1, wurl, 256);
+                                ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
+                            } else if (tbl->row_cmds[r][0]) {
+                                WCHAR wcmd[256];
+                                MultiByteToWideChar(CP_UTF8, 0, tbl->row_cmds[r], -1, wcmd, 256);
+                                STARTUPINFOW si = { .cb = sizeof(si) };
+                                PROCESS_INFORMATION pi = {0};
+                                WCHAR cmdline[320];
+                                wsprintfW(cmdline, L"cmd /c %s", wcmd);
+                                CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
+                                    CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+                                if (pi.hProcess) CloseHandle(pi.hProcess);
+                                if (pi.hThread) CloseHandle(pi.hThread);
+                            }
                             goto cmd_done;
                         }
                         tbl_count++;

@@ -52,6 +52,7 @@ typedef struct {
     WCHAR cells[DIALOG_MAX_ROWS][DIALOG_MAX_COLS][64];
     COLORREF row_colors[DIALOG_MAX_ROWS];
     char row_urls[DIALOG_MAX_ROWS][256];
+    char row_cmds[DIALOG_MAX_ROWS][256];
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int img_w, img_h;
