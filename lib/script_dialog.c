@@ -1,6 +1,7 @@
 #include "script_dialog.h"
 #include "scripting.h"
 #include "config.h"
+#include "image.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,6 +9,7 @@
 #define DIALOG_BG       RGB(30, 30, 30)
 #define DIALOG_FG       RGB(220, 220, 220)
 #define DIALOG_HR_COLOR RGB(60, 60, 60)
+#define IDT_DIALOG_ESC     11
 #define TABLE_ROW_EVEN  RGB(35, 35, 35)
 #define TABLE_ROW_ODD   RGB(40, 40, 40)
 #define TABLE_HDR_BG    RGB(45, 45, 45)
@@ -68,6 +70,8 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
         ? (WS_POPUP)
         : (WS_OVERLAPPEDWINDOW | WS_VSCROLL);
     DWORD exstyle = WS_EX_TOPMOST;
+    if (spec->borderless)
+        exstyle |= WS_EX_TOOLWINDOW;
     if (spec->clickthrough || spec->opacity < 255)
         exstyle |= WS_EX_LAYERED;
     RECT wr = {0, 0, w, h};
@@ -133,6 +137,11 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             DeleteObject(hf);
             break;
         }
+        case DI_IMG: {
+            int rh = item->img_h > 0 ? item->img_h : 64;
+            y += rh;
+            break;
+        }
         }
         y += 4; /* gap between items */
     }
@@ -164,8 +173,29 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             SetTextColor(hdc, clr);
             TEXTMETRICW tm;
             GetTextMetricsW(hdc, &tm);
-            TextOutW(hdc, PADDING_X, y, item->text, lstrlenW(item->text));
-            y += tm.tmHeight + 4;
+            int text_x = PADDING_X;
+            int line_h = tm.tmHeight;
+            /* Draw inline icon if present */
+            if (item->img_source[0]) {
+                int iw = item->img_w > 0 ? item->img_w : tm.tmHeight;
+                int ih = item->img_h > 0 ? item->img_h : tm.tmHeight;
+                int out_w = 0, out_h = 0;
+                HBITMAP hbmp = image_load(item->img_source, iw, ih, &out_w, &out_h);
+                if (hbmp) {
+                    HDC mem = CreateCompatibleDC(hdc);
+                    HBITMAP old_bmp = (HBITMAP)SelectObject(mem, hbmp);
+                    int dw = out_w > 0 ? out_w : iw;
+                    int dh = out_h > 0 ? out_h : ih;
+                    int iy = y + (tm.tmHeight - dh) / 2;
+                    StretchBlt(hdc, text_x, iy, dw, dh, mem, 0, 0, dw, dh, SRCCOPY);
+                    SelectObject(mem, old_bmp);
+                    DeleteDC(mem);
+                    text_x += dw + 4;
+                    if (dh > line_h) line_h = dh;
+                }
+            }
+            TextOutW(hdc, text_x, y, item->text, lstrlenW(item->text));
+            y += line_h + 4;
             SelectObject(hdc, old);
             DeleteObject(hf);
             break;
@@ -236,6 +266,24 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             DeleteObject(hf_norm);
             break;
         }
+        case DI_IMG: {
+            if (!item->img_source[0]) break;
+            int rw = item->img_w > 0 ? item->img_w : 64;
+            int rh = item->img_h > 0 ? item->img_h : 64;
+            int out_w = 0, out_h = 0;
+            HBITMAP hbmp = image_load(item->img_source, rw, rh, &out_w, &out_h);
+            if (hbmp) {
+                HDC mem = CreateCompatibleDC(hdc);
+                HBITMAP old_bmp = (HBITMAP)SelectObject(mem, hbmp);
+                int dw = out_w > 0 ? out_w : rw;
+                int dh = out_h > 0 ? out_h : rh;
+                StretchBlt(hdc, PADDING_X, y, dw, dh, mem, 0, 0, dw, dh, SRCCOPY);
+                SelectObject(mem, old_bmp);
+                DeleteDC(mem);
+                y += dh;
+            }
+            break;
+        }
         }
         y += 4;
     }
@@ -283,6 +331,9 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         if (state->spec.refresh > 0) {
             SetTimer(hwnd, IDT_DIALOG_REFRESH, state->spec.refresh * 1000, NULL);
         }
+        if (state->spec.borderless) {
+            SetTimer(hwnd, IDT_DIALOG_ESC, 100, NULL);
+        }
         return 0;
     }
 
@@ -298,6 +349,16 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     }
 
     case WM_TIMER:
+        if (wp == IDT_DIALOG_ESC && state && state->spec.borderless) {
+            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+                POINT pt; GetCursorPos(&pt);
+                RECT wr; GetWindowRect(hwnd, &wr);
+                if (PtInRect(&wr, pt)) {
+                    DestroyWindow(hwnd);
+                    return 0;
+                }
+            }
+        }
         if (wp == IDT_DIALOG_REFRESH && state) {
             refresh_dialog(hwnd, state);
         }
@@ -327,6 +388,18 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     case WM_MOUSEWHEEL: {
         if (!state) break;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
+        /* Shift+scroll = resize borderless dialog */
+        if (state->spec.borderless && (GetKeyState(VK_SHIFT) & 0x8000)) {
+            RECT wr; GetWindowRect(hwnd, &wr);
+            int w = wr.right - wr.left;
+            int h = wr.bottom - wr.top;
+            int step = delta > 0 ? 20 : -20;
+            w += step; h += step;
+            if (w < 80) w = 80;
+            if (h < 40) h = 40;
+            SetWindowPos(hwnd, NULL, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
+            return 0;
+        }
         state->scroll_y -= delta / 2;
         if (state->scroll_y < 0) state->scroll_y = 0;
         RECT rc; GetClientRect(hwnd, &rc);
@@ -351,8 +424,16 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         break;
     }
 
+    case WM_KEYDOWN:
+        if (state && state->spec.borderless && wp == VK_ESCAPE) {
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        break;
+
     case WM_DESTROY:
         KillTimer(hwnd, IDT_DIALOG_REFRESH);
+        KillTimer(hwnd, IDT_DIALOG_ESC);
         if (state) HeapFree(GetProcessHeap(), 0, state);
         s_dialog_hwnd = NULL;
         return 0;
