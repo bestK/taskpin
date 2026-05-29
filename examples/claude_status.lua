@@ -1,8 +1,19 @@
 -- claude_status.lua - Claude Code 状态指示器
 -- bar_width 推荐: 160+
 
-local claude_icon = "examples/claude.png"
-local claude_spinner = "examples/claude_spinner.gif"
+local github_base = "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/"
+
+-- 检测是否在中国，加 GitHub 代理前缀
+local function is_china()
+    local geo = http.get("https://api.ip.sb/geoip")
+    if not geo then return false end
+    local info = json.decode(geo)
+    return info and info.country_code == "CN"
+end
+
+local proxy = is_china() and "https://gh-proxy.com/" or ""
+local claude_icon = proxy .. github_base .. "claude.png"
+local claude_spinner = proxy .. github_base .. "claude_spinner.gif"
 
 -- 查找最新 session jsonl
 local function find_latest_session()
