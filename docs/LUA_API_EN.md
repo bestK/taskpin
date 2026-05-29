@@ -49,6 +49,77 @@ return font("CPU: 45%", "#0F0", 9) .. font("12:30", "#888", 8, "right")
 
 ---
 
+## icon(source, width, height, align)
+
+Creates an image span for embedding in the taskbar. Supports local file paths, URLs, data URIs (base64), and animated GIFs.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| source | string | Image source: relative/absolute path, URL, or `data:image/png;base64,...` |
+| width | number\|nil | Display width in px, default 16 |
+| height | number\|nil | Display height in px, default 16 |
+| align | string\|nil | Alignment: `"left"` (default), `"right"`, `"center"` |
+
+**Returns**: A span object. Use `..` to concatenate with other spans.
+
+```lua
+-- Local PNG
+return icon("examples/logo.png", 16, 16) .. font(" Hello", "#FFF", 9)
+
+-- Animated GIF (plays automatically with refresh interval)
+return icon("spinner.gif", 14, 14) .. font(" Loading", "#AAA", 8)
+
+-- Inline base64
+return icon("data:image/png;base64,iVBOR...", 16, 16)
+```
+
+---
+
+## dialog(spec)
+
+Creates a popup dialog shown on click. Used as the 3rd return value from a script.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| spec | table | Dialog configuration table |
+
+**spec fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| title | string | Window title |
+| width | number | Window width in px, default 400 |
+| height | number | Window height in px, default 300 |
+| refresh | number | Auto-refresh interval in seconds, 0 or omit to disable |
+| content | table | Array of content items (max 8) |
+
+**content item types**:
+
+| type | Fields | Description |
+|------|--------|-------------|
+| `"text"` | value, color, size, bold | Text line |
+| `"hr"` | — | Horizontal separator |
+| `"table"` | columns, rows | Table (max 6 columns × 24 rows) |
+
+```lua
+local info = dialog({
+    title = "Status",
+    width = 320, height = 200,
+    refresh = 5,
+    content = {
+        { type = "text", value = "Title", color = "#FF8800", size = 12, bold = true },
+        { type = "hr" },
+        { type = "text", value = "Content line", color = "#CCCCCC", size = 10 },
+        { type = "table", columns = {"Name", "Value"},
+          rows = {{"CPU", "45%"}, {"MEM", "72%"}} },
+    }
+})
+
+return font("Status", "#0F0", 9), true, info
+```
+
+---
+
 ## json.decode(str)
 
 Parses a JSON string into a Lua table.
@@ -177,6 +248,54 @@ Returns real-time network speed (bytes/sec). Requires two calls with interval to
 ```lua
 local net = sys.net_speed()
 -- net.download = 1048576 (1MB/s), net.upload = 51200 (50KB/s)
+```
+
+## sys.net_processes()
+
+Returns a list of processes with active TCP connections (ESTABLISHED only), including real-time I/O rates. Requires two calls with interval to compute speed.
+
+**Returns**: Array table, each entry contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| pid | number | Process ID |
+| name | string | Process name (e.g. `"chrome.exe"`) |
+| connections | number | Number of active connections |
+| download | number | Read speed (bytes/sec) |
+| upload | number | Write speed (bytes/sec) |
+
+```lua
+local procs = sys.net_processes()
+for _, p in ipairs(procs) do
+    print(p.name, p.connections, p.download, p.upload)
+end
+```
+
+## sys.file_mtime(path)
+
+Returns the file's last modification time as a Unix timestamp (seconds). Returns nil if the file does not exist.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | File path |
+
+```lua
+local mtime = sys.file_mtime("C:\\Users\\me\\data.txt")
+local age = os.time() - mtime  -- seconds since last modification
+```
+
+## sys.find_newest(dir, ext)
+
+Recursively searches a directory and returns the path of the most recently modified file matching the given extension. Returns nil if no match is found.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| dir | string | Root directory to search |
+| ext | string | File extension including dot (e.g. `".jsonl"`) |
+
+```lua
+local newest = sys.find_newest("C:\\logs", ".log")
+-- returns full path of the most recently modified .log file
 ```
 
 ---
