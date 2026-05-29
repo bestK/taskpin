@@ -184,11 +184,14 @@ static void mkt_download_script(void) {
     }
 
     int src_idx = (int)SendMessageW(s_mkt->hCombo, CB_GETCURSEL, 0, 0);
-    if (src_idx < 0) return;
+    WCHAR repo[CFG_MAX_NAME] = {0};
+    if (src_idx >= 0 && src_idx < g_cfg.source_count)
+        lstrcpynW(repo, g_cfg.sources[src_idx], CFG_MAX_NAME);
+    else
+        GetWindowTextW(s_mkt->hCombo, repo, CFG_MAX_NAME);
+    if (!repo[0]) return;
 
     MarketScript *ms = &s_mkt->scripts[sel];
-    WCHAR repo[CFG_MAX_NAME];
-    lstrcpynW(repo, g_cfg.sources[src_idx], CFG_MAX_NAME);
 
     WCHAR url[512];
     mkt_build_raw_url(url, 512, repo, ms->file);
@@ -228,8 +231,13 @@ static LRESULT CALLBACK mkt_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
         switch (LOWORD(wp)) {
         case MKT_ID_REFRESH: {
             int idx = (int)SendMessageW(s_mkt->hCombo, CB_GETCURSEL, 0, 0);
-            if (idx >= 0 && idx < g_cfg.source_count)
+            if (idx >= 0 && idx < g_cfg.source_count) {
                 mkt_fetch_scripts(g_cfg.sources[idx]);
+            } else {
+                WCHAR text[CFG_MAX_NAME] = {0};
+                GetWindowTextW(s_mkt->hCombo, text, CFG_MAX_NAME);
+                if (text[0]) mkt_fetch_scripts(text);
+            }
             break;
         }
         case MKT_ID_DOWNLOAD:
