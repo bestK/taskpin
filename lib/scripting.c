@@ -562,6 +562,16 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "bold");
             item->bold = lua_toboolean(ls, -1);
             lua_pop(ls, 1);
+            lua_getfield(ls, -1, "image");
+            const char *ico = lua_tostring(ls, -1);
+            if (ico) strncpy(item->img_source, ico, 511);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "image_width");
+            item->img_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "image_height");
+            item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
         } else if (strcmp(type, "hr") == 0) {
             item->type = DI_HR;
             lua_pop(ls, 1);
@@ -605,6 +615,19 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
                     lua_pop(ls, 1);
                 }
             }
+            lua_pop(ls, 1);
+        } else if (strcmp(type, "image") == 0) {
+            item->type = DI_IMG;
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "source");
+            const char *src = lua_tostring(ls, -1);
+            if (src) strncpy(item->img_source, src, 511);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "width");
+            item->img_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "height");
+            item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
         } else {
             lua_pop(ls, 1);
