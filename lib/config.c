@@ -127,6 +127,11 @@ void config_load(TaskPinConfig *cfg) {
         wsprintfW(key, L"source_%d", i);
         GetPrivateProfileStringW(L"Sources", key, L"", cfg->sources[i], CFG_MAX_NAME, path);
     }
+    /* Default source if none configured */
+    if (cfg->source_count == 0) {
+        lstrcpyW(cfg->sources[0], L"bestK/taskpin-plugins");
+        cfg->source_count = 1;
+    }
 }
 
 void config_save(const TaskPinConfig *cfg) {

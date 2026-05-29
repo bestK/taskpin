@@ -2,7 +2,7 @@
 -- @refresh 3000
 -- bar_width 推荐: 160+
 
-local github_base = "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/"
+local github_base = "https://raw.githubusercontent.com/bestK/taskpin-plugins/master/"
 
 -- 检测是否在中国，加 GitHub 代理前缀
 local function is_china()
