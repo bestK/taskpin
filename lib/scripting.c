@@ -559,6 +559,7 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
         DialogItem *item = &spec->items[spec->item_count];
         memset(item, 0, sizeof(DialogItem));
         item->color = 0xFFFFFFFF;
+        item->bg_color = 0xFFFFFFFF;
 
         lua_getfield(ls, -1, "type");
         const char *type = lua_tostring(ls, -1);
@@ -630,6 +631,11 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
                             if (cv) MultiByteToWideChar(CP_UTF8, 0, cv, -1, item->cells[r-1][c-1], 64);
                             lua_pop(ls, 1);
                         }
+                        /* Check for url field in row table */
+                        lua_getfield(ls, -1, "url");
+                        const char *rurl = lua_tostring(ls, -1);
+                        if (rurl) strncpy(item->row_urls[r-1], rurl, 255);
+                        lua_pop(ls, 1);
                     }
                     lua_pop(ls, 1);
                 }
@@ -666,6 +672,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "color");
             const char *c = lua_tostring(ls, -1);
             if (c) item->color = parse_color_str(c);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "bg");
+            const char *bg = lua_tostring(ls, -1);
+            if (bg) item->bg_color = parse_color_str(bg);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "size");
             if (!lua_isnil(ls, -1)) item->font_size = (int)lua_tointeger(ls, -1);

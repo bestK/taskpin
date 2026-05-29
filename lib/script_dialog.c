@@ -18,6 +18,8 @@
 #define PADDING_Y 8
 #define DLG_BTN_BASE_ID 7000
 #define DLG_MAX_BUTTONS 8
+#define DLG_TBL_BTN_BASE_ID 7100
+#define DLG_MAX_TBL_BUTTONS 24
 
 typedef struct {
     DialogSpec spec;
@@ -28,6 +30,8 @@ typedef struct {
     int content_height;
     HWND buttons[DLG_MAX_BUTTONS];
     int button_count;
+    HWND tbl_buttons[DLG_MAX_TBL_BUTTONS];
+    int tbl_button_count;
 } ScriptDialogState;
 
 static HWND s_dialog_hwnd = NULL;
@@ -162,6 +166,7 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
     GetClientRect(hwnd, &rc);
 
     state->button_count = 0;
+    state->tbl_button_count = 0;
 
     HBRUSH bg = CreateSolidBrush(DIALOG_BG);
     FillRect(hdc, &rc, bg);
@@ -265,10 +270,36 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                 COLORREF row_clr = (item->row_colors[r] != 0) ? item->row_colors[r] : DIALOG_FG;
                 SetTextColor(hdc, row_clr);
 
+                int text_cols = item->col_count;
+                int btn_w_px = 0;
+                if (item->row_urls[r][0]) {
+                    btn_w_px = 50;
+                    text_cols = item->col_count;
+                }
+                int text_col_w = (client_w - PADDING_X * 2 - btn_w_px) / (text_cols > 0 ? text_cols : 1);
+
                 for (int c = 0; c < item->col_count; c++) {
-                    TextOutW(hdc, PADDING_X + c * col_w + 4, y + 3,
+                    TextOutW(hdc, PADDING_X + c * text_col_w + 4, y + 3,
                         item->cells[r][c], lstrlenW(item->cells[r][c]));
                 }
+
+                /* Row action button */
+                if (item->row_urls[r][0] && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
+                    int btn_id = DLG_TBL_BTN_BASE_ID + state->tbl_button_count;
+                    int bx = client_w - PADDING_X - btn_w_px;
+                    HWND hbtn = state->tbl_buttons[state->tbl_button_count];
+                    if (!hbtn) {
+                        hbtn = CreateWindowExW(0, L"BUTTON", L"\x2192",
+                            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                            bx, y, btn_w_px, row_h,
+                            hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
+                        state->tbl_buttons[state->tbl_button_count] = hbtn;
+                    } else {
+                        MoveWindow(hbtn, bx, y, btn_w_px, row_h, TRUE);
+                    }
+                    state->tbl_button_count++;
+                }
+
                 y += row_h;
             }
 
@@ -303,17 +334,16 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                 HWND hbtn = state->buttons[state->button_count];
                 if (!hbtn) {
                     hbtn = CreateWindowExW(0, L"BUTTON", item->text,
-                        WS_CHILD | WS_VISIBLE | BS_LEFT,
-                        PADDING_X, y - state->scroll_y, btn_w, btn_h,
+                        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                        PADDING_X, y, btn_w, btn_h,
                         hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
-                    SendMessageW(hbtn, WM_SETFONT, (WPARAM)create_dialog_font(9, FALSE), TRUE);
                     state->buttons[state->button_count] = hbtn;
                 } else {
                     MoveWindow(hbtn, PADDING_X, y, btn_w, btn_h, TRUE);
                     SetWindowTextW(hbtn, item->text);
                 }
                 state->button_count++;
-                y += btn_h;
+                y += btn_h + 2;
             }
             break;
         }
@@ -397,6 +427,76 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         }
         return 0;
 
+    case WM_DRAWITEM: {
+        DRAWITEMSTRUCT *dis = (DRAWITEMSTRUCT *)lp;
+        if (!state || dis->CtlType != ODT_BUTTON) break;
+        int id = (int)dis->CtlID;
+
+        /* Table row buttons */
+        if (id >= DLG_TBL_BTN_BASE_ID && id < DLG_TBL_BTN_BASE_ID + DLG_MAX_TBL_BUTTONS) {
+            COLORREF bg = (dis->itemState & ODS_SELECTED) ? RGB(80, 80, 80) : RGB(55, 55, 55);
+            HBRUSH hbr = CreateSolidBrush(bg);
+            FillRect(dis->hDC, &dis->rcItem, hbr);
+            DeleteObject(hbr);
+            SetBkMode(dis->hDC, TRANSPARENT);
+            SetTextColor(dis->hDC, RGB(100, 180, 255));
+            HFONT hf = create_dialog_font(9, FALSE);
+            HFONT old = (HFONT)SelectObject(dis->hDC, hf);
+            DrawTextW(dis->hDC, L"\x2192 Open", -1, &dis->rcItem, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+            SelectObject(dis->hDC, old);
+            DeleteObject(hf);
+            return TRUE;
+        }
+
+        /* Regular DI_BUTTON items */
+        int btn_idx = id - DLG_BTN_BASE_ID;
+        if (btn_idx < 0 || btn_idx >= DLG_MAX_BUTTONS) break;
+
+        /* Find the matching DI_BUTTON item */
+        int btn_count = 0;
+        DialogItem *item = NULL;
+        for (int i = 0; i < state->spec.item_count; i++) {
+            if (state->spec.items[i].type == DI_BUTTON) {
+                if (btn_count == btn_idx) { item = &state->spec.items[i]; break; }
+                btn_count++;
+            }
+        }
+        if (!item) break;
+
+        COLORREF bg = (item->bg_color != 0xFFFFFFFF) ? item->bg_color : RGB(50, 50, 50);
+        COLORREF fg = (item->color != 0xFFFFFFFF) ? item->color : DIALOG_FG;
+
+        /* Hover/pressed effect */
+        if (dis->itemState & ODS_SELECTED)
+            bg = RGB(GetRValue(bg) + 30, GetGValue(bg) + 30, GetBValue(bg) + 30);
+
+        HBRUSH hbr = CreateSolidBrush(bg);
+        FillRect(dis->hDC, &dis->rcItem, hbr);
+        DeleteObject(hbr);
+
+        /* Draw text */
+        SetBkMode(dis->hDC, TRANSPARENT);
+        SetTextColor(dis->hDC, fg);
+        HFONT hf = create_dialog_font(9, FALSE);
+        HFONT old = (HFONT)SelectObject(dis->hDC, hf);
+        RECT tr = dis->rcItem;
+        tr.left += 8;
+        DrawTextW(dis->hDC, item->text, -1, &tr, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+        SelectObject(dis->hDC, old);
+        DeleteObject(hf);
+
+        /* Border */
+        HPEN pen = CreatePen(PS_SOLID, 1, RGB(70, 70, 70));
+        HPEN old_pen = (HPEN)SelectObject(dis->hDC, pen);
+        HBRUSH null_br = (HBRUSH)GetStockObject(NULL_BRUSH);
+        HBRUSH old_br = (HBRUSH)SelectObject(dis->hDC, null_br);
+        Rectangle(dis->hDC, dis->rcItem.left, dis->rcItem.top, dis->rcItem.right, dis->rcItem.bottom);
+        SelectObject(dis->hDC, old_pen);
+        SelectObject(dis->hDC, old_br);
+        DeleteObject(pen);
+        return TRUE;
+    }
+
     case WM_COMMAND: {
         int id = LOWORD(wp);
         if (state && id >= DLG_BTN_BASE_ID && id < DLG_BTN_BASE_ID + DLG_MAX_BUTTONS) {
@@ -427,6 +527,27 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 }
             }
         }
+        /* Table row buttons */
+        if (state && id >= DLG_TBL_BTN_BASE_ID && id < DLG_TBL_BTN_BASE_ID + DLG_MAX_TBL_BUTTONS) {
+            int tbl_idx = id - DLG_TBL_BTN_BASE_ID;
+            int tbl_count = 0;
+            for (int i = 0; i < state->spec.item_count; i++) {
+                if (state->spec.items[i].type != DI_TABLE) continue;
+                DialogItem *tbl = &state->spec.items[i];
+                for (int r = 0; r < tbl->row_count; r++) {
+                    if (tbl->row_urls[r][0]) {
+                        if (tbl_count == tbl_idx) {
+                            WCHAR wurl[256];
+                            MultiByteToWideChar(CP_UTF8, 0, tbl->row_urls[r], -1, wurl, 256);
+                            ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
+                            goto cmd_done;
+                        }
+                        tbl_count++;
+                    }
+                }
+            }
+        }
+        cmd_done:
         return 0;
     }
 
