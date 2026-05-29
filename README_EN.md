@@ -59,10 +59,28 @@ examples/       Example Lua scripts
 
 ## Example Scripts
 
-- `examples/example.lua` — Basic HTTP + JSON demo
-- `examples/zentao_task.lua` — Zentao task monitor
-- `examples/newapi_balance.lua` — NewAPI/OneAPI balance query
-- `examples/oracle_sessions.lua` — Oracle Exporter session monitor
+| File | Description |
+|------|-------------|
+| [`example.lua`](examples/example.lua) | Getting started: HTTP request + JSON parsing + parameter declarations |
+| [`newapi_balance.lua`](examples/newapi_balance.lua) | Display AI API account balance in taskbar |
+| [`rich_text_demo.lua`](examples/rich_text_demo.lua) | font() rich text demo: colors, multi-line, alignment |
+| [`zentao_task.lua`](examples/zentao_task.lua) | Zentao project management: pending task count with detail popup |
+| [`oracle_sessions.lua`](examples/oracle_sessions.lua) | Oracle database session monitor, multi-instance, color alerts |
+| [`system_monitor.lua`](examples/system_monitor.lua) | System monitor: network speed + CPU + memory using sys.* API |
+| [`net_monitor.lua`](examples/net_monitor.lua) | Network process monitor: active connections with traffic per process |
+| [`claude_status.lua`](examples/claude_status.lua) | Claude Code real-time status indicator, reads session JSONL files |
+
+### Usage
+
+1. Open the TaskPin management window, click **Add**
+2. Select **Lua File** type, choose a script from `examples/`
+3. If the script has `@param` declarations, fill in the parameters
+4. Click **Pin to Bar** to display it in the taskbar
+
+## Documentation
+
+- [Lua API 参考（中文）](docs/LUA_API.md)
+- [Lua API Reference (English)](docs/LUA_API_EN.md)
 
 ## Tech Stack
 

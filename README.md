@@ -59,10 +59,28 @@ examples/       示例 Lua 脚本
 
 ## 示例脚本
 
-- `examples/example.lua` — 基础 HTTP + JSON 演示
-- `examples/zentao_task.lua` — 禅道未完成任务监控
-- `examples/newapi_balance.lua` — NewAPI/OneAPI 余额查询
-- `examples/oracle_sessions.lua` — Oracle Exporter 会话监控
+| 文件 | 说明 |
+|------|------|
+| [`example.lua`](examples/example.lua) | 入门示例，演示基本的 HTTP 请求 + JSON 解析 + 参数声明 |
+| [`newapi_balance.lua`](examples/newapi_balance.lua) | 查询 AI API 账户余额并显示在任务栏 |
+| [`rich_text_demo.lua`](examples/rich_text_demo.lua) | font() 富文本演示：多色、多行、左右对齐 |
+| [`zentao_task.lua`](examples/zentao_task.lua) | 禅道项目管理：显示待办任务数，点击查看详情 |
+| [`oracle_sessions.lua`](examples/oracle_sessions.lua) | Oracle 数据库会话监控，多实例支持，颜色预警 |
+| [`system_monitor.lua`](examples/system_monitor.lua) | 系统监控：网速 + CPU + 内存，纯 sys.* API |
+| [`net_monitor.lua`](examples/net_monitor.lua) | 网络进程监控：显示有活跃连接的进程及流量 |
+| [`claude_status.lua`](examples/claude_status.lua) | Claude Code 实时状态指示器，读 session 文件判断工作状态 |
+
+### 使用方式
+
+1. 打开 TaskPin 管理窗口，点击 **Add**
+2. 类型选择 **Lua File**，选择 `examples/` 下的脚本文件
+3. 如果脚本有 `@param` 声明，填写对应参数
+4. 点击 **Pin to Bar** 即可在任务栏显示
+
+## 文档
+
+- [Lua API 参考（中文）](docs/LUA_API.md)
+- [Lua API Reference (English)](docs/LUA_API_EN.md)
 
 ## 技术栈
 
