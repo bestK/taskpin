@@ -15,6 +15,7 @@
 #include "fetcher.h"
 #include "json.h"
 #include "scripting.h"
+#include "script_dialog.h"
 #include "update.h"
 
 /* Timer IDs */

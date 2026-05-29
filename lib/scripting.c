@@ -18,6 +18,15 @@ static void script_log_error(const char *err) {
     WCHAR *slash = wcsrchr(log_path, L'\\');
     if (slash) *(slash + 1) = L'\0';
     lstrcatW(log_path, L"taskpin.log");
+
+    /* Rotate: if file > 64KB, truncate */
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (GetFileAttributesExW(log_path, GetFileExInfoStandard, &fad)) {
+        if (fad.nFileSizeLow > 65536) {
+            DeleteFileW(log_path);
+        }
+    }
+
     FILE *f = _wfopen(log_path, L"a");
     if (!f) return;
     SYSTEMTIME st;
@@ -356,6 +365,147 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
     }
 }
 
+/* ─── dialog() Lua function ─── */
+
+static int l_dialog(lua_State *ls) {
+    if (!lua_istable(ls, 1)) {
+        lua_newtable(ls);
+        return 1;
+    }
+    /* Return the same table with _dialog marker */
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, 1, "_dialog");
+    lua_pushvalue(ls, 1);
+    return 1;
+}
+
+/* Parse a dialog spec table from Lua stack at idx */
+static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
+    memset(spec, 0, sizeof(DialogSpec));
+    spec->width = 400;
+    spec->height = 300;
+
+    if (!lua_istable(ls, idx)) return;
+
+    lua_getfield(ls, idx, "title");
+    const char *title = lua_tostring(ls, -1);
+    if (title) MultiByteToWideChar(CP_UTF8, 0, title, -1, spec->title, 128);
+    else lstrcpyW(spec->title, L"Dialog");
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "width");
+    if (!lua_isnil(ls, -1)) spec->width = (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "height");
+    if (!lua_isnil(ls, -1)) spec->height = (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "refresh");
+    if (!lua_isnil(ls, -1)) spec->refresh = (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "content");
+    if (!lua_istable(ls, -1)) { lua_pop(ls, 1); return; }
+
+    int content_idx = lua_gettop(ls);
+    int n = (int)lua_rawlen(ls, content_idx);
+    if (n > DIALOG_MAX_ITEMS) n = DIALOG_MAX_ITEMS;
+
+    for (int i = 1; i <= n; i++) {
+        lua_rawgeti(ls, content_idx, i);
+        if (!lua_istable(ls, -1)) { lua_pop(ls, 1); continue; }
+
+        DialogItem *item = &spec->items[spec->item_count];
+        memset(item, 0, sizeof(DialogItem));
+        item->color = 0xFFFFFFFF;
+
+        lua_getfield(ls, -1, "type");
+        const char *type = lua_tostring(ls, -1);
+        if (!type) { lua_pop(ls, 2); continue; }
+
+        if (strcmp(type, "text") == 0) {
+            item->type = DI_TEXT;
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "value");
+            const char *val = lua_tostring(ls, -1);
+            if (val) MultiByteToWideChar(CP_UTF8, 0, val, -1, item->text, 256);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "color");
+            const char *c = lua_tostring(ls, -1);
+            if (c) item->color = parse_color_str(c);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "size");
+            if (!lua_isnil(ls, -1)) item->font_size = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "bold");
+            item->bold = lua_toboolean(ls, -1);
+            lua_pop(ls, 1);
+        } else if (strcmp(type, "hr") == 0) {
+            item->type = DI_HR;
+            lua_pop(ls, 1);
+        } else if (strcmp(type, "table") == 0) {
+            item->type = DI_TABLE;
+            lua_pop(ls, 1);
+
+            /* Parse columns */
+            lua_getfield(ls, -1, "columns");
+            if (lua_istable(ls, -1)) {
+                int nc = (int)lua_rawlen(ls, -1);
+                if (nc > DIALOG_MAX_COLS) nc = DIALOG_MAX_COLS;
+                item->col_count = nc;
+                for (int c = 1; c <= nc; c++) {
+                    lua_rawgeti(ls, -1, c);
+                    const char *cs = lua_tostring(ls, -1);
+                    if (cs) MultiByteToWideChar(CP_UTF8, 0, cs, -1, item->columns[c-1], 64);
+                    lua_pop(ls, 1);
+                }
+            }
+            lua_pop(ls, 1);
+
+            /* Parse rows */
+            lua_getfield(ls, -1, "rows");
+            if (lua_istable(ls, -1)) {
+                int nr = (int)lua_rawlen(ls, -1);
+                if (nr > DIALOG_MAX_ROWS) nr = DIALOG_MAX_ROWS;
+                item->row_count = nr;
+                for (int r = 1; r <= nr; r++) {
+                    lua_rawgeti(ls, -1, r);
+                    if (lua_istable(ls, -1)) {
+                        int rc = (int)lua_rawlen(ls, -1);
+                        if (rc > item->col_count) rc = item->col_count;
+                        for (int c = 1; c <= rc; c++) {
+                            lua_rawgeti(ls, -1, c);
+                            const char *cv = lua_tostring(ls, -1);
+                            if (cv) MultiByteToWideChar(CP_UTF8, 0, cv, -1, item->cells[r-1][c-1], 64);
+                            lua_pop(ls, 1);
+                        }
+                    }
+                    lua_pop(ls, 1);
+                }
+            }
+            lua_pop(ls, 1);
+        } else {
+            lua_pop(ls, 1);
+            lua_pop(ls, 1);
+            continue;
+        }
+
+        spec->item_count++;
+        lua_pop(ls, 1); /* pop content item table */
+    }
+    lua_pop(ls, 1); /* pop content table */
+}
+
+/* Check if value at idx is a dialog spec (has _dialog marker) */
+static BOOL is_dialog_table(lua_State *ls, int idx) {
+    if (!lua_istable(ls, idx)) return FALSE;
+    lua_getfield(ls, idx, "_dialog");
+    BOOL r = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+    return r;
+}
+
 void script_init(void) {
     InitializeCriticalSection(&g_lua_cs);
     L = luaL_newstate();
@@ -383,6 +533,10 @@ void script_init(void) {
     /* Register font() rich text API */
     register_font_api(L);
 
+    /* Register dialog() DSL API */
+    lua_pushcfunction(L, l_dialog);
+    lua_setglobal(L, "dialog");
+
     /* Register sys.* system info API */
     sysinfo_register_lua(L);
 }
@@ -400,6 +554,7 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
     EnterCriticalSection(&g_lua_cs);
     result->display[0] = L'\0';
     result->clickable = FALSE;
+    result->click_action = CLICK_URL;
     result->click_url[0] = L'\0';
 
     /* Set global `response` */
@@ -439,10 +594,16 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
     if (nresults >= 2) {
         result->clickable = lua_toboolean(L, 2);
     }
-    /* 3rd: click URL */
+    /* 3rd: click URL or dialog spec */
     if (nresults >= 3) {
-        const char *url = lua_tostring(L, 3);
-        if (url) MultiByteToWideChar(CP_UTF8, 0, url, -1, result->click_url, 1024);
+        if (is_dialog_table(L, 3)) {
+            result->click_action = CLICK_DIALOG;
+            parse_dialog_spec(L, 3, &result->dialog);
+        } else {
+            result->click_action = CLICK_URL;
+            const char *url = lua_tostring(L, 3);
+            if (url) MultiByteToWideChar(CP_UTF8, 0, url, -1, result->click_url, 1024);
+        }
     }
 
     lua_settop(L, 0);
@@ -471,6 +632,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
     EnterCriticalSection(&g_lua_cs);
     result->display[0] = L'\0';
     result->clickable = FALSE;
+    result->click_action = CLICK_URL;
     result->click_url[0] = L'\0';
 
     WCHAR full_path[MAX_PATH];
@@ -518,8 +680,14 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
         result->clickable = lua_toboolean(L, 2);
     }
     if (nresults >= 3) {
-        const char *url = lua_tostring(L, 3);
-        if (url) MultiByteToWideChar(CP_UTF8, 0, url, -1, result->click_url, 1024);
+        if (is_dialog_table(L, 3)) {
+            result->click_action = CLICK_DIALOG;
+            parse_dialog_spec(L, 3, &result->dialog);
+        } else {
+            result->click_action = CLICK_URL;
+            const char *url = lua_tostring(L, 3);
+            if (url) MultiByteToWideChar(CP_UTF8, 0, url, -1, result->click_url, 1024);
+        }
     }
 
     lua_settop(L, 0);
