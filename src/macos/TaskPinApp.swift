@@ -6,7 +6,15 @@ struct TaskPinApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PopoverView(engine: engine)
+            TabView {
+                PopoverView(engine: engine)
+                    .tabItem { Label("Status", systemImage: "gauge") }
+                SettingsView(engine: engine)
+                    .tabItem { Label("Settings", systemImage: "gear") }
+                MarketView(engine: engine)
+                    .tabItem { Label("Market", systemImage: "bag") }
+            }
+            .frame(width: 420, height: 360)
         } label: {
             StatusBarView(engine: engine)
         }

@@ -228,6 +228,9 @@ static int l_http_post(lua_State *L) {
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <sys/sysctl.h>
+#include <sys/mount.h>
+#include <sys/time.h>
+#include <sys/proc.h>
 
 static int l_sys_cpu(lua_State *L) {
     // Simplified: return load average * 100 / ncpu
@@ -258,6 +261,53 @@ static int l_sys_memory(lua_State *L) {
     lua_pushinteger(L, (int)(used * 100 / total)); lua_setfield(L, -2, "percent");
     return 1;
 }
+
+static int l_sys_disk(lua_State *L) {
+    struct statfs sf;
+    const char *path = lua_gettop(L) >= 1 ? lua_tostring(L, 1) : "/";
+    if (statfs(path, &sf) != 0) { lua_pushnil(L); return 1; }
+    double total = (double)sf.f_blocks * sf.f_bsize / (1024.0*1024*1024);
+    double free_gb = (double)sf.f_bavail * sf.f_bsize / (1024.0*1024*1024);
+    lua_createtable(L, 0, 3);
+    lua_pushnumber(L, total); lua_setfield(L, -2, "total_gb");
+    lua_pushnumber(L, free_gb); lua_setfield(L, -2, "free_gb");
+    lua_pushinteger(L, (int)((1.0 - free_gb/total) * 100)); lua_setfield(L, -2, "percent");
+    return 1;
+}
+
+static int l_sys_uptime(lua_State *L) {
+    struct timeval boottime;
+    size_t sz = sizeof(boottime);
+    int mib[2] = { CTL_KERN, KERN_BOOTTIME };
+    sysctl(mib, 2, &boottime, &sz, NULL, 0);
+    time_t now; time(&now);
+    lua_pushinteger(L, (lua_Integer)(now - boottime.tv_sec));
+    return 1;
+}
+
+static int l_sys_process_count(lua_State *L) {
+    int mib[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
+    size_t sz = 0;
+    sysctl(mib, 3, NULL, &sz, NULL, 0);
+    lua_pushinteger(L, (lua_Integer)(sz / sizeof(struct kinfo_proc)));
+    return 1;
+}
+
+static int l_sys_net_speed(lua_State *L) {
+    lua_createtable(L, 0, 2);
+    lua_pushinteger(L, 0); lua_setfield(L, -2, "download");
+    lua_pushinteger(L, 0); lua_setfield(L, -2, "upload");
+    return 1;
+}
+
+static int l_sys_battery(lua_State *L) {
+    lua_createtable(L, 0, 3);
+    lua_pushinteger(L, -1); lua_setfield(L, -2, "percent");
+    lua_pushboolean(L, 0); lua_setfield(L, -2, "charging");
+    lua_pushinteger(L, -1); lua_setfield(L, -2, "seconds_left");
+    return 1;
+}
+
 #endif
 
 // MARK: - Init / Execute
@@ -294,6 +344,11 @@ void tp_lua_init(void) {
 #ifdef __APPLE__
     lua_pushcfunction(g_L, l_sys_cpu); lua_setfield(g_L, -2, "cpu");
     lua_pushcfunction(g_L, l_sys_memory); lua_setfield(g_L, -2, "memory");
+    lua_pushcfunction(g_L, l_sys_disk); lua_setfield(g_L, -2, "disk");
+    lua_pushcfunction(g_L, l_sys_uptime); lua_setfield(g_L, -2, "uptime");
+    lua_pushcfunction(g_L, l_sys_process_count); lua_setfield(g_L, -2, "process_count");
+    lua_pushcfunction(g_L, l_sys_net_speed); lua_setfield(g_L, -2, "net_speed");
+    lua_pushcfunction(g_L, l_sys_battery); lua_setfield(g_L, -2, "battery");
 #endif
     lua_setglobal(g_L, "sys");
 }

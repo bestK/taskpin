@@ -34,7 +34,8 @@ class ScriptEngine: ObservableObject {
     @Published var dialogItems: [DialogItemModel] = []
 
     private var timer: Timer?
-    private var scriptPath: String? = nil
+    @Published var scriptPath: String? = nil
+    var refreshInterval: Int = 5
 
     init() {
         tp_lua_init()
@@ -115,6 +116,12 @@ class ScriptEngine: ObservableObject {
             self.statusColor = color
             if !items.isEmpty { self.dialogItems = items }
         }
+    }
+
+    func loadScript(_ path: String?) {
+        scriptPath = path
+        timer?.invalidate()
+        startRefresh()
     }
 
     private func showDemo() {
