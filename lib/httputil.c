@@ -5,6 +5,27 @@
 
 #define DEFAULT_MAX_SIZE (256 * 1024)
 
+static HINTERNET g_http_session = NULL;
+
+static HINTERNET get_session(void) {
+    if (g_http_session) return g_http_session;
+    WINHTTP_CURRENT_USER_IE_PROXY_CONFIG ie_cfg = {0};
+    if (WinHttpGetIEProxyConfigForCurrentUser(&ie_cfg) && ie_cfg.lpszProxy) {
+        g_http_session = WinHttpOpen(L"TaskPin/1.0",
+            WINHTTP_ACCESS_TYPE_NAMED_PROXY, ie_cfg.lpszProxy, ie_cfg.lpszProxyBypass, 0);
+        if (ie_cfg.lpszProxy) GlobalFree(ie_cfg.lpszProxy);
+        if (ie_cfg.lpszProxyBypass) GlobalFree(ie_cfg.lpszProxyBypass);
+        if (ie_cfg.lpszAutoConfigUrl) GlobalFree(ie_cfg.lpszAutoConfigUrl);
+    } else {
+        g_http_session = WinHttpOpen(L"TaskPin/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    }
+    if (g_http_session)
+        WinHttpSetTimeouts(g_http_session, 8000, 8000, 8000, 8000);
+    return g_http_session;
+}
+
 char *http_request_sync(const WCHAR *url, const WCHAR *method,
                         const char *body, const WCHAR *headers,
                         int *out_len, int max_size) {
@@ -19,30 +40,16 @@ char *http_request_sync(const WCHAR *url, const WCHAR *method,
     uc.lpszUrlPath = path; uc.dwUrlPathLength = 2048;
     if (!WinHttpCrackUrl(url, 0, 0, &uc)) return NULL;
 
-    /* Use named proxy from IE/system settings */
-    WINHTTP_CURRENT_USER_IE_PROXY_CONFIG ie_cfg = {0};
-    HINTERNET hSession;
-    if (WinHttpGetIEProxyConfigForCurrentUser(&ie_cfg) && ie_cfg.lpszProxy) {
-        hSession = WinHttpOpen(L"TaskPin/1.0",
-            WINHTTP_ACCESS_TYPE_NAMED_PROXY, ie_cfg.lpszProxy, ie_cfg.lpszProxyBypass, 0);
-        if (ie_cfg.lpszProxy) GlobalFree(ie_cfg.lpszProxy);
-        if (ie_cfg.lpszProxyBypass) GlobalFree(ie_cfg.lpszProxyBypass);
-        if (ie_cfg.lpszAutoConfigUrl) GlobalFree(ie_cfg.lpszAutoConfigUrl);
-    } else {
-        hSession = WinHttpOpen(L"TaskPin/1.0",
-            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    }
+    HINTERNET hSession = get_session();
     if (!hSession) return NULL;
-    WinHttpSetTimeouts(hSession, 8000, 8000, 8000, 8000);
 
     HINTERNET hConn = WinHttpConnect(hSession, host, uc.nPort, 0);
-    if (!hConn) { WinHttpCloseHandle(hSession); return NULL; }
+    if (!hConn) return NULL;
 
     DWORD flags = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
     HINTERNET hReq = WinHttpOpenRequest(hConn, method, path,
         NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hReq) { WinHttpCloseHandle(hConn); WinHttpCloseHandle(hSession); return NULL; }
+    if (!hReq) { WinHttpCloseHandle(hConn); return NULL; }
 
     /* Prepare headers and body */
     DWORD body_len = body ? (DWORD)strlen(body) : 0;
@@ -62,17 +69,17 @@ char *http_request_sync(const WCHAR *url, const WCHAR *method,
 
     if (!WinHttpSendRequest(hReq, hdr_ptr, hdr_len,
             (LPVOID)body, body_len, body_len, 0)) {
-        WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn); WinHttpCloseHandle(hSession);
+        WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn);
         return NULL;
     }
     if (!WinHttpReceiveResponse(hReq, NULL)) {
-        WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn); WinHttpCloseHandle(hSession);
+        WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn);
         return NULL;
     }
 
     /* Read response */
     char *buf = (char *)calloc(1, max_size);
-    if (!buf) { WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn); WinHttpCloseHandle(hSession); return NULL; }
+    if (!buf) { WinHttpCloseHandle(hReq); WinHttpCloseHandle(hConn); return NULL; }
     DWORD total = 0, avail, rd;
     while (WinHttpQueryDataAvailable(hReq, &avail) && avail > 0) {
         if ((int)(total + avail) >= max_size - 1) avail = max_size - 1 - total;
@@ -84,7 +91,6 @@ char *http_request_sync(const WCHAR *url, const WCHAR *method,
 
     WinHttpCloseHandle(hReq);
     WinHttpCloseHandle(hConn);
-    WinHttpCloseHandle(hSession);
 
     if (out_len) *out_len = (int)total;
     return buf;
