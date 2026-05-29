@@ -8,3 +8,4 @@ zentao_task.lua
 taskpin.log
 .ace-tool/
 scripts/.build/
+.build/

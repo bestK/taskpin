@@ -1,12 +1,8 @@
 import SwiftUI
 import AppKit
-import CLua
+import TaskPinLua
 
-// MARK: - Models
-
-enum DialogItemKind: String {
-    case text, hr, button, image, table
-}
+enum DialogItemKind: String { case text, hr, button, image, table }
 
 struct TableRow: Identifiable {
     let id = UUID()
@@ -31,8 +27,6 @@ struct DialogItemModel: Identifiable {
     var rows: [TableRow] = []
 }
 
-// MARK: - Script Engine
-
 class ScriptEngine: ObservableObject {
     @Published var statusText: String = "TaskPin"
     @Published var statusColor: Color = .white
@@ -40,22 +34,28 @@ class ScriptEngine: ObservableObject {
     @Published var dialogItems: [DialogItemModel] = []
 
     private var timer: Timer?
-    private var L: OpaquePointer?
+    private var scriptPath: String? = nil
 
     init() {
-        setupLua()
+        tp_lua_init()
+        // Try to find a script in app bundle or current dir
+        let paths = [
+            Bundle.main.path(forResource: "system_monitor", ofType: "lua"),
+            "examples/system_monitor.lua",
+            "system_monitor.lua"
+        ]
+        for p in paths {
+            if let p = p, FileManager.default.fileExists(atPath: p) {
+                scriptPath = p
+                break
+            }
+        }
         startRefresh()
     }
 
     deinit {
         timer?.invalidate()
-        if let L = L { lua_close(L) }
-    }
-
-    private func setupLua() {
-        L = luaL_newstate()
-        guard let L = L else { return }
-        luaL_openlibs(L)
+        tp_lua_shutdown()
     }
 
     private func startRefresh() {
@@ -66,34 +66,100 @@ class ScriptEngine: ObservableObject {
     }
 
     func executeScript() {
-        // Demo content until full Lua integration
+        guard let path = scriptPath else {
+            showDemo()
+            return
+        }
+
+        let nresults = tp_lua_execute(path, nil)
+        if nresults < 0 {
+            DispatchQueue.main.async {
+                self.statusText = "[error]"
+                self.statusColor = .red
+            }
+            return
+        }
+
+        var spans: [TPSpan] = []
+        if nresults >= 1 && tp_lua_is_span(1) != 0 {
+            let count = tp_lua_span_count(1)
+            for i in 0..<count {
+                spans.append(tp_lua_get_span(1, Int32(i)))
+            }
+        }
+
+        let clickable = nresults >= 2 ? tp_lua_get_bool(2) != 0 : false
+        _ = clickable
+
+        var items: [DialogItemModel] = []
+        if nresults >= 3 && tp_lua_is_dialog(3) != 0 {
+            // TODO: parse dialog items from C bridge
+            items = [DialogItemModel(kind: .text, text: "Dialog loaded", color: .green, fontSize: 12)]
+        }
+
+        tp_lua_clear_stack()
+
+        DispatchQueue.main.async {
+            // Build status text from spans
+            var text = ""
+            var color: Color = .white
+            for var span in spans {
+                if span.is_image == 0 {
+                    let t = String(cString: &span.text.0, maxLength: 512)
+                    text += t
+                    let c = String(cString: &span.color.0, maxLength: 16)
+                    if !c.isEmpty { color = self.parseColor(c) }
+                }
+            }
+            self.statusText = text.isEmpty ? "TaskPin" : text
+            self.statusColor = color
+            if !items.isEmpty { self.dialogItems = items }
+        }
+    }
+
+    private func showDemo() {
         let cpu = Int.random(in: 10...90)
         let mem = Int.random(in: 40...80)
-
         DispatchQueue.main.async {
             self.statusText = "CPU:\(cpu)% MEM:\(mem)%"
             self.statusColor = cpu > 70 ? .red : .green
-
             self.dialogItems = [
                 DialogItemModel(kind: .text, text: "TaskPin macOS", color: .orange, fontSize: 14, bold: true),
                 DialogItemModel(kind: .hr),
                 DialogItemModel(kind: .text, text: "CPU: \(cpu)%", color: cpu > 70 ? .red : .green, fontSize: 12),
                 DialogItemModel(kind: .text, text: "MEM: \(mem)%", color: mem > 70 ? .orange : .green, fontSize: 12),
                 DialogItemModel(kind: .hr),
-                DialogItemModel(kind: .text, text: "Lua engine: ready", color: .gray, fontSize: 10),
+                DialogItemModel(kind: .text, text: "No script loaded", color: .gray, fontSize: 10),
                 DialogItemModel(kind: .button, text: "Open GitHub", url: URL(string: "https://github.com/bestK/taskpin")),
             ]
         }
     }
 
     func handleButtonClick(_ item: DialogItemModel) {
-        if let url = item.url {
-            NSWorkspace.shared.open(url)
-        } else if let cmd = item.cmd {
+        if let url = item.url { NSWorkspace.shared.open(url) }
+        else if let cmd = item.cmd {
             let task = Process()
             task.launchPath = "/bin/sh"
             task.arguments = ["-c", cmd]
             try? task.run()
         }
+    }
+
+    private func parseColor(_ hex: String) -> Color {
+        var h = hex
+        if h.hasPrefix("#") { h = String(h.dropFirst()) }
+        guard let val = UInt64(h, radix: 16) else { return .white }
+        if h.count == 6 {
+            return Color(red: Double((val >> 16) & 0xFF) / 255,
+                         green: Double((val >> 8) & 0xFF) / 255,
+                         blue: Double(val & 0xFF) / 255)
+        }
+        return .white
+    }
+}
+
+extension String {
+    init(cString tuple: UnsafePointer<CChar>, maxLength: Int) {
+        self = String(cString: tuple)
     }
 }

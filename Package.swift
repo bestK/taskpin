@@ -7,8 +7,19 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "TaskPin",
+            dependencies: ["CLua", "TaskPinLua"],
+            path: "src/macos",
+            exclude: []
+        ),
+        .target(
+            name: "TaskPinLua",
             dependencies: ["CLua"],
-            path: "src/macos"
+            path: "src/clua_bridge",
+            publicHeadersPath: ".",
+            cSettings: [
+                .headerSearchPath("../../lib/lua/include"),
+                .headerSearchPath("../../lib/lua")
+            ]
         ),
         .target(
             name: "CLua",
