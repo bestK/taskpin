@@ -651,6 +651,12 @@ void show_edit_dialog(HWND parent, int item_idx) {
                     it->params[pi].label, CFG_MAX_NAME);
                 GetWindowTextW(st->hParamEdit[pi], it->params[pi].value, CFG_MAX_PARAM_VAL);
             }
+            /* Apply @refresh if declared in script */
+            int refresh_ms = script_parse_refresh(it->lua_path);
+            if (refresh_ms > 0) {
+                if (refresh_ms < 1000) refresh_ms = 1000;
+                it->interval_ms = (DWORD)refresh_ms;
+            }
             /* Save bar config */
             WCHAR bv[32];
             GetWindowTextW(st->hBarWidth, bv, 32);
