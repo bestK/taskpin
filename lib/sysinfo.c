@@ -368,6 +368,87 @@ static int l_sys_net_processes(lua_State *ls) {
     return 1;
 }
 
+/* ─── File modification time (seconds since epoch) ─── */
+
+static int l_sys_file_mtime(lua_State *ls) {
+    const char *path = luaL_checkstring(ls, 1);
+    WCHAR wpath[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_PATH);
+
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (!GetFileAttributesExW(wpath, GetFileExInfoStandard, &fad)) {
+        lua_pushnil(ls);
+        return 1;
+    }
+    /* Convert FILETIME to Unix timestamp */
+    ULARGE_INTEGER uli;
+    uli.LowPart = fad.ftLastWriteTime.dwLowDateTime;
+    uli.HighPart = fad.ftLastWriteTime.dwHighDateTime;
+    lua_Integer epoch = (lua_Integer)((uli.QuadPart - 116444736000000000ULL) / 10000000ULL);
+    lua_pushinteger(ls, epoch);
+    return 1;
+}
+
+/* ─── Find newest file recursively ─── */
+
+static ULARGE_INTEGER s_newest_time;
+static WCHAR s_newest_path[MAX_PATH];
+
+static void find_newest_recurse(const WCHAR *dir, const WCHAR *ext) {
+    WCHAR pattern[MAX_PATH];
+    _snwprintf(pattern, MAX_PATH, L"%s\\*", dir);
+
+    WIN32_FIND_DATAW fd;
+    HANDLE hFind = FindFirstFileW(pattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+
+    do {
+        if (fd.cFileName[0] == L'.') continue;
+        WCHAR full[MAX_PATH];
+        _snwprintf(full, MAX_PATH, L"%s\\%s", dir, fd.cFileName);
+
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            find_newest_recurse(full, ext);
+        } else {
+            /* Check extension */
+            WCHAR *dot = wcsrchr(fd.cFileName, L'.');
+            if (dot && _wcsicmp(dot, ext) == 0) {
+                ULARGE_INTEGER ft;
+                ft.LowPart = fd.ftLastWriteTime.dwLowDateTime;
+                ft.HighPart = fd.ftLastWriteTime.dwHighDateTime;
+                if (ft.QuadPart > s_newest_time.QuadPart) {
+                    s_newest_time = ft;
+                    lstrcpynW(s_newest_path, full, MAX_PATH);
+                }
+            }
+        }
+    } while (FindNextFileW(hFind, &fd));
+    FindClose(hFind);
+}
+
+static int l_sys_find_newest(lua_State *ls) {
+    const char *dir = luaL_checkstring(ls, 1);
+    const char *ext = luaL_checkstring(ls, 2); /* e.g. ".jsonl" */
+
+    WCHAR wdir[MAX_PATH], wext[32];
+    MultiByteToWideChar(CP_UTF8, 0, dir, -1, wdir, MAX_PATH);
+    MultiByteToWideChar(CP_UTF8, 0, ext, -1, wext, 32);
+
+    s_newest_time.QuadPart = 0;
+    s_newest_path[0] = L'\0';
+
+    find_newest_recurse(wdir, wext);
+
+    if (s_newest_path[0]) {
+        char result[MAX_PATH];
+        WideCharToMultiByte(CP_UTF8, 0, s_newest_path, -1, result, MAX_PATH, NULL, NULL);
+        lua_pushstring(ls, result);
+    } else {
+        lua_pushnil(ls);
+    }
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -392,5 +473,9 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "net_speed");
     lua_pushcfunction(ls, l_sys_net_processes);
     lua_setfield(ls, -2, "net_processes");
+    lua_pushcfunction(ls, l_sys_file_mtime);
+    lua_setfield(ls, -2, "file_mtime");
+    lua_pushcfunction(ls, l_sys_find_newest);
+    lua_setfield(ls, -2, "find_newest");
     lua_setglobal(ls, "sys");
 }

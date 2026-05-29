@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "image.h"
 
 /* ─── Helper: get BarInstance from HWND ─── */
 
@@ -116,6 +117,16 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             for (int i = 0; i < bar->rich.count; i++) {
                 DisplaySpan *sp = &bar->rich.spans[i];
                 if (sp->newline) { cur_line = 1; continue; }
+
+                if (sp->is_image) {
+                    int iw = 0, ih = 0;
+                    HBITMAP hbmp = image_load(sp->img_source, sp->img_w, sp->img_h, &iw, &ih);
+                    span_widths[i] = hbmp ? iw : 0;
+                    span_heights[i] = hbmp ? ih : 0;
+                    if (sp->align != SPAN_ALIGN_RIGHT) left_total[cur_line] += span_widths[i];
+                    continue;
+                }
+
                 if (!sp->text[0]) continue;
 
                 int pt = sp->font_size > 0 ? sp->font_size : g_cfg.font_size;
@@ -141,6 +152,33 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             for (int i = 0; i < bar->rich.count; i++) {
                 DisplaySpan *sp = &bar->rich.spans[i];
                 if (sp->newline) { cur_line = 1; continue; }
+
+                if (sp->is_image) {
+                    if (span_widths[i] <= 0) continue;
+                    int draw_x, draw_y;
+                    draw_y = has_newline ? line_y[cur_line] : (rc.bottom - span_heights[i]) / 2;
+                    if (sp->align == SPAN_ALIGN_RIGHT) {
+                        right_x[cur_line] -= span_widths[i];
+                        draw_x = right_x[cur_line];
+                    } else if (sp->align == SPAN_ALIGN_CENTER) {
+                        draw_x = (rc.right - span_widths[i]) / 2;
+                    } else {
+                        draw_x = left_x[cur_line];
+                        left_x[cur_line] += span_widths[i];
+                    }
+                    int iw = 0, ih = 0;
+                    HBITMAP hbmp = image_load(sp->img_source, sp->img_w, sp->img_h, &iw, &ih);
+                    if (hbmp) {
+                        HDC hMemDC = CreateCompatibleDC(hdc);
+                        HBITMAP hOld = (HBITMAP)SelectObject(hMemDC, hbmp);
+                        BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+                        AlphaBlend(hdc, draw_x, draw_y, iw, ih, hMemDC, 0, 0, iw, ih, bf);
+                        SelectObject(hMemDC, hOld);
+                        DeleteDC(hMemDC);
+                    }
+                    continue;
+                }
+
                 if (!sp->text[0]) continue;
 
                 int pt = sp->font_size > 0 ? sp->font_size : g_cfg.font_size;
@@ -202,6 +240,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER:
         if (!bar) break;
         if (wp == IDT_REFRESH) start_fetch(bar);
+        if (wp == IDT_ANIM) InvalidateRect(hwnd, NULL, FALSE);
         if (wp == IDT_SCROLL && g_cfg.scroll_enabled) {
             RECT rc;
             GetClientRect(hwnd, &rc);
@@ -270,6 +309,21 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         bar->fetching = FALSE;
         bar->scroll_offset = 0;
         InvalidateRect(hwnd, NULL, TRUE);
+        /* Start/stop animation timer based on whether any span is animated GIF */
+        {
+            BOOL need_anim = FALSE;
+            for (int i = 0; i < bar->rich.count; i++) {
+                DisplaySpan *sp = &bar->rich.spans[i];
+                if (sp->is_image && sp->img_source[0]) {
+                    if (image_is_animated(sp->img_source, sp->img_w, sp->img_h)) {
+                        need_anim = TRUE;
+                        break;
+                    }
+                }
+            }
+            if (need_anim) SetTimer(hwnd, IDT_ANIM, ANIM_INTERVAL, NULL);
+            else KillTimer(hwnd, IDT_ANIM);
+        }
         return 0;
     }
 
@@ -375,6 +429,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DESTROY:
         KillTimer(hwnd, IDT_REFRESH);
         KillTimer(hwnd, IDT_SCROLL);
+        KillTimer(hwnd, IDT_ANIM);
         appbar_remove(hwnd);
         return 0;
     }

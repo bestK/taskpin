@@ -1,5 +1,6 @@
 #include "scripting.h"
 #include "sysinfo.h"
+#include "image.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -264,6 +265,48 @@ static int l_span_concat(lua_State *ls) {
     return 1;
 }
 
+/* icon(source, width, height, align) -> span table with __is_image marker */
+static int l_icon(lua_State *ls) {
+    const char *source = luaL_checkstring(ls, 1);
+    int img_w = 16, img_h = 16;
+    const char *align_str = NULL;
+
+    if (lua_gettop(ls) >= 2 && !lua_isnil(ls, 2))
+        img_w = (int)lua_tointeger(ls, 2);
+    if (lua_gettop(ls) >= 3 && !lua_isnil(ls, 3))
+        img_h = (int)lua_tointeger(ls, 3);
+    if (lua_gettop(ls) >= 4 && !lua_isnil(ls, 4))
+        align_str = lua_tostring(ls, 4);
+
+    lua_newtable(ls);
+
+    lua_pushstring(ls, source);
+    lua_setfield(ls, -2, "img_source");
+
+    lua_pushinteger(ls, img_w);
+    lua_setfield(ls, -2, "img_w");
+
+    lua_pushinteger(ls, img_h);
+    lua_setfield(ls, -2, "img_h");
+
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, -2, "__is_image");
+
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, -2, "__is_span");
+
+    if (align_str) {
+        lua_pushstring(ls, align_str);
+        lua_setfield(ls, -2, "align");
+    }
+
+    /* Set the span metatable for __concat support */
+    luaL_getmetatable(ls, SPAN_MT);
+    lua_setmetatable(ls, -2);
+
+    return 1;
+}
+
 static void register_font_api(lua_State *ls) {
     /* Create span metatable */
     luaL_newmetatable(ls, SPAN_MT);
@@ -274,6 +317,10 @@ static void register_font_api(lua_State *ls) {
     /* Register global font() */
     lua_pushcfunction(ls, l_font);
     lua_setglobal(ls, "font");
+
+    /* Register global icon() */
+    lua_pushcfunction(ls, l_icon);
+    lua_setglobal(ls, "icon");
 }
 
 static int parse_align_str(const char *s) {
@@ -294,6 +341,35 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
     lua_pop(ls, 1);
 
     if (single) {
+        DisplaySpan *sp = &rich->spans[0];
+        memset(sp, 0, sizeof(DisplaySpan));
+        sp->color = 0xFFFFFFFF;
+
+        /* Check if it's an image span */
+        lua_getfield(ls, idx, "__is_image");
+        BOOL is_img = lua_toboolean(ls, -1);
+        lua_pop(ls, 1);
+
+        if (is_img) {
+            sp->is_image = TRUE;
+            lua_getfield(ls, idx, "img_source");
+            const char *src = lua_tostring(ls, -1);
+            if (src) strncpy(sp->img_source, src, IMG_SOURCE_MAX - 1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, idx, "img_w");
+            if (!lua_isnil(ls, -1)) sp->img_w = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, idx, "img_h");
+            if (!lua_isnil(ls, -1)) sp->img_h = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, idx, "align");
+            const char *a = lua_tostring(ls, -1);
+            sp->align = parse_align_str(a);
+            lua_pop(ls, 1);
+            rich->count = 1;
+            return;
+        }
+
         lua_getfield(ls, idx, "text");
         const char *t = lua_tostring(ls, -1);
         if (t) {
@@ -330,10 +406,37 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
         lua_rawgeti(ls, idx, i);
         if (lua_istable(ls, -1)) {
             DisplaySpan *sp = &rich->spans[rich->count];
+            memset(sp, 0, sizeof(DisplaySpan));
             sp->color = 0xFFFFFFFF;
             sp->font_size = 0;
             sp->align = SPAN_ALIGN_LEFT;
             sp->newline = FALSE;
+
+            /* Check if this span is an image */
+            lua_getfield(ls, -1, "__is_image");
+            BOOL is_img = lua_toboolean(ls, -1);
+            lua_pop(ls, 1);
+
+            if (is_img) {
+                sp->is_image = TRUE;
+                lua_getfield(ls, -1, "img_source");
+                const char *src = lua_tostring(ls, -1);
+                if (src) strncpy(sp->img_source, src, IMG_SOURCE_MAX - 1);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "img_w");
+                if (!lua_isnil(ls, -1)) sp->img_w = (int)lua_tointeger(ls, -1);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "img_h");
+                if (!lua_isnil(ls, -1)) sp->img_h = (int)lua_tointeger(ls, -1);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "align");
+                const char *al = lua_tostring(ls, -1);
+                sp->align = parse_align_str(al);
+                lua_pop(ls, 1);
+                rich->count++;
+                lua_pop(ls, 1);
+                continue;
+            }
 
             lua_getfield(ls, -1, "text");
             const char *t = lua_tostring(ls, -1);
@@ -508,6 +611,7 @@ static BOOL is_dialog_table(lua_State *ls, int idx) {
 
 void script_init(void) {
     InitializeCriticalSection(&g_lua_cs);
+    image_init();
     L = luaL_newstate();
     if (!L) return;
     luaL_openlibs(L);
@@ -543,6 +647,7 @@ void script_init(void) {
 
 void script_shutdown(void) {
     if (L) { lua_close(L); L = NULL; }
+    image_shutdown();
     DeleteCriticalSection(&g_lua_cs);
 }
 

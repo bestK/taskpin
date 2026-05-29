@@ -6,6 +6,7 @@
 
 #define MAX_SPANS 32
 #define SPAN_TEXT_LEN 256
+#define IMG_SOURCE_MAX (200 * 1024)
 
 #define SPAN_ALIGN_LEFT   0
 #define SPAN_ALIGN_RIGHT  1
@@ -17,6 +18,9 @@ typedef struct {
     int font_size;       /* 0 = use default */
     int align;           /* SPAN_ALIGN_LEFT/RIGHT/CENTER */
     BOOL newline;        /* this span starts a new line */
+    BOOL is_image;       /* TRUE = this span is an image, not text */
+    char img_source[IMG_SOURCE_MAX]; /* image source: path/url/data URI */
+    int img_w, img_h;    /* requested display size */
 } DisplaySpan;
 
 typedef struct {

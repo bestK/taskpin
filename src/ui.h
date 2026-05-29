@@ -22,8 +22,10 @@
 #define IDT_REFRESH        1
 #define IDT_SCROLL         2
 #define IDT_BORDER         3
+#define IDT_ANIM           4
 #define SCROLL_SPEED       2
 #define SCROLL_INTERVAL    50
+#define ANIM_INTERVAL      80
 
 /* Menu IDs */
 #define IDM_SHOW    3001
