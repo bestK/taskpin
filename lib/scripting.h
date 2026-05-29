@@ -53,8 +53,9 @@ typedef struct {
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int img_w, img_h;
-    /* button/link url */
+    /* button/link url or command */
     char url[512];
+    char cmd[512];
 } DialogItem;
 
 typedef struct {
