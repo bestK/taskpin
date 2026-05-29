@@ -73,6 +73,16 @@ return bar, true, dialog({
 4. Click **Market** to browse plugins, or **Add** to add scripts manually
 5. **Pin to Bar** to display
 
+## Shortcuts
+
+| Action | Shortcut |
+|--------|----------|
+| Adjust bar width | Scroll wheel on bar |
+| Move bar position | Shift + scroll wheel on bar |
+| Move borderless dialog | Shift + drag |
+| Resize borderless dialog | Shift + scroll wheel |
+| Close borderless dialog | ESC (while hovering) |
+
 ## Example Scripts
 
 <p align="center">
