@@ -1,11 +1,13 @@
 -- novel_reader.lua - 任务栏摸鱼小说阅读器
--- @param FILE string 小说文件路径(UTF-8 txt)
+-- @param FILE file 小说文件路径(UTF-8 txt)
 -- @param CHARS number 每次显示字数(默认20)
 -- @refresh 5000
 -- bar_width 推荐: 300+
 
 local file_path = args.FILE or ""
 local chars_per_page = tonumber(args.CHARS) or 20
+
+log("novel_reader: FILE=" .. file_path)
 
 if file_path == "" then
     return font("[请配置小说路径]", "#FF3333", 9), false
@@ -30,15 +32,10 @@ local function save_pos(pos)
 end
 
 -- 读取小说内容
-local f = io.open(file_path, "r")
-if not f then
-    return font("[文件不存在]", "#FF3333", 9), false
-end
-local content = f:read("*a")
-f:close()
-
+local content = sys.read_file(file_path)
 if not content or #content == 0 then
-    return font("[文件为空]", "#FF3333", 9), false
+    log("novel_reader: 读取失败或为空", file_path)
+    return font("[文件为空或不存在]", "#FF3333", 9), false
 end
 
 -- UTF-8 字符切片

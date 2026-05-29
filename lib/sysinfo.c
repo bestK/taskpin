@@ -449,6 +449,45 @@ static int l_sys_find_newest(lua_State *ls) {
     return 1;
 }
 
+/* ─── Read file with Unicode path support ─── */
+
+static int l_sys_read_file(lua_State *ls) {
+    const char *path = luaL_checkstring(ls, 1);
+    WCHAR wpath[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_PATH);
+
+    HANDLE hFile = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) { lua_pushnil(ls); return 1; }
+
+    DWORD size = GetFileSize(hFile, NULL);
+    if (size == 0 || size == INVALID_FILE_SIZE) {
+        CloseHandle(hFile);
+        lua_pushstring(ls, "");
+        return 1;
+    }
+
+    char *buf = (char *)malloc(size + 1);
+    if (!buf) { CloseHandle(hFile); lua_pushnil(ls); return 1; }
+
+    DWORD read_bytes = 0;
+    ReadFile(hFile, buf, size, &read_bytes, NULL);
+    CloseHandle(hFile);
+    buf[read_bytes] = '\0';
+
+    /* Skip UTF-8 BOM if present */
+    char *start = buf;
+    if (read_bytes >= 3 && (unsigned char)buf[0] == 0xEF &&
+        (unsigned char)buf[1] == 0xBB && (unsigned char)buf[2] == 0xBF) {
+        start = buf + 3;
+        read_bytes -= 3;
+    }
+
+    lua_pushlstring(ls, start, read_bytes);
+    free(buf);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -477,5 +516,7 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "file_mtime");
     lua_pushcfunction(ls, l_sys_find_newest);
     lua_setfield(ls, -2, "find_newest");
+    lua_pushcfunction(ls, l_sys_read_file);
+    lua_setfield(ls, -2, "read_file");
     lua_setglobal(ls, "sys");
 }

@@ -17,6 +17,8 @@ typedef struct {
     HWND hBarBgLabel, hBarBg;
     HWND hParamLabel[CFG_MAX_PARAMS];
     HWND hParamEdit[CFG_MAX_PARAMS];
+    HWND hParamBrowse[CFG_MAX_PARAMS];
+    char param_types[CFG_MAX_PARAMS][16];
     int  param_decl_count;
     int  item_index;
     char cached_response[FETCH_BUF_SIZE];
@@ -36,6 +38,7 @@ static void edit_load_params(const WCHAR *lua_path, const PinItem *existing) {
     for (int i = 0; i < CFG_MAX_PARAMS; i++) {
         ShowWindow(g_edit->hParamLabel[i], SW_HIDE);
         ShowWindow(g_edit->hParamEdit[i], SW_HIDE);
+        if (g_edit->hParamBrowse[i]) ShowWindow(g_edit->hParamBrowse[i], SW_HIDE);
     }
     g_edit->param_decl_count = 0;
     if (!lua_path || !lua_path[0]) return;
@@ -56,6 +59,12 @@ static void edit_load_params(const WCHAR *lua_path, const PinItem *existing) {
         SetWindowTextW(g_edit->hParamLabel[i], lbl);
         ShowWindow(g_edit->hParamLabel[i], SW_SHOW);
         ShowWindow(g_edit->hParamEdit[i], SW_SHOW);
+        strncpy(g_edit->param_types[i], decls[i].type, 15);
+
+        /* Show browse button for file type */
+        if (strcmp(decls[i].type, "file") == 0 && g_edit->hParamBrowse[i]) {
+            ShowWindow(g_edit->hParamBrowse[i], SW_SHOW);
+        }
 
         if (existing) {
             WCHAR wkey[64];
@@ -239,6 +248,24 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (id == IDB_LOAD && code == BN_CLICKED) {
             edit_load_response(g_edit);
+            return 0;
+        }
+        /* File browse buttons for @param file type */
+        if (id >= 8000 && id < 8000 + CFG_MAX_PARAMS && code == BN_CLICKED) {
+            int pi = id - 8000;
+            if (strcmp(g_edit->param_types[pi], "file") == 0) {
+                WCHAR file[MAX_PATH] = {0};
+                OPENFILENAMEW ofn = {0};
+                ofn.lStructSize = sizeof(ofn);
+                ofn.hwndOwner = hwnd;
+                ofn.lpstrFilter = L"All Files\0*.*\0Text Files (*.txt)\0*.txt\0";
+                ofn.lpstrFile = file;
+                ofn.nMaxFile = MAX_PATH;
+                ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+                if (GetOpenFileNameW(&ofn)) {
+                    SetWindowTextW(g_edit->hParamEdit[pi], file);
+                }
+            }
             return 0;
         }
         if (id == IDE_EXPR && code == EN_CHANGE) {
@@ -490,9 +517,12 @@ void show_edit_dialog(HWND parent, int item_idx) {
         st->hParamLabel[pi] = CreateWindowExW(0, L"STATIC", L"",
             WS_CHILD, 10, py + 2, 100, 18, st->hDlg, NULL, g_hinst, NULL);
         st->hParamEdit[pi] = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | ES_AUTOHSCROLL, 115, py, 495, 22, st->hDlg, NULL, g_hinst, NULL);
+            WS_CHILD | ES_AUTOHSCROLL, 115, py, 455, 22, st->hDlg, NULL, g_hinst, NULL);
+        st->hParamBrowse[pi] = CreateWindowExW(0, L"BUTTON", L"...",
+            WS_CHILD, 575, py, 35, 22, st->hDlg, (HMENU)(INT_PTR)(8000 + pi), g_hinst, NULL);
         SendMessageW(st->hParamLabel[pi], WM_SETFONT, (WPARAM)g_font, TRUE);
         SendMessageW(st->hParamEdit[pi], WM_SETFONT, (WPARAM)g_font, TRUE);
+        SendMessageW(st->hParamBrowse[pi], WM_SETFONT, (WPARAM)g_font, TRUE);
     }
     st->param_decl_count = 0;
 
