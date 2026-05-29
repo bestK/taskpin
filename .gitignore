@@ -6,3 +6,4 @@ zentao_task.py
 zentao_task.lua
 !examples/*.lua
 taskpin.log
+.ace-tool/
