@@ -401,7 +401,6 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         int id = LOWORD(wp);
         if (state && id >= DLG_BTN_BASE_ID && id < DLG_BTN_BASE_ID + DLG_MAX_BUTTONS) {
             int btn_idx = id - DLG_BTN_BASE_ID;
-            /* Find the corresponding DI_BUTTON item */
             int btn_count = 0;
             for (int i = 0; i < state->spec.item_count; i++) {
                 if (state->spec.items[i].type == DI_BUTTON) {
@@ -410,6 +409,17 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                             WCHAR wurl[512];
                             MultiByteToWideChar(CP_UTF8, 0, state->spec.items[i].url, -1, wurl, 512);
                             ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
+                        } else if (state->spec.items[i].cmd[0]) {
+                            WCHAR wcmd[512];
+                            MultiByteToWideChar(CP_UTF8, 0, state->spec.items[i].cmd, -1, wcmd, 512);
+                            STARTUPINFOW si = { .cb = sizeof(si) };
+                            PROCESS_INFORMATION pi = {0};
+                            WCHAR cmdline[600];
+                            wsprintfW(cmdline, L"cmd /c %s", wcmd);
+                            CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
+                                CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+                            if (pi.hProcess) CloseHandle(pi.hProcess);
+                            if (pi.hThread) CloseHandle(pi.hThread);
                         }
                         break;
                     }

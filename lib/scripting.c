@@ -640,6 +640,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             const char *u = lua_tostring(ls, -1);
             if (u) strncpy(item->url, u, 511);
             lua_pop(ls, 1);
+            lua_getfield(ls, -1, "cmd");
+            const char *cmd = lua_tostring(ls, -1);
+            if (cmd) strncpy(item->cmd, cmd, 511);
+            lua_pop(ls, 1);
             lua_getfield(ls, -1, "color");
             const char *c = lua_tostring(ls, -1);
             if (c) item->color = parse_color_str(c);
