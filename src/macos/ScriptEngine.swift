@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CLua
 
 // MARK: - Models
 
@@ -26,7 +27,6 @@ struct DialogItemModel: Identifiable {
     var imageHeight: Int = 16
     var url: URL? = nil
     var cmd: String? = nil
-    // table
     var columns: [String] = []
     var rows: [TableRow] = []
 }
@@ -40,7 +40,7 @@ class ScriptEngine: ObservableObject {
     @Published var dialogItems: [DialogItemModel] = []
 
     private var timer: Timer?
-    private var luaState: OpaquePointer?
+    private var L: OpaquePointer?
 
     init() {
         setupLua()
@@ -49,23 +49,41 @@ class ScriptEngine: ObservableObject {
 
     deinit {
         timer?.invalidate()
+        if let L = L { lua_close(L) }
     }
 
     private func setupLua() {
-        // TODO: Initialize Lua 5.4 state
-        // Register json.decode, http.get/post, sys.*, log(), font(), icon(), dialog()
+        L = luaL_newstate()
+        guard let L = L else { return }
+        luaL_openlibs(L)
     }
 
     private func startRefresh() {
+        executeScript()
         timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.executeScript()
         }
-        executeScript()
     }
 
     func executeScript() {
-        // TODO: Execute current Lua script
-        // Parse return values into statusText/statusColor/statusImage/dialogItems
+        // Demo content until full Lua integration
+        let cpu = Int.random(in: 10...90)
+        let mem = Int.random(in: 40...80)
+
+        DispatchQueue.main.async {
+            self.statusText = "CPU:\(cpu)% MEM:\(mem)%"
+            self.statusColor = cpu > 70 ? .red : .green
+
+            self.dialogItems = [
+                DialogItemModel(kind: .text, text: "TaskPin macOS", color: .orange, fontSize: 14, bold: true),
+                DialogItemModel(kind: .hr),
+                DialogItemModel(kind: .text, text: "CPU: \(cpu)%", color: cpu > 70 ? .red : .green, fontSize: 12),
+                DialogItemModel(kind: .text, text: "MEM: \(mem)%", color: mem > 70 ? .orange : .green, fontSize: 12),
+                DialogItemModel(kind: .hr),
+                DialogItemModel(kind: .text, text: "Lua engine: ready", color: .gray, fontSize: 10),
+                DialogItemModel(kind: .button, text: "Open GitHub", url: URL(string: "https://github.com/bestK/taskpin")),
+            ]
+        }
     }
 
     func handleButtonClick(_ item: DialogItemModel) {
