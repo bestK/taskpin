@@ -75,6 +75,11 @@ return bar, true, dialog({
 
 ## Example Scripts
 
+<p align="center">
+  <img src="examples/claude_status.gif" alt="Claude Code Status Demo" width="600">
+  <br><em>claude_status.lua — real-time Claude Code working status in taskbar</em>
+</p>
+
 | Script | Purpose |
 |--------|---------|
 | [`claude_status`](examples/claude_status.lua) | Claude Code real-time working status |
