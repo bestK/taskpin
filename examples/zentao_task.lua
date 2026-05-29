@@ -1,6 +1,7 @@
 -- @param BASE_URL string 禅道地址
 -- @param ACCOUNT string 账号
 -- @param PASSWORD string 密码
+-- @refresh 60000
 -- zentao_task.lua - 禅道未完成任务显示
 
 local BASE_URL = args.BASE_URL or "https://zentao.example.com"
@@ -29,27 +30,56 @@ local function get_tasks()
 end
 
 if ACCOUNT == "" then
-    return "[请配置参数]", false, ""
+    return font("[请配置参数]", "#FF3333", 9), false
 end
 
 if not login() then
-    return "[登录失败]", false, ""
+    return font("[登录失败]", "#FF3333", 9), false
 end
 
 local tasks = get_tasks()
-local names = {}
-local count = 0
+local active = {}
 for _, t in pairs(tasks) do
     if type(t) == "table" and t.status and not DONE[t.status] then
-        count = count + 1
-        if t.name then names[#names + 1] = t.name end
+        active[#active + 1] = t
     end
 end
 
-local text
-if count == 0 then
-    text = "禅道:无任务"
-else
-    text = "禅道(" .. count .. "):" .. table.concat(names, " | ")
+local count = #active
+local color = count == 0 and "#33CC33" or "#FFAA00"
+local bar = font("禅道(" .. count .. ")", color, 9)
+
+-- 构建任务表格
+local rows = {}
+for i, t in ipairs(active) do
+    if i > 20 then break end
+    local pri = t.pri and tostring(t.pri) or "-"
+    local name = t.name or ""
+    if #name > 30 then name = name:sub(1, 30) .. "..." end
+    local status = t.status or ""
+    rows[#rows + 1] = { pri, name, status }
 end
-return text, true, BASE_URL .. "/my-task-assignedTo.html"
+
+local content = {
+    { type = "text", value = "我的任务 (" .. count .. ")", color = "#D97757", size = 12, bold = true },
+    { type = "hr" },
+}
+
+if count == 0 then
+    content[#content + 1] = { type = "text", value = "没有待办任务", color = "#33CC33", size = 10 }
+else
+    content[#content + 1] = {
+        type = "table",
+        columns = { "优先级", "任务名称", "状态" },
+        rows = rows,
+    }
+end
+
+local info = dialog({
+    title = "禅道任务",
+    width = 420, height = 320,
+    refresh = 60,
+    content = content,
+})
+
+return bar, true, info
