@@ -508,6 +508,24 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
     if (!lua_isnil(ls, -1)) spec->refresh = (int)lua_tointeger(ls, -1);
     lua_pop(ls, 1);
 
+    lua_getfield(ls, idx, "borderless");
+    spec->borderless = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "clickthrough");
+    spec->clickthrough = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "opacity");
+    if (!lua_isnil(ls, -1)) {
+        spec->opacity = (int)lua_tointeger(ls, -1);
+        if (spec->opacity < 0) spec->opacity = 0;
+        if (spec->opacity > 255) spec->opacity = 255;
+    } else {
+        spec->opacity = 255;
+    }
+    lua_pop(ls, 1);
+
     lua_getfield(ls, idx, "content");
     if (!lua_istable(ls, -1)) { lua_pop(ls, 1); return; }
 

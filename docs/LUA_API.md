@@ -91,7 +91,12 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | width | number | 窗口宽度（px），默认 400 |
 | height | number | 窗口高度（px），默认 300 |
 | refresh | number | 自动刷新间隔（秒），0 或不填则不刷新 |
+| borderless | boolean | 无标题栏/无边框/无滚动条模式，默认 false |
+| clickthrough | boolean | 鼠标点击穿透（配合 borderless 做 HUD），默认 false |
+| opacity | number | 窗口透明度 0-255（0=全透明，255=不透明），默认 255 |
 | content | table | 内容项数组（最多 8 项） |
+
+**borderless 模式**：按住 Shift 可拖动窗口位置。
 
 **content 项类型**:
 
@@ -116,6 +121,23 @@ local info = dialog({
 })
 
 return font("Status", "#0F0", 9), true, info
+```
+
+**HUD 悬浮窗示例**：
+
+```lua
+local hud = dialog({
+    width = 200, height = 80,
+    refresh = 1,
+    borderless = true,
+    clickthrough = true,
+    opacity = 180,
+    content = {
+        { type = "text", value = os.date("%H:%M:%S"), color = "#FFFFFF", size = 24, bold = true },
+    }
+})
+
+return font("Clock", "#FFF", 9), true, hud
 ```
 
 ---

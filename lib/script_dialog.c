@@ -64,9 +64,14 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     int w = spec->width > 0 ? spec->width : 400;
     int h = spec->height > 0 ? spec->height : 300;
 
-    DWORD style = WS_OVERLAPPEDWINDOW | WS_VSCROLL;
+    DWORD style = spec->borderless
+        ? (WS_POPUP)
+        : (WS_OVERLAPPEDWINDOW | WS_VSCROLL);
+    DWORD exstyle = WS_EX_TOPMOST;
+    if (spec->clickthrough || spec->opacity < 255)
+        exstyle |= WS_EX_LAYERED;
     RECT wr = {0, 0, w, h};
-    AdjustWindowRectEx(&wr, style, FALSE, WS_EX_TOPMOST);
+    AdjustWindowRectEx(&wr, style, FALSE, exstyle);
 
     int win_w = wr.right - wr.left;
     int win_h = wr.bottom - wr.top;
@@ -75,10 +80,15 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     int x = (screen_w - win_w) / 2;
     int y = (screen_h - win_h) / 2;
 
-    s_dialog_hwnd = CreateWindowExW(WS_EX_TOPMOST, DIALOG_CLASS, spec->title,
+    s_dialog_hwnd = CreateWindowExW(exstyle, DIALOG_CLASS, spec->title,
         style,
         x, y, win_w, win_h,
         NULL, NULL, GetModuleHandle(NULL), state);
+
+    if (spec->opacity < 255 || spec->clickthrough) {
+        SetLayeredWindowAttributes(s_dialog_hwnd, 0,
+            (BYTE)(spec->opacity < 255 ? spec->opacity : 255), LWA_ALPHA);
+    }
 
     ShowWindow(s_dialog_hwnd, SW_SHOW);
     UpdateWindow(s_dialog_hwnd);
@@ -247,6 +257,7 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
 }
 
 static void update_scrollbar(HWND hwnd, ScriptDialogState *state) {
+    if (state->spec.borderless) return;
     RECT rc;
     GetClientRect(hwnd, &rc);
     int page = rc.bottom - rc.top;
@@ -330,6 +341,15 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     case WM_SIZE:
         if (state) InvalidateRect(hwnd, NULL, TRUE);
         return 0;
+
+    case WM_NCHITTEST: {
+        if (!state) break;
+        if (state->spec.borderless && (GetKeyState(VK_SHIFT) & 0x8000))
+            return HTCAPTION;
+        if (state->spec.clickthrough)
+            return HTTRANSPARENT;
+        break;
+    }
 
     case WM_DESTROY:
         KillTimer(hwnd, IDT_DIALOG_REFRESH);
