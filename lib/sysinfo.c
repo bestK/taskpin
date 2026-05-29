@@ -231,6 +231,143 @@ static int l_sys_net_speed(lua_State *ls) {
     return 1;
 }
 
+/* ─── Per-process network connections + IO speed ─── */
+
+#include <tcpmib.h>
+#include <winsock2.h>
+#include <psapi.h>
+
+#define NET_PROC_MAX 128
+
+typedef struct {
+    DWORD pid;
+    ULONG64 io_read;
+    ULONG64 io_write;
+} NetProcSnap;
+
+static NetProcSnap s_np_prev[NET_PROC_MAX];
+static int s_np_prev_count = 0;
+static DWORD s_np_prev_tick = 0;
+
+static int l_sys_net_processes(lua_State *ls) {
+    /* Step 1: Get all TCP connections with owning PID */
+    DWORD tcp_size = 0;
+    GetExtendedTcpTable(NULL, &tcp_size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+    if (tcp_size == 0) { lua_newtable(ls); return 1; }
+
+    MIB_TCPTABLE_OWNER_PID *tcp_table = (MIB_TCPTABLE_OWNER_PID *)malloc(tcp_size);
+    if (!tcp_table) { lua_newtable(ls); return 1; }
+
+    if (GetExtendedTcpTable(tcp_table, &tcp_size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+        free(tcp_table);
+        lua_newtable(ls);
+        return 1;
+    }
+
+    /* Step 2: Aggregate connections by PID (only ESTABLISHED) */
+    typedef struct { DWORD pid; int conns; } PidEntry;
+    PidEntry pids[NET_PROC_MAX];
+    int pid_count = 0;
+
+    for (DWORD i = 0; i < tcp_table->dwNumEntries; i++) {
+        MIB_TCPROW_OWNER_PID *row = &tcp_table->table[i];
+        if (row->dwState != MIB_TCP_STATE_ESTAB) continue;
+        DWORD pid = row->dwOwningPid;
+        if (pid == 0) continue;
+
+        int found = 0;
+        for (int j = 0; j < pid_count; j++) {
+            if (pids[j].pid == pid) { pids[j].conns++; found = 1; break; }
+        }
+        if (!found && pid_count < NET_PROC_MAX) {
+            pids[pid_count].pid = pid;
+            pids[pid_count].conns = 1;
+            pid_count++;
+        }
+    }
+    free(tcp_table);
+
+    /* Step 3: For each PID, get process name + IO counters */
+    DWORD now = GetTickCount();
+    DWORD dt = (s_np_prev_tick > 0) ? (now - s_np_prev_tick) : 0;
+
+    NetProcSnap cur_snap[NET_PROC_MAX];
+    int cur_snap_count = 0;
+
+    lua_newtable(ls);
+    int idx = 1;
+
+    for (int i = 0; i < pid_count; i++) {
+        DWORD pid = pids[i].pid;
+        HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!hProc) continue;
+
+        /* Get process name */
+        WCHAR wname[MAX_PATH];
+        DWORD name_size = MAX_PATH;
+        char name8[MAX_PATH];
+        if (QueryFullProcessImageNameW(hProc, 0, wname, &name_size)) {
+            WCHAR *slash = wcsrchr(wname, L'\\');
+            WCHAR *base = slash ? slash + 1 : wname;
+            WideCharToMultiByte(CP_UTF8, 0, base, -1, name8, MAX_PATH, NULL, NULL);
+        } else {
+            lstrcpyA(name8, "unknown");
+        }
+
+        /* Get IO counters */
+        IO_COUNTERS ioc;
+        ULONG64 io_read = 0, io_write = 0;
+        double read_speed = 0, write_speed = 0;
+        if (GetProcessIoCounters(hProc, &ioc)) {
+            io_read = ioc.ReadTransferCount;
+            io_write = ioc.WriteTransferCount;
+
+            /* Find previous snapshot for this PID */
+            if (dt > 0) {
+                for (int j = 0; j < s_np_prev_count; j++) {
+                    if (s_np_prev[j].pid == pid) {
+                        read_speed = (double)(io_read - s_np_prev[j].io_read) * 1000.0 / dt;
+                        write_speed = (double)(io_write - s_np_prev[j].io_write) * 1000.0 / dt;
+                        if (read_speed < 0) read_speed = 0;
+                        if (write_speed < 0) write_speed = 0;
+                        break;
+                    }
+                }
+            }
+
+            /* Save to current snapshot */
+            if (cur_snap_count < NET_PROC_MAX) {
+                cur_snap[cur_snap_count].pid = pid;
+                cur_snap[cur_snap_count].io_read = io_read;
+                cur_snap[cur_snap_count].io_write = io_write;
+                cur_snap_count++;
+            }
+        }
+        CloseHandle(hProc);
+
+        /* Push entry to lua table */
+        lua_newtable(ls);
+        lua_pushinteger(ls, (lua_Integer)pid);
+        lua_setfield(ls, -2, "pid");
+        lua_pushstring(ls, name8);
+        lua_setfield(ls, -2, "name");
+        lua_pushinteger(ls, pids[i].conns);
+        lua_setfield(ls, -2, "connections");
+        lua_pushnumber(ls, read_speed);
+        lua_setfield(ls, -2, "download");
+        lua_pushnumber(ls, write_speed);
+        lua_setfield(ls, -2, "upload");
+        lua_rawseti(ls, -2, idx++);
+    }
+
+    /* Update snapshot */
+    memcpy(s_np_prev, cur_snap, sizeof(NetProcSnap) * cur_snap_count);
+    s_np_prev_count = cur_snap_count;
+    s_np_prev_tick = now;
+
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -253,5 +390,7 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "net");
     lua_pushcfunction(ls, l_sys_net_speed);
     lua_setfield(ls, -2, "net_speed");
+    lua_pushcfunction(ls, l_sys_net_processes);
+    lua_setfield(ls, -2, "net_processes");
     lua_setglobal(ls, "sys");
 }
