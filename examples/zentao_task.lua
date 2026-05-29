@@ -46,6 +46,10 @@ for _, t in pairs(tasks) do
 end
 
 local count = #active
+log("禅道: 获取到 " .. count .. " 个待办任务")
+for _, t in ipairs(active) do
+    log("  [P" .. (t.pri or "?") .. "] " .. (t.name or "未命名") .. " (" .. (t.status or "") .. ")")
+end
 local color = count == 0 and "#33CC33" or "#FFAA00"
 local bar = font("禅道(" .. count .. ")", color, 9)
 
