@@ -7,4 +7,4 @@ zentao_task.lua
 !examples/*.lua
 taskpin.log
 .ace-tool/
-scripts/
+scripts/.build/
