@@ -2,6 +2,7 @@
 #include "scripting.h"
 #include "config.h"
 #include "image.h"
+#include <shellapi.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,6 +16,8 @@
 #define TABLE_HDR_BG    RGB(45, 45, 45)
 #define PADDING_X 12
 #define PADDING_Y 8
+#define DLG_BTN_BASE_ID 7000
+#define DLG_MAX_BUTTONS 8
 
 typedef struct {
     DialogSpec spec;
@@ -23,6 +26,8 @@ typedef struct {
     int param_count;
     int scroll_y;
     int content_height;
+    HWND buttons[DLG_MAX_BUTTONS];
+    int button_count;
 } ScriptDialogState;
 
 static HWND s_dialog_hwnd = NULL;
@@ -142,6 +147,10 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             y += rh;
             break;
         }
+        case DI_BUTTON: {
+            y += 26;
+            break;
+        }
         }
         y += 4; /* gap between items */
     }
@@ -151,6 +160,8 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
 static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
     RECT rc;
     GetClientRect(hwnd, &rc);
+
+    state->button_count = 0;
 
     HBRUSH bg = CreateSolidBrush(DIALOG_BG);
     FillRect(hdc, &rc, bg);
@@ -284,6 +295,28 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             }
             break;
         }
+        case DI_BUTTON: {
+            if (state->button_count < DLG_MAX_BUTTONS) {
+                int btn_h = 26;
+                int btn_w = client_w - PADDING_X * 2;
+                int btn_id = DLG_BTN_BASE_ID + state->button_count;
+                HWND hbtn = state->buttons[state->button_count];
+                if (!hbtn) {
+                    hbtn = CreateWindowExW(0, L"BUTTON", item->text,
+                        WS_CHILD | WS_VISIBLE | BS_LEFT,
+                        PADDING_X, y - state->scroll_y, btn_w, btn_h,
+                        hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
+                    SendMessageW(hbtn, WM_SETFONT, (WPARAM)create_dialog_font(9, FALSE), TRUE);
+                    state->buttons[state->button_count] = hbtn;
+                } else {
+                    MoveWindow(hbtn, PADDING_X, y, btn_w, btn_h, TRUE);
+                    SetWindowTextW(hbtn, item->text);
+                }
+                state->button_count++;
+                y += btn_h;
+            }
+            break;
+        }
         }
         y += 4;
     }
@@ -363,6 +396,29 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             refresh_dialog(hwnd, state);
         }
         return 0;
+
+    case WM_COMMAND: {
+        int id = LOWORD(wp);
+        if (state && id >= DLG_BTN_BASE_ID && id < DLG_BTN_BASE_ID + DLG_MAX_BUTTONS) {
+            int btn_idx = id - DLG_BTN_BASE_ID;
+            /* Find the corresponding DI_BUTTON item */
+            int btn_count = 0;
+            for (int i = 0; i < state->spec.item_count; i++) {
+                if (state->spec.items[i].type == DI_BUTTON) {
+                    if (btn_count == btn_idx) {
+                        if (state->spec.items[i].url[0]) {
+                            WCHAR wurl[512];
+                            MultiByteToWideChar(CP_UTF8, 0, state->spec.items[i].url, -1, wurl, 512);
+                            ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
+                        }
+                        break;
+                    }
+                    btn_count++;
+                }
+            }
+        }
+        return 0;
+    }
 
     case WM_VSCROLL: {
         if (!state) break;

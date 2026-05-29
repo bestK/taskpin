@@ -629,6 +629,24 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "height");
             item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
+        } else if (strcmp(type, "button") == 0) {
+            item->type = DI_BUTTON;
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "value");
+            const char *val = lua_tostring(ls, -1);
+            if (val) MultiByteToWideChar(CP_UTF8, 0, val, -1, item->text, 256);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "url");
+            const char *u = lua_tostring(ls, -1);
+            if (u) strncpy(item->url, u, 511);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "color");
+            const char *c = lua_tostring(ls, -1);
+            if (c) item->color = parse_color_str(c);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "size");
+            if (!lua_isnil(ls, -1)) item->font_size = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
         } else {
             lua_pop(ls, 1);
             lua_pop(ls, 1);

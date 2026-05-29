@@ -49,17 +49,7 @@ local count = #active
 local color = count == 0 and "#33CC33" or "#FFAA00"
 local bar = font("禅道(" .. count .. ")", color, 9)
 
--- 构建任务表格
-local rows = {}
-for i, t in ipairs(active) do
-    if i > 20 then break end
-    local pri = t.pri and tostring(t.pri) or "-"
-    local name = t.name or ""
-    if #name > 30 then name = name:sub(1, 30) .. "..." end
-    local status = t.status or ""
-    rows[#rows + 1] = { pri, name, status }
-end
-
+-- 构建任务按钮列表
 local content = {
     { type = "text", value = "我的任务 (" .. count .. ")", color = "#D97757", size = 12, bold = true },
     { type = "hr" },
@@ -68,11 +58,13 @@ local content = {
 if count == 0 then
     content[#content + 1] = { type = "text", value = "没有待办任务", color = "#33CC33", size = 10 }
 else
-    content[#content + 1] = {
-        type = "table",
-        columns = { "优先级", "任务名称", "状态" },
-        rows = rows,
-    }
+    for i, t in ipairs(active) do
+        if i > 8 then break end
+        local name = t.name or "未命名"
+        local pri = t.pri and ("[P" .. t.pri .. "] ") or ""
+        local task_url = BASE_URL .. "/task-view-" .. (t.id or "0") .. ".html"
+        content[#content + 1] = { type = "button", value = pri .. name, url = task_url }
+    end
 end
 
 local info = dialog({
