@@ -75,6 +75,11 @@ return bar, true, dialog({
 
 ## 示例脚本
 
+<p align="center">
+  <img src="examples/claude_status.gif" alt="Claude Code 状态演示" width="600">
+  <br><em>claude_status.lua — 在任务栏实时显示 Claude Code 工作状态</em>
+</p>
+
 | 脚本 | 用途 |
 |------|------|
 | [`claude_status`](examples/claude_status.lua) | Claude Code 实时工作状态 |
