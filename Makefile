@@ -8,7 +8,7 @@ LUA_DIR = lib/lua
 
 CFLAGS = -std=c99 -O2 -Wall -Wextra -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN -DTASKPIN_VERSION=\"$(VERSION)\" -I$(LIB_DIR) -I$(SRC_DIR)
 CFLAGS_LUA = -O2 -DLUA_COMPAT_5_3 -DWIN32_LEAN_AND_MEAN
-LDFLAGS = -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32 -liphlpapi -lmsimg32
+LDFLAGS = -static -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32 -liphlpapi -lmsimg32
 TARGET = taskpin.exe
 
 SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/expression.c $(SRC_DIR)/edit_dialog.c \
