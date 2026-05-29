@@ -12,8 +12,8 @@
 static lua_State *L = NULL;
 static CRITICAL_SECTION g_lua_cs;
 
-static void script_log_error(const char *err) {
-    if (!err) return;
+static void script_log_write(const char *msg) {
+    if (!msg) return;
     WCHAR log_path[MAX_PATH];
     GetModuleFileNameW(NULL, log_path, MAX_PATH);
     WCHAR *slash = wcsrchr(log_path, L'\\');
@@ -34,7 +34,7 @@ static void script_log_error(const char *err) {
     GetLocalTime(&st);
     fprintf(f, "[%04d-%02d-%02d %02d:%02d:%02d] %s\n",
         st.wYear, st.wMonth, st.wDay,
-        st.wHour, st.wMinute, st.wSecond, err);
+        st.wHour, st.wMinute, st.wSecond, msg);
     fclose(f);
 }
 
@@ -133,7 +133,7 @@ static int l_log(lua_State *ls) {
     }
     luaL_pushresult(&buf);
     const char *msg = lua_tostring(ls, -1);
-    script_log_error(msg);
+    script_log_write(msg);
     lua_pop(ls, 1);
     return 0;
 }
@@ -759,7 +759,7 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 
     if (luaL_dostring(L, wrapped) != LUA_OK) {
         const char *err = lua_tostring(L, -1);
-        script_log_error(err);
+        script_log_write(err);
         lua_pop(L, 1);
         LeaveCriticalSection(&g_lua_cs);
         return FALSE;
@@ -847,7 +847,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
 
     if (luaL_dofile(L, path8) != LUA_OK) {
         const char *err = lua_tostring(L, -1);
-        script_log_error(err);
+        script_log_write(err);
         if (err) MultiByteToWideChar(CP_UTF8, 0, err, -1, result->display, 2048);
         else lstrcpyW(result->display, L"[lua error]");
         lua_settop(L, 0);
