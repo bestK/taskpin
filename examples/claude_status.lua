@@ -39,6 +39,29 @@ local function read_last_line(path)
     return last
 end
 
+-- 从文件尾部提取 aiTitle (回扫找 ai-title 事件)
+local function read_ai_title(path)
+    local f = io.open(path, "rb")
+    if not f then return nil end
+    local size = f:seek("end")
+    if not size or size == 0 then f:close(); return nil end
+    local chunk = math.min(size, 131072)
+    f:seek("set", size - chunk)
+    local data = f:read(chunk)
+    f:close()
+    if not data then return nil end
+    local title
+    for line in data:gmatch("[^\n]+") do
+        if line:find('"ai-title"', 1, true) then
+            local ev = json.decode(line)
+            if ev and ev.type == "ai-title" and ev.aiTitle then
+                title = ev.aiTitle
+            end
+        end
+    end
+    return title
+end
+
 -- 判断文件是否超过 30 秒未更新
 local function is_stale(path)
     local mtime = sys.file_mtime(path)
@@ -80,6 +103,7 @@ end
 -- 执行检测
 local session_path = find_latest_session()
 local status, detail = detect_status(session_path)
+local ai_title = session_path and read_ai_title(session_path)
 
 -- 状态颜色
 local colors = {
@@ -95,27 +119,28 @@ local color = colors[status] or "#888888"
 -- 构建 bar
 local bar
 local working = (status == "thinking" or status == "tool")
+local title_text = working and (ai_title or detail) or detail
 if working then
     bar = icon(claude_icon, 16, 16)
         .. font(" ", nil, 9)
         .. icon(claude_spinner, 14, 14)
-        .. font(" " .. detail, color, 8)
+        .. font(" " .. title_text, color, 8)
 else
     bar = icon(claude_icon, 16, 16)
-        .. font(" " .. detail, color, 9)
+        .. font(" " .. title_text, color, 9)
 end
 
 -- 对话框
 local session_name = session_path and session_path:match("([^\\/]+)%.jsonl$") or "-"
 local info = dialog({
     title = "Claude",
-    width = 340, height = 180,
+    width = 340, height = 200,
     refresh = 3,
     content = {
-        { type = "text", value = "Claude Code", color = "#D97757", size = 12, bold = true },
+        { type = "text", value = ai_title or "Claude Code", color = "#D97757", size = 12, bold = true },
         { type = "hr" },
-        { type = "text", value = detail, color = color, size = 11 },
-        { type = "text", value = session_name, color = "#666666", size = 9 },
+        { type = "text", value = "状态: " .. detail, color = color, size = 10 },
+        { type = "text", value = "会话: " .. session_name, color = "#666666", size = 9 },
     }
 })
 
