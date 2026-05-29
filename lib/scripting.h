@@ -56,6 +56,9 @@ typedef struct {
     WCHAR title[128];
     int width, height;
     int refresh;         /* seconds, 0 = no auto-refresh */
+    BOOL borderless;     /* TRUE = no title bar */
+    BOOL clickthrough;   /* TRUE = mouse clicks pass through */
+    int opacity;         /* 0-255, 0=fully transparent, 255=opaque (default) */
     DialogItem items[DIALOG_MAX_ITEMS];
     int item_count;
 } DialogSpec;

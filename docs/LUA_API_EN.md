@@ -91,7 +91,12 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | width | number | Window width in px, default 400 |
 | height | number | Window height in px, default 300 |
 | refresh | number | Auto-refresh interval in seconds, 0 or omit to disable |
+| borderless | boolean | No title bar / no border / no scrollbar, default false |
+| clickthrough | boolean | Mouse clicks pass through (for HUD overlays), default false |
+| opacity | number | Window opacity 0-255 (0=fully transparent, 255=opaque), default 255 |
 | content | table | Array of content items (max 8) |
+
+**Borderless mode**: Hold Shift to drag the window.
 
 **content item types**:
 
@@ -116,6 +121,23 @@ local info = dialog({
 })
 
 return font("Status", "#0F0", 9), true, info
+```
+
+**HUD overlay example**:
+
+```lua
+local hud = dialog({
+    width = 200, height = 80,
+    refresh = 1,
+    borderless = true,
+    clickthrough = true,
+    opacity = 180,
+    content = {
+        { type = "text", value = os.date("%H:%M:%S"), color = "#FFFFFF", size = 24, bold = true },
+    }
+})
+
+return font("Clock", "#FFF", 9), true, hud
 ```
 
 ---
