@@ -42,7 +42,8 @@ typedef enum { DI_TEXT, DI_HR, DI_TABLE, DI_IMG, DI_BUTTON } DialogItemType;
 typedef struct {
     DialogItemType type;
     WCHAR text[256];
-    COLORREF color;      /* 0xFFFFFFFF = use default */
+    COLORREF color;      /* 0xFFFFFFFF = use default (text/button fg color) */
+    COLORREF bg_color;   /* 0xFFFFFFFF = use default (button bg) */
     int font_size;       /* 0 = use default */
     BOOL bold;
     int col_count;
@@ -50,6 +51,7 @@ typedef struct {
     WCHAR columns[DIALOG_MAX_COLS][64];
     WCHAR cells[DIALOG_MAX_ROWS][DIALOG_MAX_COLS][64];
     COLORREF row_colors[DIALOG_MAX_ROWS];
+    char row_urls[DIALOG_MAX_ROWS][256];
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int img_w, img_h;
