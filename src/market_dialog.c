@@ -12,6 +12,35 @@
 
 #define MKT_MAX_SCRIPTS 64
 
+static BOOL s_is_china = FALSE;
+static BOOL s_geo_checked = FALSE;
+
+static void mkt_check_geo(void) {
+    if (s_geo_checked) return;
+    s_geo_checked = TRUE;
+    char *resp = http_request_sync(L"https://api.ip.sb/geoip", L"GET", NULL, NULL, NULL, 0);
+    if (!resp) return;
+    JsonNode *root = json_parse(resp);
+    if (root) {
+        for (JsonNode *c = root->children; c; c = c->next) {
+            if (c->key && strcmp(c->key, "country_code") == 0 &&
+                c->str_val && strcmp(c->str_val, "CN") == 0) {
+                s_is_china = TRUE;
+                break;
+            }
+        }
+        json_free(root);
+    }
+    free(resp);
+}
+
+static void mkt_build_raw_url(WCHAR *out, int out_size, const WCHAR *repo, const char *file) {
+    if (s_is_china)
+        _snwprintf(out, out_size, L"https://gh-proxy.com/https://raw.githubusercontent.com/%s/master/%S", repo, file);
+    else
+        _snwprintf(out, out_size, L"https://raw.githubusercontent.com/%s/master/%S", repo, file);
+}
+
 typedef struct {
     char name[128];
     char file[256];
@@ -57,7 +86,7 @@ static void mkt_fetch_scripts(const WCHAR *repo) {
 
     /* Try manifest.json first */
     WCHAR url[512];
-    wsprintfW(url, L"https://raw.githubusercontent.com/%s/master/manifest.json", repo);
+    mkt_build_raw_url(url, 512, repo, "manifest.json");
     char *resp = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
 
     if (resp) {
@@ -162,7 +191,7 @@ static void mkt_download_script(void) {
     lstrcpynW(repo, g_cfg.sources[src_idx], CFG_MAX_NAME);
 
     WCHAR url[512];
-    wsprintfW(url, L"https://raw.githubusercontent.com/%s/master/%S", repo, ms->file);
+    mkt_build_raw_url(url, 512, repo, ms->file);
 
     mkt_set_status(L"正在下载...");
     char *content = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
@@ -274,6 +303,8 @@ void show_market_dialog(HWND parent) {
     MarketState mkt = {0};
     s_mkt = &mkt;
     s_mkt_done = FALSE;
+
+    mkt_check_geo();
 
     HWND hwnd = CreateWindowExW(
         WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
