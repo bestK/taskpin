@@ -5,92 +5,92 @@
 <h1 align="center">TaskPin</h1>
 
 <p align="center">
-  把任何信息钉在 Windows 任务栏上。<br>
-  纯 C + Lua 脚本驱动，单文件 450KB，零依赖。
+  Pin anything to your Windows taskbar.<br>
+  Pure C + Lua scripted, single file 450KB, zero dependencies.
 </p>
 
 <p align="center">
   <a href="https://github.com/bestK/taskpin/releases/latest">Download</a> |
-  <a href="README_EN.md">English</a> |
-  <a href="docs/LUA_API.md">API 文档</a> |
-  <a href="https://github.com/bestK/taskpin-plugins">插件市场</a>
+  <a href="README_CN.md">中文</a> |
+  <a href="docs/LUA_API_EN.md">API Docs</a> |
+  <a href="https://github.com/bestK/taskpin-plugins">Plugin Market</a>
 </p>
 
 ---
 
-## 它能做什么
+## What it does
 
-写一段 Lua 脚本，TaskPin 就把结果显示在任务栏里。比如：
+Write a Lua script, TaskPin displays the result in your taskbar:
 
 ```lua
--- 监控 Claude Code 工作状态
-return icon("claude.png", 16, 16) .. font(" 想一想", "#FFAA00", 9)
+-- Monitor Claude Code working status
+return icon("claude.png", 16, 16) .. font(" thinking", "#FFAA00", 9)
 ```
 
 ```lua
--- 系统资源一览
+-- System resources at a glance
 local cpu = sys.cpu()
 local mem = sys.memory().percent
 return font("CPU:" .. cpu .. "%", "#0F0", 9) .. font(" MEM:" .. mem .. "%", "#FA0", 9)
 ```
 
 ```lua
--- AI API 余额查询
+-- AI API balance
 local r = json.decode(http.get("https://api.example.com/balance"))
 return font("$" .. r.balance, "#4FC3F7", 10)
 ```
 
-点击还能弹出详情面板——支持图文混排、表格、透明悬浮窗：
+Click to open a detail panel — supports images, tables, and transparent HUD overlays:
 
 ```lua
 return bar, true, dialog({
     borderless = true, opacity = 200,
     content = {
         { type = "text", value = "Claude Code", image = "claude.png", image_width = 16, image_height = 16 },
-        { type = "table", columns = {"指标", "值"}, rows = {{"CPU", "45%"}, {"MEM", "8GB"}} },
+        { type = "table", columns = {"Metric", "Value"}, rows = {{"CPU", "45%"}, {"MEM", "8GB"}} },
     }
 })
 ```
 
-## 特性
+## Features
 
 | | |
 |---|---|
-| **任务栏嵌入** | 直接嵌入底部任务栏，不占桌面空间 |
-| **Lua 脚本驱动** | 想显示什么就写什么，内置 HTTP/JSON/系统监控 API |
-| **插件市场** | 一键浏览和下载社区脚本 |
-| **富文本 + 图片** | 多色文字、PNG/GIF 动画、左右对齐、双行显示 |
-| **弹出对话框** | 点击展开详情面板，支持图文混排、表格、HUD 悬浮窗 |
-| **多 Bar 并排** | 同时 Pin 多个脚本，各自独立刷新 |
-| **零依赖** | 纯 C + Win32 API + Lua 5.4 静态链接，单文件 ~450KB |
-| **自动更新** | 静默检测新版本，下载替换重启 |
+| **Taskbar embedded** | Lives inside the taskbar, no desktop space wasted |
+| **Lua scripted** | Display anything — built-in HTTP, JSON, system monitoring APIs |
+| **Plugin market** | Browse and download community scripts in one click |
+| **Rich text + images** | Multi-color text, PNG/GIF animation, alignment, two-line display |
+| **Popup dialogs** | Click to expand detail panels with images, tables, HUD overlays |
+| **Multiple bars** | Pin multiple scripts side by side, each refreshes independently |
+| **Zero dependencies** | Pure C + Win32 API + Lua 5.4 statically linked, single file ~450KB |
+| **Auto update** | Silent version check, download, replace, and restart |
 
-## 快速开始
+## Quick Start
 
-1. 下载 [最新 Release](https://github.com/bestK/taskpin/releases/latest)
-2. 运行 `taskpin.exe`
-3. 双击任务栏嵌入条 → 打开管理窗口
-4. 点击 **Market** 浏览插件，或 **Add** 手动添加脚本
-5. **Pin to Bar** 即可显示
+1. Download the [latest release](https://github.com/bestK/taskpin/releases/latest)
+2. Run `taskpin.exe`
+3. Double-click the taskbar strip → management window opens
+4. Click **Market** to browse plugins, or **Add** to add scripts manually
+5. **Pin to Bar** to display
 
-## 示例脚本
+## Example Scripts
 
-| 脚本 | 用途 |
-|------|------|
-| [`claude_status`](examples/claude_status.lua) | Claude Code 实时工作状态 |
-| [`system_monitor`](examples/system_monitor.lua) | CPU + 内存 + 网速 |
-| [`net_monitor`](examples/net_monitor.lua) | 网络进程流量监控 |
-| [`hud_clock`](examples/hud_clock.lua) | 桌面悬浮时钟 (透明 + 穿透) |
-| [`newapi_balance`](examples/newapi_balance.lua) | AI API 余额查询 |
-| [`zentao_task`](examples/zentao_task.lua) | 禅道待办任务 |
-| [`oracle_sessions`](examples/oracle_sessions.lua) | Oracle 数据库会话监控 |
+| Script | Purpose |
+|--------|---------|
+| [`claude_status`](examples/claude_status.lua) | Claude Code real-time working status |
+| [`system_monitor`](examples/system_monitor.lua) | CPU + memory + network speed |
+| [`net_monitor`](examples/net_monitor.lua) | Network process traffic monitor |
+| [`hud_clock`](examples/hud_clock.lua) | Desktop floating clock (transparent + clickthrough) |
+| [`newapi_balance`](examples/newapi_balance.lua) | AI API balance query |
+| [`zentao_task`](examples/zentao_task.lua) | Zentao pending tasks |
+| [`oracle_sessions`](examples/oracle_sessions.lua) | Oracle database session monitor |
 
-更多脚本见 [插件仓库](https://github.com/bestK/taskpin-plugins)。
+More scripts at the [plugin repository](https://github.com/bestK/taskpin-plugins).
 
-## 写一个脚本
+## Write a script
 
 ```lua
--- @param city string 城市名
+-- @param city string City name
 -- @refresh 60000
 
 local r = json.decode(http.get("https://wttr.in/" .. args.city .. "?format=j1"))
@@ -107,14 +107,14 @@ return font(temp .. "°C " .. desc, "#4FC3F7", 9), true, dialog({
 })
 ```
 
-`@param` 声明参数（UI 自动生成输入框），`@refresh` 设置刷新间隔。就这么简单。
+`@param` declares UI input fields, `@refresh` sets the interval. That's it.
 
-## 文档
+## Documentation
 
 - [Lua API 参考（中文）](docs/LUA_API.md)
 - [Lua API Reference (English)](docs/LUA_API_EN.md)
 
-## 编译
+## Build
 
 ```bash
 # MinGW-w64 + GNU Make
