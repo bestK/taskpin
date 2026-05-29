@@ -636,6 +636,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
                         const char *rurl = lua_tostring(ls, -1);
                         if (rurl) strncpy(item->row_urls[r-1], rurl, 255);
                         lua_pop(ls, 1);
+                        lua_getfield(ls, -1, "cmd");
+                        const char *rcmd = lua_tostring(ls, -1);
+                        if (rcmd) strncpy(item->row_cmds[r-1], rcmd, 255);
+                        lua_pop(ls, 1);
                     }
                     lua_pop(ls, 1);
                 }
