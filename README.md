@@ -1,90 +1,126 @@
-# TaskPin
+<p align="center">
+  <img src="docs/preview.png" alt="TaskPin" width="600">
+</p>
 
-[English](README_EN.md)
+<h1 align="center">TaskPin</h1>
 
-Windows 任务栏嵌入信息显示工具。纯 C + Win32 API + Lua 5.4，单文件 ~450KB，零外部依赖。
+<p align="center">
+  把任何信息钉在 Windows 任务栏上。<br>
+  纯 C + Lua 脚本驱动，单文件 450KB，零依赖。
+</p>
 
-![preview](docs/preview.png)
+<p align="center">
+  <a href="https://github.com/bestK/taskpin/releases/latest">Download</a> |
+  <a href="README_EN.md">English</a> |
+  <a href="docs/LUA_API.md">API 文档</a> |
+  <a href="https://github.com/bestK/taskpin-plugins">插件市场</a>
+</p>
 
-## 功能
+---
 
-- **任务栏嵌入** — 窗口直接嵌入底部任务栏内部
-- **多 Bar 支持** — 同时 Pin 多个 item，各自独立显示、独立刷新
-- **双模式 Item** — URL 模式（HTTP GET + Lua/模板处理）或 Lua 文件模式（脚本全权控制）
-- **富文本渲染** — `font(text, color, size, align)` 支持多色、多字号、左右对齐、双行显示
-- **系统监控 API** — 内置 `sys.cpu/memory/disk/battery/net_speed` 等函数
-- **Lua 5.4 脚本引擎** — 内置 `json.decode`、`http.get/post/put/delete`（带 session cookie）
-- **@param 声明** — 脚本头部声明参数，UI 自动生成输入框，填一次永久生效
-- **自定义请求头** — URL 模式支持多行 Headers
-- **模板引擎** — `$.path` JSONPath 插值 + 完整 Lua 代码，自动 fallback
-- **点击跳转** — 脚本 return 三个值：显示文本、是否可点击、跳转 URL
-- **鼠标滚轮调整** — hover 在 bar 上滚轮调宽度，Shift+滚轮调水平位置
-- **自动滚动** — 文字超出宽度时横向滚动（可关闭）
-- **静默自动更新** — 检测新版本后下载替换重启，中国用户走 gh-proxy
-- **Per-Item 外观** — 每个 item 可独立配置宽度、坐标、背景色
-- **可配置外观** — 字体大小/颜色、背景色、位置、宽度（全局默认值）
-- **开机自启** — Settings 一键开关
+## 它能做什么
+
+写一段 Lua 脚本，TaskPin 就把结果显示在任务栏里。比如：
+
+```lua
+-- 监控 Claude Code 工作状态
+return icon("claude.png", 16, 16) .. font(" 想一想", "#FFAA00", 9)
+```
+
+```lua
+-- 系统资源一览
+local cpu = sys.cpu()
+local mem = sys.memory().percent
+return font("CPU:" .. cpu .. "%", "#0F0", 9) .. font(" MEM:" .. mem .. "%", "#FA0", 9)
+```
+
+```lua
+-- AI API 余额查询
+local r = json.decode(http.get("https://api.example.com/balance"))
+return font("$" .. r.balance, "#4FC3F7", 10)
+```
+
+点击还能弹出详情面板——支持图文混排、表格、透明悬浮窗：
+
+```lua
+return bar, true, dialog({
+    borderless = true, opacity = 200,
+    content = {
+        { type = "text", value = "Claude Code", image = "claude.png", image_width = 16, image_height = 16 },
+        { type = "table", columns = {"指标", "值"}, rows = {{"CPU", "45%"}, {"MEM", "8GB"}} },
+    }
+})
+```
+
+## 特性
+
+| | |
+|---|---|
+| **任务栏嵌入** | 直接嵌入底部任务栏，不占桌面空间 |
+| **Lua 脚本驱动** | 想显示什么就写什么，内置 HTTP/JSON/系统监控 API |
+| **插件市场** | 一键浏览和下载社区脚本 |
+| **富文本 + 图片** | 多色文字、PNG/GIF 动画、左右对齐、双行显示 |
+| **弹出对话框** | 点击展开详情面板，支持图文混排、表格、HUD 悬浮窗 |
+| **多 Bar 并排** | 同时 Pin 多个脚本，各自独立刷新 |
+| **零依赖** | 纯 C + Win32 API + Lua 5.4 静态链接，单文件 ~450KB |
+| **自动更新** | 静默检测新版本，下载替换重启 |
 
 ## 快速开始
 
 1. 下载 [最新 Release](https://github.com/bestK/taskpin/releases/latest)
 2. 运行 `taskpin.exe`
-3. 双击任务栏嵌入条打开管理窗口
-4. Add 添加 item（URL 或 Lua File 类型）
-5. Pin to Bar 选中要显示的 item
-
-## 编译
-
-需要 MinGW-w64 (gcc) + GNU Make：
-
-```bash
-make
-```
-
-## 项目结构
-
-```
-main.c          主窗口/消息循环/编辑对话框/设置对话框
-appbar.c/h      任务栏嵌入（SetParent）
-fetcher.c/h     WinHTTP 异步拉取（URL 模式）
-httputil.c/h    统一同步 HTTP 模块
-scripting.c/h   Lua 引擎封装 + http/json 内置函数
-update.c/h      自动更新检查 + 静默替换
-config.c/h      INI 读写（UTF-16LE）
-json.c/h        轻量 JSON 解析 + JSONPath
-base64.c/h      Base64 编解码
-lua/            Lua 5.4 源码
-examples/       示例 Lua 脚本
-```
+3. 双击任务栏嵌入条 → 打开管理窗口
+4. 点击 **Market** 浏览插件，或 **Add** 手动添加脚本
+5. **Pin to Bar** 即可显示
 
 ## 示例脚本
 
-| 文件 | 说明 |
+| 脚本 | 用途 |
 |------|------|
-| [`example.lua`](examples/example.lua) | 入门示例，演示基本的 HTTP 请求 + JSON 解析 + 参数声明 |
-| [`newapi_balance.lua`](examples/newapi_balance.lua) | 查询 AI API 账户余额并显示在任务栏 |
-| [`rich_text_demo.lua`](examples/rich_text_demo.lua) | font() 富文本演示：多色、多行、左右对齐 |
-| [`zentao_task.lua`](examples/zentao_task.lua) | 禅道项目管理：显示待办任务数，点击查看详情 |
-| [`oracle_sessions.lua`](examples/oracle_sessions.lua) | Oracle 数据库会话监控，多实例支持，颜色预警 |
-| [`system_monitor.lua`](examples/system_monitor.lua) | 系统监控：网速 + CPU + 内存，纯 sys.* API |
-| [`net_monitor.lua`](examples/net_monitor.lua) | 网络进程监控：显示有活跃连接的进程及流量 |
-| [`claude_status.lua`](examples/claude_status.lua) | Claude Code 实时状态指示器，读 session 文件判断工作状态 |
+| [`claude_status`](examples/claude_status.lua) | Claude Code 实时工作状态 |
+| [`system_monitor`](examples/system_monitor.lua) | CPU + 内存 + 网速 |
+| [`net_monitor`](examples/net_monitor.lua) | 网络进程流量监控 |
+| [`hud_clock`](examples/hud_clock.lua) | 桌面悬浮时钟 (透明 + 穿透) |
+| [`newapi_balance`](examples/newapi_balance.lua) | AI API 余额查询 |
+| [`zentao_task`](examples/zentao_task.lua) | 禅道待办任务 |
+| [`oracle_sessions`](examples/oracle_sessions.lua) | Oracle 数据库会话监控 |
 
-### 使用方式
+更多脚本见 [插件仓库](https://github.com/bestK/taskpin-plugins)。
 
-1. 打开 TaskPin 管理窗口，点击 **Add**
-2. 类型选择 **Lua File**，选择 `examples/` 下的脚本文件
-3. 如果脚本有 `@param` 声明，填写对应参数
-4. 点击 **Pin to Bar** 即可在任务栏显示
+## 写一个脚本
+
+```lua
+-- @param city string 城市名
+-- @refresh 60000
+
+local r = json.decode(http.get("https://wttr.in/" .. args.city .. "?format=j1"))
+local temp = r.current_condition[1].temp_C
+local desc = r.current_condition[1].weatherDesc[1].value
+
+return font(temp .. "°C " .. desc, "#4FC3F7", 9), true, dialog({
+    title = args.city,
+    width = 280, height = 120,
+    content = {
+        { type = "text", value = args.city .. " " .. temp .. "°C", size = 14, bold = true },
+        { type = "text", value = desc, color = "#AAAAAA", size = 10 },
+    }
+})
+```
+
+`@param` 声明参数（UI 自动生成输入框），`@refresh` 设置刷新间隔。就这么简单。
 
 ## 文档
 
 - [Lua API 参考（中文）](docs/LUA_API.md)
 - [Lua API Reference (English)](docs/LUA_API_EN.md)
 
-## 技术栈
+## 编译
 
-- 纯 C (C99)，Win32 API
-- Lua 5.4（静态链接）
-- 零第三方依赖
-- 链接库：winhttp, user32, shell32, gdi32, shlwapi, comctl32, comdlg32
+```bash
+# MinGW-w64 + GNU Make
+make
+```
+
+## License
+
+[MIT](LICENSE)
