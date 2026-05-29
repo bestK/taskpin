@@ -75,6 +75,8 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             WS_CHILD | WS_VISIBLE, 170, 268, 90, 28, hwnd, (HMENU)IDB_SELECT, g_hinst, NULL);
         CreateWindowExW(0, L"BUTTON", L"Settings",
             WS_CHILD | WS_VISIBLE, 270, 268, 80, 28, hwnd, (HMENU)IDB_SETTINGS, g_hinst, NULL);
+        CreateWindowExW(0, L"BUTTON", L"Market",
+            WS_CHILD | WS_VISIBLE, 360, 268, 70, 28, hwnd, (HMENU)IDB_MARKET, g_hinst, NULL);
 
         CreateWindowExW(0, L"STATIC", L"v" TASKPIN_VERSION,
             WS_CHILD | WS_VISIBLE | SS_RIGHT | SS_NOTIFY,
@@ -115,6 +117,9 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case IDB_SETTINGS:
             show_settings_dialog(hwnd);
+            break;
+        case IDB_MARKET:
+            show_market_dialog(hwnd);
             break;
         case IDB_DEL: {
             int sel = ListView_GetNextItem(g_listview, -1, LVNI_SELECTED);

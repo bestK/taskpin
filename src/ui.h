@@ -37,6 +37,7 @@
 #define IDB_DEL     4002
 #define IDB_SELECT  4003
 #define IDB_SETTINGS 4004
+#define IDB_MARKET  4005
 #define IDC_LIST    4010
 
 /* Edit dialog control IDs */
@@ -104,5 +105,8 @@ void show_edit_dialog(HWND parent, int item_idx);
 
 /* settings_dialog.c */
 void show_settings_dialog(HWND parent);
+
+/* market_dialog.c */
+void show_market_dialog(HWND parent);
 
 #endif

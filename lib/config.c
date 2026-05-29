@@ -118,6 +118,15 @@ void config_load(TaskPinConfig *cfg) {
             cfg->items[legacy_sel].pinned = TRUE;
         }
     }
+
+    /* Load plugin market sources */
+    cfg->source_count = GetPrivateProfileIntW(L"Sources", L"count", 0, path);
+    if (cfg->source_count > CFG_MAX_SOURCES) cfg->source_count = CFG_MAX_SOURCES;
+    for (int i = 0; i < cfg->source_count; i++) {
+        WCHAR key[32];
+        wsprintfW(key, L"source_%d", i);
+        GetPrivateProfileStringW(L"Sources", key, L"", cfg->sources[i], CFG_MAX_NAME, path);
+    }
 }
 
 void config_save(const TaskPinConfig *cfg) {
@@ -261,5 +270,15 @@ void config_save(const TaskPinConfig *cfg) {
             WritePrivateProfileStringW(sec, pv, cfg->items[i].params[j].value, path);
             WritePrivateProfileStringW(sec, pl, cfg->items[i].params[j].label, path);
         }
+    }
+
+    /* Save plugin market sources */
+    WCHAR sc[16];
+    wsprintfW(sc, L"%d", cfg->source_count);
+    WritePrivateProfileStringW(L"Sources", L"count", sc, path);
+    for (int i = 0; i < cfg->source_count; i++) {
+        WCHAR key[32];
+        wsprintfW(key, L"source_%d", i);
+        WritePrivateProfileStringW(L"Sources", key, cfg->sources[i], path);
     }
 }
