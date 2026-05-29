@@ -37,7 +37,7 @@ typedef struct {
 #define CLICK_URL    0
 #define CLICK_DIALOG 1
 
-typedef enum { DI_TEXT, DI_HR, DI_TABLE, DI_IMG } DialogItemType;
+typedef enum { DI_TEXT, DI_HR, DI_TABLE, DI_IMG, DI_BUTTON } DialogItemType;
 
 typedef struct {
     DialogItemType type;
@@ -53,6 +53,8 @@ typedef struct {
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int img_w, img_h;
+    /* button/link url */
+    char url[512];
 } DialogItem;
 
 typedef struct {
