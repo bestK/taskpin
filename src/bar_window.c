@@ -91,6 +91,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         COLORREF bg = (bar->item_index >= 0 && bar->item_index < g_cfg.count
             && g_cfg.items[bar->item_index].bar_bg_color != 0xFFFFFFFF)
             ? g_cfg.items[bar->item_index].bar_bg_color : g_cfg.bg_color;
+        if (bar->show_border) bg = RGB(39, 39, 39);
         HBRUSH hBrush = CreateSolidBrush(bg);
         FillRect(hdc, &rc, hBrush);
         DeleteObject(hBrush);
@@ -192,18 +193,6 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 DrawTextW(hdc, bar->display, -1, &rc,
                     DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOCLIP);
             }
-        }
-
-        if (bar->show_border) {
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
-            HPEN old_pen = (HPEN)SelectObject(hdc, pen);
-            HBRUSH old_br = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-            RECT brc;
-            GetClientRect(hwnd, &brc);
-            Rectangle(hdc, brc.left, brc.top, brc.right, brc.bottom);
-            SelectObject(hdc, old_br);
-            SelectObject(hdc, old_pen);
-            DeleteObject(pen);
         }
 
         EndPaint(hwnd, &ps);
