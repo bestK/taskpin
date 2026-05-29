@@ -49,6 +49,77 @@ return font("CPU: 45%", "#0F0", 9) .. font("12:30", "#888", 8, "right")
 
 ---
 
+## icon(source, width, height, align)
+
+创建图片段落，可嵌入任务栏显示。支持本地文件路径、URL、data URI（base64）和 GIF 动画。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| source | string | 图片来源：相对/绝对路径、URL 或 `data:image/png;base64,...` |
+| width | number\|nil | 显示宽度（px），默认 16 |
+| height | number\|nil | 显示高度（px），默认 16 |
+| align | string\|nil | 对齐：`"left"`（默认）、`"right"`、`"center"` |
+
+**返回值**: span 对象，支持 `..` 拼接。
+
+```lua
+-- 本地 PNG
+return icon("examples/logo.png", 16, 16) .. font(" Hello", "#FFF", 9)
+
+-- GIF 动画（配合刷新间隔自动播放）
+return icon("spinner.gif", 14, 14) .. font(" Loading", "#AAA", 8)
+
+-- base64 内嵌
+return icon("data:image/png;base64,iVBOR...", 16, 16)
+```
+
+---
+
+## dialog(spec)
+
+创建点击弹出的对话框。作为脚本第 3 个返回值使用。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| spec | table | 对话框配置表 |
+
+**spec 字段**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| title | string | 窗口标题 |
+| width | number | 窗口宽度（px），默认 400 |
+| height | number | 窗口高度（px），默认 300 |
+| refresh | number | 自动刷新间隔（秒），0 或不填则不刷新 |
+| content | table | 内容项数组（最多 8 项） |
+
+**content 项类型**:
+
+| type | 字段 | 说明 |
+|------|------|------|
+| `"text"` | value, color, size, bold | 文本行 |
+| `"hr"` | — | 水平分隔线 |
+| `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
+
+```lua
+local info = dialog({
+    title = "状态",
+    width = 320, height = 200,
+    refresh = 5,
+    content = {
+        { type = "text", value = "标题", color = "#FF8800", size = 12, bold = true },
+        { type = "hr" },
+        { type = "text", value = "内容行", color = "#CCCCCC", size = 10 },
+        { type = "table", columns = {"名称", "值"},
+          rows = {{"CPU", "45%"}, {"MEM", "72%"}} },
+    }
+})
+
+return font("Status", "#0F0", 9), true, info
+```
+
+---
+
 ## json.decode(str)
 
 解析 JSON 字符串为 Lua table。
@@ -186,6 +257,54 @@ local up = sys.uptime()  -- 86400 (1天)
 ```lua
 local net = sys.net_speed()
 -- net.download = 1048576 (1MB/s), net.upload = 51200 (50KB/s)
+```
+
+## sys.net_processes()
+
+返回当前有活跃 TCP 连接的进程列表（仅 ESTABLISHED 状态），含实时 I/O 速率。需要两次调用间隔才能计算速率。
+
+**返回值**: 数组 table，每项包含：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| pid | number | 进程 ID |
+| name | string | 进程名（如 `"chrome.exe"`） |
+| connections | number | 活跃连接数 |
+| download | number | 读取速率 (bytes/sec) |
+| upload | number | 写入速率 (bytes/sec) |
+
+```lua
+local procs = sys.net_processes()
+for _, p in ipairs(procs) do
+    print(p.name, p.connections, p.download, p.upload)
+end
+```
+
+## sys.file_mtime(path)
+
+返回文件最后修改时间（Unix 时间戳，秒）。文件不存在返回 nil。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| path | string | 文件路径 |
+
+```lua
+local mtime = sys.file_mtime("C:\\Users\\me\\data.txt")
+local age = os.time() - mtime  -- 距上次修改的秒数
+```
+
+## sys.find_newest(dir, ext)
+
+递归搜索目录，返回指定扩展名中最新修改的文件路径。未找到返回 nil。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| dir | string | 搜索根目录 |
+| ext | string | 文件扩展名，含点号（如 `".jsonl"`） |
+
+```lua
+local newest = sys.find_newest("C:\\logs", ".log")
+-- 返回最近修改的 .log 文件完整路径
 ```
 
 ---
