@@ -119,6 +119,25 @@ static int l_http_post(lua_State *ls) { return http_request(ls, L"POST"); }
 static int l_http_put(lua_State *ls) { return http_request(ls, L"PUT"); }
 static int l_http_delete(lua_State *ls) { return http_request(ls, L"DELETE"); }
 
+/* ─── log() for Lua ─── */
+
+static int l_log(lua_State *ls) {
+    int n = lua_gettop(ls);
+    luaL_Buffer buf;
+    luaL_buffinit(ls, &buf);
+    for (int i = 1; i <= n; i++) {
+        const char *s = luaL_tolstring(ls, i, NULL);
+        if (s) luaL_addstring(&buf, s);
+        lua_pop(ls, 1);
+        if (i < n) luaL_addchar(&buf, '\t');
+    }
+    luaL_pushresult(&buf);
+    const char *msg = lua_tostring(ls, -1);
+    script_log_error(msg);
+    lua_pop(ls, 1);
+    return 0;
+}
+
 /* ─── init / shutdown ─── */
 
 /* ─── font() span system for rich text ─── */
@@ -703,6 +722,10 @@ void script_init(void) {
     /* Register dialog() DSL API */
     lua_pushcfunction(L, l_dialog);
     lua_setglobal(L, "dialog");
+
+    /* Register log() */
+    lua_pushcfunction(L, l_log);
+    lua_setglobal(L, "log");
 
     /* Register sys.* system info API */
     sysinfo_register_lua(L);
