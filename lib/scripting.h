@@ -91,4 +91,8 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
    Returns number of params found (up to max_decls). */
 int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_decls);
 
+/* Parse @refresh declaration from a Lua file header.
+   Returns milliseconds (0 if not declared). */
+int script_parse_refresh(const WCHAR *lua_path);
+
 #endif

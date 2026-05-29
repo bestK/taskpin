@@ -851,3 +851,32 @@ int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_d
     fclose(f);
     return count;
 }
+
+/* ─── parse @refresh declaration ─── */
+
+int script_parse_refresh(const WCHAR *lua_path) {
+    if (!lua_path || !lua_path[0]) return 0;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return 0;
+
+    char line[512];
+    int result = 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@refresh", 8) != 0) continue;
+        p += 8;
+        while (*p == ' ' || *p == '\t') p++;
+        result = atoi(p);
+        break;
+    }
+    fclose(f);
+    return result;
+}

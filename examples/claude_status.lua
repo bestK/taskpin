@@ -1,4 +1,5 @@
 -- claude_status.lua - Claude Code 状态指示器
+-- @refresh 3000
 -- bar_width 推荐: 160+
 
 local github_base = "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/"
