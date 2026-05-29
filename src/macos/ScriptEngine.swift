@@ -93,8 +93,8 @@ class ScriptEngine: ObservableObject {
 
         var items: [DialogItemModel] = []
         if nresults >= 3 && tp_lua_is_dialog(3) != 0 {
-            // TODO: parse dialog items from C bridge
-            items = [DialogItemModel(kind: .text, text: "Dialog loaded", color: .green, fontSize: 12)]
+            items = self.parseDialog(at: 3)
+            items = self.parseDialog(at: 3)
         }
 
         tp_lua_clear_stack()
@@ -161,5 +161,55 @@ class ScriptEngine: ObservableObject {
 extension String {
     init(cString tuple: UnsafePointer<CChar>, maxLength: Int) {
         self = String(cString: tuple)
+    }
+}
+
+extension ScriptEngine {
+    func parseDialog(at idx: Int32) -> [DialogItemModel] {
+        let spec = tp_lua_get_dialog(idx)
+        var items: [DialogItemModel] = []
+
+        for i in 0..<Int(spec.item_count) {
+            let raw = spec.items.0  // placeholder - need tuple access
+            _ = raw
+        }
+
+        // Access tuple elements via withUnsafePointer
+        withUnsafePointer(to: spec.items) { ptr in
+            let base = UnsafeRawPointer(ptr).assumingMemoryBound(to: TPDialogItem.self)
+            for i in 0..<Int(spec.item_count) {
+                let raw = base[i]
+                let type = String(cString: withUnsafePointer(to: raw.type) { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) })
+                let value = String(cString: withUnsafePointer(to: raw.value) { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) })
+                let colorStr = String(cString: withUnsafePointer(to: raw.color) { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) })
+                let urlStr = String(cString: withUnsafePointer(to: raw.url) { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) })
+                let cmdStr = String(cString: withUnsafePointer(to: raw.cmd) { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) })
+
+                let color = colorStr.isEmpty ? Color.white : parseColor(colorStr)
+                let fontSize = Int(raw.font_size) > 0 ? Int(raw.font_size) : 12
+
+                switch type {
+                case "text":
+                    items.append(DialogItemModel(kind: .text, text: value, color: color, fontSize: fontSize, bold: raw.bold != 0))
+                case "hr":
+                    items.append(DialogItemModel(kind: .hr))
+                case "button":
+                    var m = DialogItemModel(kind: .button, text: value, color: color, fontSize: fontSize)
+                    if !urlStr.isEmpty { m.url = URL(string: urlStr) }
+                    if !cmdStr.isEmpty { m.cmd = cmdStr }
+                    items.append(m)
+                case "image":
+                    let imgStr = String(cString: withUnsafePointer(to: raw.image) { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) })
+                    var m = DialogItemModel(kind: .image)
+                    m.imageWidth = Int(raw.image_width)
+                    m.imageHeight = Int(raw.image_height)
+                    if !imgStr.isEmpty, let img = NSImage(contentsOfFile: imgStr) { m.image = img }
+                    items.append(m)
+                default:
+                    break
+                }
+            }
+        }
+        return items
     }
 }

@@ -424,3 +424,143 @@ TPSpan tp_lua_get_span(int list_idx, int span_idx) {
     if (is_list) lua_pop(g_L, 1);
     return span;
 }
+
+// MARK: - Dialog extraction
+
+TPDialogSpec tp_lua_get_dialog(int idx) {
+    TPDialogSpec spec = {0};
+    if (!g_L || !lua_istable(g_L, idx)) return spec;
+
+    spec.width = 400; spec.height = 300; spec.opacity = 255;
+
+    lua_getfield(g_L, idx, "title");
+    if (lua_isstring(g_L, -1)) strncpy(spec.title, lua_tostring(g_L, -1), 127);
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "width");
+    if (!lua_isnil(g_L, -1)) spec.width = (int)lua_tointeger(g_L, -1);
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "height");
+    if (!lua_isnil(g_L, -1)) spec.height = (int)lua_tointeger(g_L, -1);
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "refresh");
+    if (!lua_isnil(g_L, -1)) spec.refresh = (int)lua_tointeger(g_L, -1);
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "borderless");
+    spec.borderless = lua_toboolean(g_L, -1);
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "clickthrough");
+    spec.clickthrough = lua_toboolean(g_L, -1);
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "opacity");
+    if (!lua_isnil(g_L, -1)) spec.opacity = (int)lua_tointeger(g_L, -1);
+    else spec.opacity = 255;
+    lua_pop(g_L, 1);
+
+    lua_getfield(g_L, idx, "content");
+    if (!lua_istable(g_L, -1)) { lua_pop(g_L, 1); return spec; }
+
+    int content_idx = lua_gettop(g_L);
+    int n = (int)lua_rawlen(g_L, content_idx);
+    if (n > 8) n = 8;
+
+    for (int i = 1; i <= n; i++) {
+        lua_rawgeti(g_L, content_idx, i);
+        if (!lua_istable(g_L, -1)) { lua_pop(g_L, 1); continue; }
+
+        TPDialogItem *item = &spec.items[spec.item_count];
+        memset(item, 0, sizeof(TPDialogItem));
+
+        lua_getfield(g_L, -1, "type");
+        if (lua_isstring(g_L, -1)) strncpy(item->type, lua_tostring(g_L, -1), 15);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "value");
+        if (lua_isstring(g_L, -1)) strncpy(item->value, lua_tostring(g_L, -1), 255);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "color");
+        if (lua_isstring(g_L, -1)) strncpy(item->color, lua_tostring(g_L, -1), 15);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "size");
+        if (!lua_isnil(g_L, -1)) item->font_size = (int)lua_tointeger(g_L, -1);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "bold");
+        item->bold = lua_toboolean(g_L, -1);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "image");
+        if (lua_isstring(g_L, -1)) strncpy(item->image, lua_tostring(g_L, -1), 511);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "image_width");
+        if (!lua_isnil(g_L, -1)) item->image_width = (int)lua_tointeger(g_L, -1);
+        else item->image_width = 16;
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "image_height");
+        if (!lua_isnil(g_L, -1)) item->image_height = (int)lua_tointeger(g_L, -1);
+        else item->image_height = 16;
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "url");
+        if (lua_isstring(g_L, -1)) strncpy(item->url, lua_tostring(g_L, -1), 511);
+        lua_pop(g_L, 1);
+
+        lua_getfield(g_L, -1, "cmd");
+        if (lua_isstring(g_L, -1)) strncpy(item->cmd, lua_tostring(g_L, -1), 511);
+        lua_pop(g_L, 1);
+
+        // Parse table columns/rows
+        if (strcmp(item->type, "table") == 0) {
+            lua_getfield(g_L, -1, "columns");
+            if (lua_istable(g_L, -1)) {
+                int nc = (int)lua_rawlen(g_L, -1);
+                if (nc > 6) nc = 6;
+                item->col_count = nc;
+                for (int c = 1; c <= nc; c++) {
+                    lua_rawgeti(g_L, -1, c);
+                    if (lua_isstring(g_L, -1)) strncpy(item->columns[c-1], lua_tostring(g_L, -1), 63);
+                    lua_pop(g_L, 1);
+                }
+            }
+            lua_pop(g_L, 1);
+
+            lua_getfield(g_L, -1, "rows");
+            if (lua_istable(g_L, -1)) {
+                int nr = (int)lua_rawlen(g_L, -1);
+                if (nr > 24) nr = 24;
+                item->row_count = nr;
+                for (int r = 1; r <= nr; r++) {
+                    lua_rawgeti(g_L, -1, r);
+                    if (lua_istable(g_L, -1)) {
+                        int rc = (int)lua_rawlen(g_L, -1);
+                        if (rc > item->col_count) rc = item->col_count;
+                        for (int c = 1; c <= rc; c++) {
+                            lua_rawgeti(g_L, -1, c);
+                            if (lua_isstring(g_L, -1)) strncpy(item->cells[r-1][c-1], lua_tostring(g_L, -1), 63);
+                            lua_pop(g_L, 1);
+                        }
+                        lua_getfield(g_L, -1, "url");
+                        if (lua_isstring(g_L, -1)) strncpy(item->row_urls[r-1], lua_tostring(g_L, -1), 255);
+                        lua_pop(g_L, 1);
+                    }
+                    lua_pop(g_L, 1);
+                }
+            }
+            lua_pop(g_L, 1);
+        }
+
+        spec.item_count++;
+        lua_pop(g_L, 1);
+    }
+    lua_pop(g_L, 1); // content table
+    return spec;
+}
