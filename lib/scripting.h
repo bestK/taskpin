@@ -24,11 +24,47 @@ typedef struct {
     int count;
 } DisplayContent;
 
+/* ─── Dialog DSL ─── */
+
+#define DIALOG_MAX_ITEMS 8
+#define DIALOG_MAX_COLS  6
+#define DIALOG_MAX_ROWS  24
+
+#define CLICK_URL    0
+#define CLICK_DIALOG 1
+
+typedef enum { DI_TEXT, DI_HR, DI_TABLE } DialogItemType;
+
+typedef struct {
+    DialogItemType type;
+    WCHAR text[256];
+    COLORREF color;      /* 0xFFFFFFFF = use default */
+    int font_size;       /* 0 = use default */
+    BOOL bold;
+    int col_count;
+    int row_count;
+    WCHAR columns[DIALOG_MAX_COLS][64];
+    WCHAR cells[DIALOG_MAX_ROWS][DIALOG_MAX_COLS][64];
+    COLORREF row_colors[DIALOG_MAX_ROWS];
+} DialogItem;
+
+typedef struct {
+    WCHAR title[128];
+    int width, height;
+    int refresh;         /* seconds, 0 = no auto-refresh */
+    DialogItem items[DIALOG_MAX_ITEMS];
+    int item_count;
+} DialogSpec;
+
+/* ─── Script result ─── */
+
 typedef struct {
     WCHAR display[2048];     /* text to show in taskbar (plain mode) */
-    BOOL  clickable;         /* whether click opens URL */
-    WCHAR click_url[1024];   /* URL to open on click */
+    BOOL  clickable;         /* whether click action is enabled */
+    int   click_action;      /* CLICK_URL or CLICK_DIALOG */
+    WCHAR click_url[1024];   /* URL to open (when click_action==CLICK_URL) */
     DisplayContent rich;     /* rich text spans (if count>0, use this) */
+    DialogSpec dialog;       /* dialog spec (when click_action==CLICK_DIALOG) */
 } ScriptResult;
 
 /* Parsed @param declaration from script header */

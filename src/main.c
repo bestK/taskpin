@@ -25,6 +25,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
 
     config_load(&g_cfg);
     script_init();
+    script_dialog_init(hInst);
 
     HICON hIcon = LoadIconW(hInst, L"IDI_APPICON");
 
