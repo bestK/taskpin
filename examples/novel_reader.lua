@@ -75,6 +75,17 @@ save_pos(next_pos - 1)
 -- 计算进度百分比
 local percent = math.floor(pos / #content * 100)
 
+-- 上一页的位置
+local prev_pos = pos - (chars_per_page * 3)
+if prev_pos < 0 then prev_pos = 0 end
+
+-- 跳转命令 (写进度文件)
+local cmd_prev = 'echo ' .. prev_pos .. ' > "' .. progress_file .. '"'
+local cmd_25 = 'echo ' .. math.floor(#content * 0.25) .. ' > "' .. progress_file .. '"'
+local cmd_50 = 'echo ' .. math.floor(#content * 0.50) .. ' > "' .. progress_file .. '"'
+local cmd_75 = 'echo ' .. math.floor(#content * 0.75) .. ' > "' .. progress_file .. '"'
+local cmd_reset = 'echo 0 > "' .. progress_file .. '"'
+
 local bar = font(text, "#CCCCCC", 9)
 
 local info = dialog({
@@ -87,7 +98,11 @@ local info = dialog({
         { type = "text", value = text, color = "#EEEEEE", size = 11 },
         { type = "hr" },
         { type = "text", value = "进度: " .. percent .. "%", color = "#888888", size = 9 },
-        { type = "button", value = "重置进度", cmd = "echo 0 > \"" .. progress_file .. "\"" },
+        { type = "button", value = "<< 上一页", cmd = cmd_prev, bg = "#333333", color = "#4FC3F7" },
+        { type = "button", value = "跳到 25%", cmd = cmd_25, bg = "#333333", color = "#AAAAAA" },
+        { type = "button", value = "跳到 50%", cmd = cmd_50, bg = "#333333", color = "#AAAAAA" },
+        { type = "button", value = "跳到 75%", cmd = cmd_75, bg = "#333333", color = "#AAAAAA" },
+        { type = "button", value = "重置进度", cmd = cmd_reset, bg = "#333333", color = "#FF6666" },
     }
 })
 
