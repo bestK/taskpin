@@ -96,15 +96,28 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | opacity | number | 窗口透明度 0-255（0=全透明，255=不透明），默认 255 |
 | content | table | 内容项数组（最多 8 项） |
 
-**borderless 模式**：按住 Shift 可拖动窗口位置。
+**borderless 模式**：
+- 按住 Shift 拖动窗口位置
+- 按住 Shift + 滚轮调整窗口大小
+- 鼠标悬停时按 ESC 关闭窗口
+- 不会出现在任务栏和 Alt+Tab 列表中
 
 **content 项类型**:
 
 | type | 字段 | 说明 |
 |------|------|------|
-| `"text"` | value, color, size, bold | 文本行 |
+| `"text"` | value, color, size, bold, image, image_width, image_height | 文本行（可选内嵌图片） |
+| `"image"` | source, width, height | 独立图片块 |
 | `"hr"` | — | 水平分隔线 |
 | `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
+
+**图文混排示例**：
+
+```lua
+{ type = "text", value = "Claude Code", color = "#D97757", size = 12,
+  image = "claude.png", image_width = 16, image_height = 16 },
+{ type = "image", source = "logo.png", width = 64, height = 64 },
+```
 
 ```lua
 local info = dialog({

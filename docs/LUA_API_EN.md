@@ -96,15 +96,28 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | opacity | number | Window opacity 0-255 (0=fully transparent, 255=opaque), default 255 |
 | content | table | Array of content items (max 8) |
 
-**Borderless mode**: Hold Shift to drag the window.
+**Borderless mode**:
+- Hold Shift + drag to move the window
+- Hold Shift + scroll wheel to resize
+- Press ESC while hovering to close
+- Hidden from taskbar and Alt+Tab
 
 **content item types**:
 
 | type | Fields | Description |
 |------|--------|-------------|
-| `"text"` | value, color, size, bold | Text line |
+| `"text"` | value, color, size, bold, image, image_width, image_height | Text line (optional inline image) |
+| `"image"` | source, width, height | Standalone image block |
 | `"hr"` | — | Horizontal separator |
 | `"table"` | columns, rows | Table (max 6 columns × 24 rows) |
+
+**Image + text example**:
+
+```lua
+{ type = "text", value = "Claude Code", color = "#D97757", size = 12,
+  image = "claude.png", image_width = 16, image_height = 16 },
+{ type = "image", source = "logo.png", width = 64, height = 64 },
+```
 
 ```lua
 local info = dialog({
