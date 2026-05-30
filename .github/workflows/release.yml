@@ -6,46 +6,6 @@ on:
       - 'v*'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        include:
-          - msystem: MINGW64
-            arch: x64
-            pkg: mingw-w64-x86_64-gcc
-          - msystem: MINGW32
-            arch: x86
-            pkg: mingw-w64-i686-gcc
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          install: ${{ matrix.pkg }} make zip
-
-      - name: Build
-        run: make clean && make all
-
-      - name: Package
-        run: |
-          mkdir -p dist
-          cp taskpin.exe dist/
-          cp -r examples dist/
-          cd dist && zip -r ../taskpin-${{ matrix.arch }}.zip .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: taskpin-${{ matrix.arch }}
-          path: |
-            taskpin-${{ matrix.arch }}.zip
-            taskpin.exe
-
   build-macos:
     runs-on: macos-14
     steps:
@@ -54,8 +14,9 @@ jobs:
       - name: Build
         run: swift build -c release
 
-      - name: Package
+      - name: Sign and Package
         run: |
+          codesign --force --deep -s - .build/release/TaskPin
           mkdir -p dist/TaskPin.app/Contents/MacOS
           mkdir -p dist/TaskPin.app/Contents/Resources
           cp .build/release/TaskPin dist/TaskPin.app/Contents/MacOS/
@@ -84,6 +45,7 @@ jobs:
           </dict>
           </plist>
           PLIST
+          codesign --force --deep -s - dist/TaskPin.app
           cd dist && zip -r ../TaskPin-macos.zip TaskPin.app examples
 
       - name: Upload artifact
@@ -93,24 +55,12 @@ jobs:
           path: TaskPin-macos.zip
 
   release:
-    needs: [build-windows, build-macos]
+    needs: build-macos
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: taskpin-x64
-          path: artifacts/x64
-
-      - name: Download x86 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: taskpin-x86
-          path: artifacts/x86
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
@@ -119,20 +69,10 @@ jobs:
           path: artifacts/macos
 
       - name: Prepare release files
-        run: |
-          cp artifacts/x64/taskpin-x64.zip .
-          cp artifacts/x64/taskpin.exe taskpin-x64.exe
-          cp artifacts/x86/taskpin-x86.zip .
-          cp artifacts/x86/taskpin.exe taskpin-x86.exe
-          cp artifacts/macos/TaskPin-macos.zip .
+        run: cp artifacts/macos/TaskPin-macos.zip .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            taskpin-x64.zip
-            taskpin-x64.exe
-            taskpin-x86.zip
-            taskpin-x86.exe
-            TaskPin-macos.zip
+          files: TaskPin-macos.zip
           generate_release_notes: true
