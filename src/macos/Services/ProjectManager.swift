@@ -56,10 +56,8 @@ class ProjectManager: ObservableObject {
 
     private func executeItem(_ item: PinItem) {
         switch item.type {
-        case .lua:
-            executeLuaItem(item)
-        case .url:
-            executeURLItem(item)
+        case .lua: executeLuaItem(item)
+        case .url: executeURLItem(item)
         }
     }
 
@@ -73,6 +71,7 @@ class ProjectManager: ObservableObject {
                 argsJson = str
             }
         }
+        let itemId = item.id
         LuaExecutor.shared.executeFile(path: item.luaPath, argsJson: argsJson) { [weak self] result in
             guard let self = self else { return }
             if let result = result {
@@ -81,16 +80,18 @@ class ProjectManager: ObservableObject {
                 state.statusColor = result.statusColor
                 state.statusImage = result.statusImage
                 state.dialogItems = result.dialogItems
+                state.dialogWidth = result.dialogWidth
+                state.dialogHeight = result.dialogHeight
+                state.clickable = result.clickable
                 state.isRunning = true
-                self.itemStates[item.id] = state
+                self.itemStates[itemId] = state
             } else {
-                var state = self.itemStates[item.id] ?? PinItemState()
+                var state = self.itemStates[itemId] ?? PinItemState()
                 state.lastError = "Script error"
                 state.statusText = "[error]"
                 state.statusColor = .red
-                self.itemStates[item.id] = state
+                self.itemStates[itemId] = state
             }
-            self.objectWillChange.send()
         }
     }
 
@@ -105,41 +106,42 @@ class ProjectManager: ObservableObject {
             }
         }
 
+        let itemId = item.id
+        let fieldExpr = item.fieldExpr
         URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
             guard let self = self,
                   let data = data,
                   let body = String(data: data, encoding: .utf8) else { return }
 
-            if item.fieldExpr.isEmpty {
+            if fieldExpr.isEmpty {
                 DispatchQueue.main.async {
                     var state = PinItemState()
                     state.statusText = String(body.prefix(100))
                     state.isRunning = true
-                    self.itemStates[item.id] = state
-                    self.objectWillChange.send()
+                    self.itemStates[itemId] = state
                 }
                 return
             }
 
             let tmpDir = FileManager.default.temporaryDirectory
-            let tmpFile = tmpDir.appendingPathComponent("taskpin_url_\(item.id.uuidString).lua")
-            let script = "response = [=[\(body)]=]\n\(item.fieldExpr)"
+            let tmpFile = tmpDir.appendingPathComponent("taskpin_url_\(itemId.uuidString).lua")
+            let script = "response = [=[\(body)]=]\n\(fieldExpr)"
             try? script.write(to: tmpFile, atomically: true, encoding: .utf8)
 
-            LuaExecutor.shared.executeFile(path: tmpFile.path, argsJson: nil) { result in
+            LuaExecutor.shared.executeFile(path: tmpFile.path, argsJson: nil) { [weak self] result in
+                guard let self = self else { return }
                 if let result = result {
                     var state = PinItemState()
                     state.statusText = result.statusText
                     state.statusColor = result.statusColor
                     state.dialogItems = result.dialogItems
                     state.isRunning = true
-                    self.itemStates[item.id] = state
+                    self.itemStates[itemId] = state
                 } else {
-                    var state = self.itemStates[item.id] ?? PinItemState()
+                    var state = self.itemStates[itemId] ?? PinItemState()
                     state.lastError = "Expression error"
-                    self.itemStates[item.id] = state
+                    self.itemStates[itemId] = state
                 }
-                self.objectWillChange.send()
             }
         }.resume()
     }

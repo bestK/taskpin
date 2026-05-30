@@ -30,6 +30,9 @@ struct PinItemState {
     var statusColor: Color = .white
     var statusImage: NSImage? = nil
     var dialogItems: [DialogItemModel] = []
+    var dialogWidth: Int = 400
+    var dialogHeight: Int = 300
+    var clickable: Bool = false
     var lastError: String? = nil
     var isRunning: Bool = false
 }

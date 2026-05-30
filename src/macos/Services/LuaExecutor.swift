@@ -7,6 +7,8 @@ struct LuaResult {
     var statusColor: Color = .white
     var statusImage: NSImage? = nil
     var dialogItems: [DialogItemModel] = []
+    var dialogWidth: Int = 400
+    var dialogHeight: Int = 300
     var clickable: Bool = false
 }
 
@@ -84,18 +86,19 @@ class LuaExecutor {
         }
 
         if nresults >= 3 && tp_lua_is_dialog(3) != 0 {
-            result.dialogItems = Self.parseDialog(at: 3)
+            let specPtr = UnsafeMutablePointer<TPDialogSpec>.allocate(capacity: 1)
+            defer { specPtr.deallocate() }
+            memset(specPtr, 0, MemoryLayout<TPDialogSpec>.size)
+            tp_lua_get_dialog_into(3, specPtr)
+            result.dialogWidth = Int(specPtr.pointee.width)
+            result.dialogHeight = Int(specPtr.pointee.height)
+            result.dialogItems = Self.parseDialogItems(from: specPtr)
         }
 
         return result
     }
 
-    static func parseDialog(at idx: Int32) -> [DialogItemModel] {
-        let specPtr = UnsafeMutablePointer<TPDialogSpec>.allocate(capacity: 1)
-        defer { specPtr.deallocate() }
-        memset(specPtr, 0, MemoryLayout<TPDialogSpec>.size)
-        tp_lua_get_dialog_into(idx, specPtr)
-
+    static func parseDialogItems(from specPtr: UnsafeMutablePointer<TPDialogSpec>) -> [DialogItemModel] {
         var items: [DialogItemModel] = []
         let itemCount = Int(specPtr.pointee.item_count)
         guard itemCount > 0 && itemCount <= 8 else { return items }
@@ -141,7 +144,9 @@ class LuaExecutor {
                     var m = DialogItemModel(kind: .image)
                     m.imageWidth = Int(rawPtr.pointee.image_width)
                     m.imageHeight = Int(rawPtr.pointee.image_height)
-                    if !imgStr.isEmpty, let img = NSImage(contentsOfFile: imgStr) { m.image = img }
+                    if !imgStr.isEmpty {
+                        m.image = loadImage(from: imgStr, width: m.imageWidth, height: m.imageHeight)
+                    }
                     items.append(m)
                 default:
                     break

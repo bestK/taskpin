@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var projectManager: ProjectManager
-    @ObservedObject var configManager: ConfigManager
+    var configManager: ConfigManager
 
     var body: some View {
         let pinnedItems = configManager.config.items.filter { $0.pinned }

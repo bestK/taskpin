@@ -2,7 +2,7 @@ import SwiftUI
 import ServiceManagement
 
 struct SettingsView: View {
-    @ObservedObject var configManager: ConfigManager
+    @Bindable var configManager: ConfigManager
     @State private var fontColor: Color = .white
     @State private var bgColor: Color = .black
 

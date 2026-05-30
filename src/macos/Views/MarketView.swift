@@ -10,7 +10,7 @@ struct PluginInfo: Identifiable {
 }
 
 struct MarketView: View {
-    @ObservedObject var configManager: ConfigManager
+    var configManager: ConfigManager
     @ObservedObject var projectManager: ProjectManager
     @State private var plugins: [PluginInfo] = []
     @State private var loading = false

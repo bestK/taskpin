@@ -19,7 +19,8 @@ local claude_spinner = proxy .. github_base .. "claude_spinner.gif"
 -- 查找最新 session jsonl
 local function find_latest_session()
     local home = os.getenv("USERPROFILE") or os.getenv("HOME") or ""
-    local base = home .. "\\.claude\\projects"
+    local sep = package.config:sub(1,1)
+    local base = home .. sep .. ".claude" .. sep .. "projects"
     return sys.find_newest(base, ".jsonl")
 end
 
@@ -134,9 +135,10 @@ end
 local session_name = session_path and session_path:match("([^\\/]+)%.jsonl$") or "-"
 local info = dialog({
     title = "Claude",
-    width = 340, height = 200,
+    width = 340, height = 220,
     refresh = 3,
     content = {
+        { type = "image", image = claude_icon, image_width = 24, image_height = 24 },
         { type = "text", value = ai_title or "Claude Code", color = "#D97757", size = 12, bold = true },
         { type = "hr" },
         { type = "text", value = "状态: " .. detail, color = color, size = 10 },

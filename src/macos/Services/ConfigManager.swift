@@ -1,9 +1,11 @@
 import Foundation
+import Observation
 
-class ConfigManager: ObservableObject {
+@Observable
+final class ConfigManager {
     static let shared = ConfigManager()
 
-    @Published var config: AppConfig = AppConfig()
+    var config: AppConfig = AppConfig()
 
     private let configDir: URL
     private let configFile: URL

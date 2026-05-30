@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ItemsListView: View {
-    @ObservedObject var configManager: ConfigManager
+    var configManager: ConfigManager
     @ObservedObject var projectManager: ProjectManager
     @State private var editingItem: PinItem? = nil
     @State private var isAdding = false
@@ -157,10 +157,18 @@ struct ItemsListView: View {
                 .stroke(item.pinned ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                editingItem = item
+                isAdding = false
+            }
+        }
         .onHover { isHovered in
             withAnimation(.easeInOut(duration: 0.1)) {
                 hoveredId = isHovered ? item.id : nil
             }
+            if isHovered { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
     }
 
