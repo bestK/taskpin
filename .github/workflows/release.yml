@@ -21,6 +21,9 @@ jobs:
           mkdir -p dist/TaskPin.app/Contents/Resources
           cp .build/release/TaskPin dist/TaskPin.app/Contents/MacOS/
           cp -r examples dist/
+          if [ -f src/macos/Resources/AppIcon.icns ]; then
+            cp src/macos/Resources/AppIcon.icns dist/TaskPin.app/Contents/Resources/
+          fi
           cat > dist/TaskPin.app/Contents/Info.plist << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
