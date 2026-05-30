@@ -46,7 +46,14 @@ jobs:
           </plist>
           PLIST
           codesign --force --deep -s - dist/TaskPin.app
-          cd dist && zip -r ../TaskPin-macos.zip TaskPin.app examples
+          cat > dist/install.command << 'SCRIPT'
+          #!/bin/bash
+          APP_PATH="$(dirname "$0")/TaskPin.app"
+          xattr -cr "$APP_PATH"
+          open "$APP_PATH"
+          SCRIPT
+          chmod +x dist/install.command
+          cd dist && zip -r ../TaskPin-macos.zip TaskPin.app examples install.command
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
