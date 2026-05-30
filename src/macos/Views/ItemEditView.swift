@@ -218,7 +218,7 @@ struct ItemEditView: View {
             Button("Cancel") { onCancel() }.controlSize(.small)
             Spacer()
             Button { onSave(item) } label: { Text("Save").font(.system(size: 11, weight: .medium)) }
-                .controlSize(.small).buttonStyle(.borderedProminent).disabled(item.name.isEmpty)
+                .controlSize(.small).buttonStyle(.borderedProminent).disabled(item.name.isEmpty || (item.type == .lua && item.luaPath.isEmpty) || (item.type == .url && item.url.isEmpty))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

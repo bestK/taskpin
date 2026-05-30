@@ -44,26 +44,7 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
     }
 
     func refresh() {
-        let pinnedItems = configManager.config.items.filter { $0.pinned }
-        let pinnedIds = Set(pinnedItems.map { $0.id })
-
-        for (id, item) in statusItems where !pinnedIds.contains(id) {
-            NSStatusBar.system.removeStatusItem(item)
-            statusItems.removeValue(forKey: id)
-            popovers.removeValue(forKey: id)
-            itemMap.removeValue(forKey: id)
-        }
-
-        for item in pinnedItems {
-            itemMap[item.id] = item
-            if statusItems[item.id] == nil {
-                let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-                statusItem.button?.action = #selector(onStatusItemClick(_:))
-                statusItem.button?.target = self
-                statusItems[item.id] = statusItem
-            }
-            updateStatusItem(item)
-        }
+        rebuildAll()
     }
 
     @objc private func onStatusItemClick(_ sender: NSStatusBarButton) {

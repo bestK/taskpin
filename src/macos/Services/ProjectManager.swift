@@ -6,8 +6,6 @@ class ProjectManager: ObservableObject {
     @Published var activeItemId: UUID? = nil
 
     private var timers: [UUID: Timer] = [:]
-    private var rotationTimer: Timer?
-    private var pinnedIndex: Int = 0
 
     let configManager: ConfigManager
 
@@ -31,8 +29,6 @@ class ProjectManager: ObservableObject {
     func stopAll() {
         timers.values.forEach { $0.invalidate() }
         timers.removeAll()
-        rotationTimer?.invalidate()
-        rotationTimer = nil
     }
 
     func startItem(_ item: PinItem) {
@@ -106,8 +102,10 @@ class ProjectManager: ObservableObject {
     }
 
     private func executeURLItem(_ item: PinItem) {
-        guard let requestUrl = URL(string: item.url) else { return }
+        guard let requestUrl = URL(string: item.url),
+              ["http", "https"].contains(requestUrl.scheme?.lowercased() ?? "") else { return }
         var request = URLRequest(url: requestUrl)
+        request.timeoutInterval = 10
         for line in item.reqHeaders.split(separator: "\n") {
             let parts = line.split(separator: ":", maxSplits: 1)
             if parts.count == 2 {
@@ -118,27 +116,40 @@ class ProjectManager: ObservableObject {
 
         let itemId = item.id
         let fieldExpr = item.fieldExpr
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-            guard let self = self,
-                  let data = data,
-                  let body = String(data: data, encoding: .utf8) else { return }
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            guard let self = self else { return }
 
-            if fieldExpr.isEmpty {
+            if let error = error {
                 DispatchQueue.main.async {
-                    var state = PinItemState()
-                    state.statusText = String(body.prefix(100))
+                    var state = self.itemStates[itemId] ?? PinItemState()
+                    state.lastError = error.localizedDescription
+                    state.statusText = "[error]"
+                    state.statusColor = .red
                     state.isRunning = true
                     self.itemStates[itemId] = state
                 }
                 return
             }
 
-            let tmpDir = FileManager.default.temporaryDirectory
-            let tmpFile = tmpDir.appendingPathComponent("taskpin_url_\(itemId.uuidString).lua")
+            guard let data = data,
+                  let body = String(data: data, encoding: .utf8) else { return }
+
+            if fieldExpr.isEmpty {
+                DispatchQueue.main.async {
+                    var state = PinItemState()
+                    state.statusText = body.isEmpty ? "(empty)" : String(body.prefix(100))
+                    state.isRunning = true
+                    self.itemStates[itemId] = state
+                }
+                return
+            }
+
+            let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("taskpin_url_\(itemId.uuidString).lua")
             let script = "response = [=[\(body)]=]\n\(fieldExpr)"
             try? script.write(to: tmpFile, atomically: true, encoding: .utf8)
 
             LuaExecutor.shared.executeFile(path: tmpFile.path, argsJson: nil) { [weak self] result in
+                try? FileManager.default.removeItem(at: tmpFile)
                 guard let self = self else { return }
                 if let result = result {
                     var state = PinItemState()
