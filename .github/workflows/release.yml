@@ -51,9 +51,18 @@ jobs:
           codesign --force --deep -s - dist/TaskPin.app
           cat > dist/install.command << 'SCRIPT'
           #!/bin/bash
-          APP_PATH="$(dirname "$0")/TaskPin.app"
-          xattr -cr "$APP_PATH"
-          open "$APP_PATH"
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          APP_PATH="$DIR/TaskPin.app"
+          DEST="/Applications/TaskPin.app"
+          echo "Installing TaskPin..."
+          if [ -d "$DEST" ]; then
+            rm -rf "$DEST"
+          fi
+          cp -R "$APP_PATH" "$DEST"
+          xattr -cr "$DEST"
+          echo "TaskPin installed to /Applications"
+          open "$DEST"
+          echo "Done! You can close this window."
           SCRIPT
           chmod +x dist/install.command
           cd dist && zip -r ../TaskPin-macos.zip TaskPin.app examples install.command
