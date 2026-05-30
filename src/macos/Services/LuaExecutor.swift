@@ -10,6 +10,7 @@ struct LuaResult {
     var dialogWidth: Int = 400
     var dialogHeight: Int = 300
     var dialogRefresh: Int = 0
+    var dialogBgColor: String = ""
     var clickable: Bool = false
 }
 
@@ -94,6 +95,11 @@ class LuaExecutor {
             result.dialogWidth = Int(specPtr.pointee.width)
             result.dialogHeight = Int(specPtr.pointee.height)
             result.dialogRefresh = Int(specPtr.pointee.refresh)
+            let bgStr = withUnsafeBytes(of: specPtr.pointee.bg_color) { buf in
+                guard let base = buf.baseAddress?.assumingMemoryBound(to: CChar.self) else { return "" }
+                return String(cString: base)
+            }
+            result.dialogBgColor = bgStr
             result.dialogItems = Self.parseDialogItems(from: specPtr)
         }
 

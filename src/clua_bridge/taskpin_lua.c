@@ -854,6 +854,10 @@ TPDialogSpec tp_lua_get_dialog(int idx) {
     else spec.opacity = 255;
     lua_pop(g_L, 1);
 
+    lua_getfield(g_L, idx, "bg_color");
+    if (lua_isstring(g_L, -1)) { strncpy(spec.bg_color, lua_tostring(g_L, -1), 15); spec.bg_color[15] = '\0'; }
+    lua_pop(g_L, 1);
+
     lua_getfield(g_L, idx, "content");
     if (!lua_istable(g_L, -1)) { lua_pop(g_L, 1); return spec; }
 

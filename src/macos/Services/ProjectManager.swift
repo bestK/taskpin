@@ -78,6 +78,7 @@ class ProjectManager: ObservableObject {
                 state.dialogItems = result.dialogItems
                 state.dialogWidth = result.dialogWidth
                 state.dialogHeight = result.dialogHeight
+                state.dialogBgColor = result.dialogBgColor
                 state.clickable = result.clickable
                 state.isRunning = true
                 self.itemStates[itemId] = state

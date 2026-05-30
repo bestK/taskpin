@@ -77,9 +77,15 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
         let w = state?.dialogWidth ?? 400
         let h = state?.dialogHeight ?? 300
         popover.contentSize = NSSize(width: w, height: h)
+        let bgColor: Color = {
+            if let hex = state?.dialogBgColor, !hex.isEmpty {
+                return Color(hex: hex) ?? Color(nsColor: .windowBackgroundColor)
+            }
+            return Color(nsColor: .windowBackgroundColor)
+        }()
         let view = LiveDialogPopoverView(itemId: id, projectManager: projectManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(bgColor)
         popover.contentViewController = NSHostingController(rootView: view)
         popovers[id] = popover
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

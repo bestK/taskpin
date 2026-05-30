@@ -73,7 +73,7 @@ struct ItemEditView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: item.type == .lua ? "chevron.left.forwardslash.chevron.right" : "globe")
+            Image(systemName: item.type == .lua ? "puzzlepiece.fill" : "globe")
                 .font(.system(size: 14))
                 .foregroundColor(.accentColor)
             Text(item.name.isEmpty ? "New Item" : item.name)

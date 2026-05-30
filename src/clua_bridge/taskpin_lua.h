@@ -38,6 +38,7 @@ typedef struct {
     int borderless;
     int clickthrough;
     int opacity;
+    char bg_color[16];
     int item_count;
     TPDialogItem items[8];
 } TPDialogSpec;

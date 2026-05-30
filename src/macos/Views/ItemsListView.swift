@@ -75,7 +75,7 @@ struct ItemsListView: View {
 
     private func itemRow(_ item: PinItem) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: item.type == .lua ? "chevron.left.forwardslash.chevron.right" : "globe")
+            Image(systemName: item.type == .lua ? "puzzlepiece.fill" : "globe")
                 .font(.system(size: 14))
                 .foregroundColor(item.pinned ? .primary : .secondary)
                 .frame(width: 24)

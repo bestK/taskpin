@@ -32,6 +32,7 @@ struct PinItemState {
     var dialogItems: [DialogItemModel] = []
     var dialogWidth: Int = 400
     var dialogHeight: Int = 300
+    var dialogBgColor: String = ""
     var clickable: Bool = false
     var lastError: String? = nil
     var isRunning: Bool = false
