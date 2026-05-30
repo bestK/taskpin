@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     strategy:
       matrix:
@@ -46,8 +46,54 @@ jobs:
             taskpin-${{ matrix.arch }}.zip
             taskpin.exe
 
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build -c release
+
+      - name: Package
+        run: |
+          mkdir -p dist/TaskPin.app/Contents/MacOS
+          mkdir -p dist/TaskPin.app/Contents/Resources
+          cp .build/release/TaskPin dist/TaskPin.app/Contents/MacOS/
+          cp -r examples dist/
+          cat > dist/TaskPin.app/Contents/Info.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>TaskPin</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.bestk.taskpin</string>
+            <key>CFBundleName</key>
+            <string>TaskPin</string>
+            <key>CFBundleVersion</key>
+            <string>0.0.1</string>
+            <key>CFBundleShortVersionString</key>
+            <string>0.0.1</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>14.0</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>CFBundleIconFile</key>
+            <string>AppIcon</string>
+          </dict>
+          </plist>
+          PLIST
+          cd dist && zip -r ../TaskPin-macos.zip TaskPin.app examples
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskpin-macos
+          path: TaskPin-macos.zip
+
   release:
-    needs: build
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,12 +112,19 @@ jobs:
           name: taskpin-x86
           path: artifacts/x86
 
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: taskpin-macos
+          path: artifacts/macos
+
       - name: Prepare release files
         run: |
           cp artifacts/x64/taskpin-x64.zip .
           cp artifacts/x64/taskpin.exe taskpin-x64.exe
           cp artifacts/x86/taskpin-x86.zip .
           cp artifacts/x86/taskpin.exe taskpin-x86.exe
+          cp artifacts/macos/TaskPin-macos.zip .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -81,4 +134,5 @@ jobs:
             taskpin-x64.exe
             taskpin-x86.zip
             taskpin-x86.exe
+            TaskPin-macos.zip
           generate_release_notes: true
