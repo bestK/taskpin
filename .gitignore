@@ -9,3 +9,9 @@ taskpin.log
 .ace-tool/
 scripts/.build/
 .build/
+
+# Swift build artifacts
+*.d
+*.swiftdeps
+*.swiftdeps~
+.vscode/
