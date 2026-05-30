@@ -173,6 +173,16 @@ static void push_json_value(lua_State *L, const char **p) {
 
 static int l_json_decode(lua_State *L) {
     const char *str = luaL_checkstring(L, 1);
+    const char *start = str;
+    skip_ws(&start);
+    if (*start != '{' && *start != '[' && *start != '"'
+        && strncmp(start, "true", 4) != 0
+        && strncmp(start, "false", 5) != 0
+        && strncmp(start, "null", 4) != 0
+        && (*start < '0' || *start > '9') && *start != '-') {
+        lua_pushnil(L);
+        return 1;
+    }
     push_json_value(L, &str);
     return 1;
 }
@@ -223,6 +233,50 @@ static int l_http_post(lua_State *L) {
     return 1;
 }
 
+static int l_http_put(lua_State *L) {
+    const char *url = luaL_checkstring(L, 1);
+    const char *body = lua_gettop(L) >= 2 ? lua_tostring(L, 2) : NULL;
+    const char *headers = lua_gettop(L) >= 3 ? lua_tostring(L, 3) : NULL;
+    char cmd[4096];
+    if (body && headers) {
+        snprintf(cmd, sizeof(cmd), "curl -sL -X PUT -H '%s' -d '%s' '%s'", headers, body, url);
+    } else if (body) {
+        snprintf(cmd, sizeof(cmd), "curl -sL -X PUT -d '%s' '%s'", body, url);
+    } else {
+        snprintf(cmd, sizeof(cmd), "curl -sL -X PUT '%s'", url);
+    }
+    FILE *fp = popen(cmd, "r");
+    if (!fp) { lua_pushnil(L); return 1; }
+    luaL_Buffer buf;
+    luaL_buffinit(L, &buf);
+    char chunk[4096];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+        luaL_addlstring(&buf, chunk, n);
+    }
+    pclose(fp);
+    luaL_pushresult(&buf);
+    return 1;
+}
+
+static int l_http_delete(lua_State *L) {
+    const char *url = luaL_checkstring(L, 1);
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd), "curl -sL -X DELETE '%s'", url);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) { lua_pushnil(L); return 1; }
+    luaL_Buffer buf;
+    luaL_buffinit(L, &buf);
+    char chunk[4096];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+        luaL_addlstring(&buf, chunk, n);
+    }
+    pclose(fp);
+    luaL_pushresult(&buf);
+    return 1;
+}
+
 // MARK: - sys.cpu / sys.memory
 
 #ifdef __APPLE__
@@ -231,6 +285,13 @@ static int l_http_post(lua_State *L) {
 #include <sys/mount.h>
 #include <sys/time.h>
 #include <sys/proc.h>
+#include <sys/stat.h>
+#include <libproc.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <ifaddrs.h>
+#include <net/if_dl.h>
+#include <dirent.h>
 
 static int l_sys_cpu(lua_State *L) {
     // Simplified: return load average * 100 / ncpu
@@ -293,10 +354,167 @@ static int l_sys_process_count(lua_State *L) {
     return 1;
 }
 
+static uint64_t get_time_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+static uint64_t s_prev_recv = 0, s_prev_send = 0;
+static uint64_t s_prev_net_time = 0;
+
+static void net_get_totals(uint64_t *recv_out, uint64_t *send_out) {
+    *recv_out = 0; *send_out = 0;
+    struct ifaddrs *ifap, *ifa;
+    if (getifaddrs(&ifap) != 0) return;
+    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        if (ifa->ifa_addr->sa_family != AF_LINK) continue;
+        if ((ifa->ifa_flags & IFF_UP) == 0) continue;
+        if (ifa->ifa_flags & IFF_LOOPBACK) continue;
+        struct if_data *ifd = (struct if_data *)ifa->ifa_data;
+        if (ifd) {
+            *recv_out += ifd->ifi_ibytes;
+            *send_out += ifd->ifi_obytes;
+        }
+    }
+    freeifaddrs(ifap);
+}
+
 static int l_sys_net_speed(lua_State *L) {
+    uint64_t cur_recv, cur_send;
+    net_get_totals(&cur_recv, &cur_send);
+    uint64_t now = get_time_ms();
+
+    double dl_speed = 0, ul_speed = 0;
+    if (s_prev_net_time > 0) {
+        uint64_t dt = now - s_prev_net_time;
+        if (dt > 0) {
+            dl_speed = (double)(cur_recv - s_prev_recv) * 1000.0 / dt;
+            ul_speed = (double)(cur_send - s_prev_send) * 1000.0 / dt;
+            if (dl_speed < 0) dl_speed = 0;
+            if (ul_speed < 0) ul_speed = 0;
+        }
+    }
+    s_prev_recv = cur_recv;
+    s_prev_send = cur_send;
+    s_prev_net_time = now;
+
     lua_createtable(L, 0, 2);
-    lua_pushinteger(L, 0); lua_setfield(L, -2, "download");
-    lua_pushinteger(L, 0); lua_setfield(L, -2, "upload");
+    lua_pushnumber(L, dl_speed); lua_setfield(L, -2, "download");
+    lua_pushnumber(L, ul_speed); lua_setfield(L, -2, "upload");
+    return 1;
+}
+
+#define NET_PROC_MAX 128
+
+typedef struct {
+    pid_t pid;
+    uint64_t io_read;
+    uint64_t io_write;
+} MacNetProcSnap;
+
+static MacNetProcSnap s_np_prev[NET_PROC_MAX];
+static int s_np_prev_count = 0;
+static uint64_t s_np_prev_time = 0;
+
+static int l_sys_net_processes(lua_State *L) {
+    int buf_size = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
+    if (buf_size <= 0) { lua_newtable(L); return 1; }
+
+    pid_t *pids = (pid_t *)malloc(buf_size);
+    if (!pids) { lua_newtable(L); return 1; }
+
+    buf_size = proc_listpids(PROC_ALL_PIDS, 0, pids, buf_size);
+    int pid_count = buf_size / sizeof(pid_t);
+
+    typedef struct { pid_t pid; char name[256]; int conns; uint64_t io_read; uint64_t io_write; } ProcInfo;
+    ProcInfo *procs = (ProcInfo *)calloc(NET_PROC_MAX, sizeof(ProcInfo));
+    int proc_count = 0;
+
+    for (int i = 0; i < pid_count && proc_count < NET_PROC_MAX; i++) {
+        pid_t pid = pids[i];
+        if (pid <= 0) continue;
+
+        int fds_size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, NULL, 0);
+        if (fds_size <= 0) continue;
+
+        struct proc_fdinfo *fds = (struct proc_fdinfo *)malloc(fds_size);
+        if (!fds) continue;
+
+        int actual = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fds, fds_size);
+        int fd_count = actual / sizeof(struct proc_fdinfo);
+
+        int socket_count = 0;
+        for (int j = 0; j < fd_count; j++) {
+            if (fds[j].proc_fdtype == PROX_FDTYPE_SOCKET) {
+                struct socket_fdinfo si;
+                int si_size = proc_pidfdinfo(pid, fds[j].proc_fd, PROC_PIDFDSOCKETINFO, &si, sizeof(si));
+                if (si_size == sizeof(si)) {
+                    if (si.psi.soi_family == AF_INET || si.psi.soi_family == AF_INET6) {
+                        if (si.psi.soi_kind == SOCKINFO_TCP &&
+                            si.psi.soi_proto.pri_tcp.tcpsi_state == TSI_S_ESTABLISHED) {
+                            socket_count++;
+                        }
+                    }
+                }
+            }
+        }
+        free(fds);
+
+        if (socket_count > 0) {
+            ProcInfo *p = &procs[proc_count];
+            p->pid = pid;
+            p->conns = socket_count;
+            proc_name(pid, p->name, sizeof(p->name));
+            if (p->name[0] == '\0') snprintf(p->name, sizeof(p->name), "pid_%d", pid);
+
+            struct rusage_info_v2 rusage;
+            if (proc_pid_rusage(pid, RUSAGE_INFO_V2, (void **)&rusage) == 0) {
+                p->io_read = rusage.ri_diskio_bytesread;
+                p->io_write = rusage.ri_diskio_byteswritten;
+            }
+            proc_count++;
+        }
+    }
+    free(pids);
+
+    uint64_t now = get_time_ms();
+    uint64_t dt = (s_np_prev_time > 0) ? (now - s_np_prev_time) : 0;
+
+    lua_newtable(L);
+    for (int i = 0; i < proc_count; i++) {
+        double dl_speed = 0, ul_speed = 0;
+        if (dt > 0) {
+            for (int j = 0; j < s_np_prev_count; j++) {
+                if (s_np_prev[j].pid == procs[i].pid) {
+                    dl_speed = (double)(procs[i].io_read - s_np_prev[j].io_read) * 1000.0 / dt;
+                    ul_speed = (double)(procs[i].io_write - s_np_prev[j].io_write) * 1000.0 / dt;
+                    if (dl_speed < 0) dl_speed = 0;
+                    if (ul_speed < 0) ul_speed = 0;
+                    break;
+                }
+            }
+        }
+
+        lua_newtable(L);
+        lua_pushinteger(L, procs[i].pid); lua_setfield(L, -2, "pid");
+        lua_pushstring(L, procs[i].name); lua_setfield(L, -2, "name");
+        lua_pushinteger(L, procs[i].conns); lua_setfield(L, -2, "connections");
+        lua_pushnumber(L, dl_speed); lua_setfield(L, -2, "download");
+        lua_pushnumber(L, ul_speed); lua_setfield(L, -2, "upload");
+        lua_rawseti(L, -2, i + 1);
+    }
+
+    for (int i = 0; i < proc_count && i < NET_PROC_MAX; i++) {
+        s_np_prev[i].pid = procs[i].pid;
+        s_np_prev[i].io_read = procs[i].io_read;
+        s_np_prev[i].io_write = procs[i].io_write;
+    }
+    s_np_prev_count = proc_count < NET_PROC_MAX ? proc_count : NET_PROC_MAX;
+    s_np_prev_time = now;
+
+    free(procs);
     return 1;
 }
 
@@ -305,6 +523,118 @@ static int l_sys_battery(lua_State *L) {
     lua_pushinteger(L, -1); lua_setfield(L, -2, "percent");
     lua_pushboolean(L, 0); lua_setfield(L, -2, "charging");
     lua_pushinteger(L, -1); lua_setfield(L, -2, "seconds_left");
+    return 1;
+}
+
+static int l_sys_net(lua_State *L) {
+    struct ifaddrs *ifap, *ifa;
+    if (getifaddrs(&ifap) != 0) { lua_pushnil(L); return 1; }
+
+    uint64_t recv_total = 0, send_total = 0;
+    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        if (ifa->ifa_addr->sa_family != AF_LINK) continue;
+        if ((ifa->ifa_flags & IFF_UP) == 0) continue;
+        if (ifa->ifa_flags & IFF_LOOPBACK) continue;
+
+        struct if_data *ifd = (struct if_data *)ifa->ifa_data;
+        if (ifd) {
+            recv_total += ifd->ifi_ibytes;
+            send_total += ifd->ifi_obytes;
+        }
+    }
+    freeifaddrs(ifap);
+
+    lua_createtable(L, 0, 2);
+    lua_pushnumber(L, (double)recv_total); lua_setfield(L, -2, "recv_bytes");
+    lua_pushnumber(L, (double)send_total); lua_setfield(L, -2, "send_bytes");
+    return 1;
+}
+
+static int l_sys_file_mtime(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    struct stat st;
+    if (stat(path, &st) != 0) { lua_pushnil(L); return 1; }
+    lua_pushinteger(L, (lua_Integer)st.st_mtime);
+    return 1;
+}
+
+static time_t s_newest_mtime;
+static char s_newest_path[1024];
+
+static void find_newest_recurse(const char *dir, const char *ext) {
+    DIR *d = opendir(dir);
+    if (!d) return;
+
+    struct dirent *entry;
+    while ((entry = readdir(d)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+
+        char full[1024];
+        snprintf(full, sizeof(full), "%s/%s", dir, entry->d_name);
+
+        struct stat st;
+        if (stat(full, &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            find_newest_recurse(full, ext);
+        } else {
+            const char *dot = strrchr(entry->d_name, '.');
+            if (dot && strcasecmp(dot, ext) == 0) {
+                if (st.st_mtime > s_newest_mtime) {
+                    s_newest_mtime = st.st_mtime;
+                    snprintf(s_newest_path, sizeof(s_newest_path), "%s", full);
+                }
+            }
+        }
+    }
+    closedir(d);
+}
+
+static int l_sys_find_newest(lua_State *L) {
+    const char *dir = luaL_checkstring(L, 1);
+    const char *ext = luaL_checkstring(L, 2);
+
+    s_newest_mtime = 0;
+    s_newest_path[0] = '\0';
+
+    find_newest_recurse(dir, ext);
+
+    if (s_newest_path[0]) {
+        lua_pushstring(L, s_newest_path);
+    } else {
+        lua_pushnil(L);
+    }
+    return 1;
+}
+
+static int l_sys_read_file(lua_State *L) {
+    const char *path = luaL_checkstring(L, 1);
+    FILE *f = fopen(path, "rb");
+    if (!f) { lua_pushnil(L); return 1; }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0) { fclose(f); lua_pushstring(L, ""); return 1; }
+
+    char *buf = (char *)malloc(size + 1);
+    if (!buf) { fclose(f); lua_pushnil(L); return 1; }
+
+    size_t read_bytes = fread(buf, 1, size, f);
+    fclose(f);
+    buf[read_bytes] = '\0';
+
+    char *start = buf;
+    if (read_bytes >= 3 && (unsigned char)buf[0] == 0xEF &&
+        (unsigned char)buf[1] == 0xBB && (unsigned char)buf[2] == 0xBF) {
+        start = buf + 3;
+        read_bytes -= 3;
+    }
+
+    lua_pushlstring(L, start, read_bytes);
+    free(buf);
     return 1;
 }
 
@@ -337,6 +667,8 @@ void tp_lua_init(void) {
     lua_createtable(g_L, 0, 0);
     lua_pushcfunction(g_L, l_http_get); lua_setfield(g_L, -2, "get");
     lua_pushcfunction(g_L, l_http_post); lua_setfield(g_L, -2, "post");
+    lua_pushcfunction(g_L, l_http_put); lua_setfield(g_L, -2, "put");
+    lua_pushcfunction(g_L, l_http_delete); lua_setfield(g_L, -2, "delete");
     lua_setglobal(g_L, "http");
 
     // sys
@@ -349,6 +681,11 @@ void tp_lua_init(void) {
     lua_pushcfunction(g_L, l_sys_process_count); lua_setfield(g_L, -2, "process_count");
     lua_pushcfunction(g_L, l_sys_net_speed); lua_setfield(g_L, -2, "net_speed");
     lua_pushcfunction(g_L, l_sys_battery); lua_setfield(g_L, -2, "battery");
+    lua_pushcfunction(g_L, l_sys_net_processes); lua_setfield(g_L, -2, "net_processes");
+    lua_pushcfunction(g_L, l_sys_net); lua_setfield(g_L, -2, "net");
+    lua_pushcfunction(g_L, l_sys_file_mtime); lua_setfield(g_L, -2, "file_mtime");
+    lua_pushcfunction(g_L, l_sys_find_newest); lua_setfield(g_L, -2, "find_newest");
+    lua_pushcfunction(g_L, l_sys_read_file); lua_setfield(g_L, -2, "read_file");
 #endif
     lua_setglobal(g_L, "sys");
 }
@@ -456,7 +793,7 @@ TPSpan tp_lua_get_span(int list_idx, int span_idx) {
 
     if (span.is_image) {
         lua_getfield(g_L, target, "img_source");
-        if (lua_isstring(g_L, -1)) strncpy(span.text, lua_tostring(g_L, -1), 511);
+        if (lua_isstring(g_L, -1)) { strncpy(span.text, lua_tostring(g_L, -1), 511); span.text[511] = '\0'; }
         lua_pop(g_L, 1);
         lua_getfield(g_L, target, "img_w");
         span.img_w = lua_isnil(g_L, -1) ? 16 : (int)lua_tointeger(g_L, -1);
@@ -466,10 +803,10 @@ TPSpan tp_lua_get_span(int list_idx, int span_idx) {
         lua_pop(g_L, 1);
     } else {
         lua_getfield(g_L, target, "text");
-        if (lua_isstring(g_L, -1)) strncpy(span.text, lua_tostring(g_L, -1), 511);
+        if (lua_isstring(g_L, -1)) { strncpy(span.text, lua_tostring(g_L, -1), 511); span.text[511] = '\0'; }
         lua_pop(g_L, 1);
         lua_getfield(g_L, target, "color");
-        if (lua_isstring(g_L, -1)) strncpy(span.color, lua_tostring(g_L, -1), 15);
+        if (lua_isstring(g_L, -1)) { strncpy(span.color, lua_tostring(g_L, -1), 15); span.color[15] = '\0'; }
         lua_pop(g_L, 1);
         lua_getfield(g_L, target, "size");
         span.font_size = lua_isnil(g_L, -1) ? 0 : (int)lua_tointeger(g_L, -1);
@@ -618,4 +955,9 @@ TPDialogSpec tp_lua_get_dialog(int idx) {
     }
     lua_pop(g_L, 1); // content table
     return spec;
+}
+
+void tp_lua_get_dialog_into(int idx, TPDialogSpec *out) {
+    if (!out) return;
+    *out = tp_lua_get_dialog(idx);
 }

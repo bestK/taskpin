@@ -60,5 +60,6 @@ TPSpan tp_lua_get_span(int list_idx, int span_idx);
 
 // Dialog extraction
 TPDialogSpec tp_lua_get_dialog(int idx);
+void tp_lua_get_dialog_into(int idx, TPDialogSpec *out);
 
 #endif
