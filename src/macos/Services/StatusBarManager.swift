@@ -96,7 +96,7 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
         let w = state?.dialogWidth ?? 400
         let h = state?.dialogHeight ?? 300
         popover.contentSize = NSSize(width: w, height: h)
-        let view = DialogPopoverView(items: dialogItems, projectManager: projectManager)
+        let view = LiveDialogPopoverView(itemId: id, projectManager: projectManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
         popover.contentViewController = NSHostingController(rootView: view)
@@ -147,11 +147,12 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
     }
 }
 
-struct DialogPopoverView: View {
-    let items: [DialogItemModel]
+struct LiveDialogPopoverView: View {
+    let itemId: UUID
     @ObservedObject var projectManager: ProjectManager
 
     var body: some View {
+        let items = projectManager.itemStates[itemId]?.dialogItems ?? []
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(items) { item in

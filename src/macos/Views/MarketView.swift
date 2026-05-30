@@ -18,11 +18,14 @@ struct MarketView: View {
     @State private var selectedSourceIndex: Int = 0
     @State private var newSource = ""
     @State private var searchText = ""
-    @State private var installedFiles: Set<String> = []
-
     private var filteredPlugins: [PluginInfo] {
         if searchText.isEmpty { return plugins }
         return plugins.filter { $0.name.localizedCaseInsensitiveContains(searchText) || $0.description.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private func isInstalled(_ plugin: PluginInfo) -> Bool {
+        let dest = configManager.scriptsDir.appendingPathComponent(plugin.file).path
+        return configManager.config.items.contains { $0.luaPath == dest }
     }
 
     var body: some View {
@@ -34,7 +37,7 @@ struct MarketView: View {
             contentArea
             if !status.isEmpty { statusBar }
         }
-        .onAppear { loadInstalledFiles(); fetchPlugins() }
+        .onAppear { fetchPlugins() }
     }
 
     private var sourceBar: some View {
@@ -105,7 +108,7 @@ struct MarketView: View {
     }
 
     private func pluginCard(_ plugin: PluginInfo) -> some View {
-        let isInstalled = installedFiles.contains(plugin.file)
+        let installed = isInstalled(plugin)
         return HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.15))
                 .frame(width: 32, height: 32)
@@ -125,7 +128,7 @@ struct MarketView: View {
             }
             Spacer()
 
-            if isInstalled {
+            if installed {
                 Label("Installed", systemImage: "checkmark.circle.fill").font(.system(size: 10)).foregroundColor(.green)
             } else {
                 Button("Install") { downloadPlugin(plugin) }.buttonStyle(.bordered).controlSize(.small)
@@ -154,13 +157,6 @@ struct MarketView: View {
         guard selectedSourceIndex < configManager.config.sources.count else { return }
         configManager.config.sources.remove(at: selectedSourceIndex); configManager.save()
         selectedSourceIndex = max(0, selectedSourceIndex - 1)
-    }
-
-    private func loadInstalledFiles() {
-        let dir = configManager.scriptsDir
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
-            installedFiles = Set(files)
-        }
     }
 
     private func fetchPlugins() {
@@ -205,7 +201,6 @@ struct MarketView: View {
             try? data.write(to: dest)
             DispatchQueue.main.async {
                 status = "Installed \(plugin.name)"
-                installedFiles.insert(plugin.file)
                 var newItem = PinItem()
                 newItem.type = .lua; newItem.name = plugin.name; newItem.luaPath = dest.path; newItem.pinned = true
                 configManager.addItem(newItem)

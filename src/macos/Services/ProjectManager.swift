@@ -85,6 +85,16 @@ class ProjectManager: ObservableObject {
                 state.clickable = result.clickable
                 state.isRunning = true
                 self.itemStates[itemId] = state
+
+                if result.dialogRefresh > 0 {
+                    let newInterval = Double(result.dialogRefresh)
+                    if let existing = self.timers[itemId], existing.timeInterval != newInterval {
+                        existing.invalidate()
+                        self.timers[itemId] = Timer.scheduledTimer(withTimeInterval: newInterval, repeats: true) { [weak self] _ in
+                            self?.executeItem(item)
+                        }
+                    }
+                }
             } else {
                 var state = self.itemStates[itemId] ?? PinItemState()
                 state.lastError = "Script error"
@@ -153,17 +163,6 @@ class ProjectManager: ObservableObject {
             return
         }
         activeItemId = pinned[0].id
-        guard pinned.count > 1 else { return }
-
-        rotationTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            DispatchQueue.main.async {
-                let pinned = self.configManager.config.items.filter { $0.pinned }
-                guard !pinned.isEmpty else { return }
-                self.pinnedIndex = (self.pinnedIndex + 1) % pinned.count
-                self.activeItemId = pinned[self.pinnedIndex].id
-            }
-        }
     }
 
     func handleButtonClick(_ item: DialogItemModel) {

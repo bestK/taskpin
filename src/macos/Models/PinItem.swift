@@ -10,6 +10,7 @@ struct ParamEntry: Codable, Identifiable {
     var key: String = ""
     var value: String = ""
     var label: String = ""
+    var paramType: String = "string"
 }
 
 struct PinItem: Codable, Identifiable {

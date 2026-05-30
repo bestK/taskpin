@@ -9,6 +9,30 @@ struct ItemEditView: View {
     @State private var testResult = ""
     @State private var isTesting = false
 
+    init(item: PinItem, projectManager: ProjectManager, onSave: @escaping (PinItem) -> Void, onCancel: @escaping () -> Void) {
+        var parsed = item
+        if item.type == .lua && !item.luaPath.isEmpty && item.params.isEmpty {
+            if let content = try? String(contentsOfFile: item.luaPath, encoding: .utf8) {
+                var params: [ParamEntry] = []
+                for line in content.components(separatedBy: .newlines) {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard trimmed.hasPrefix("-- @param ") else {
+                        if !trimmed.hasPrefix("--") { break }
+                        continue
+                    }
+                    let parts = String(trimmed.dropFirst("-- @param ".count)).components(separatedBy: " ")
+                    guard parts.count >= 2 else { continue }
+                    params.append(ParamEntry(key: parts[0], value: "", label: parts.count >= 3 ? parts[2...].joined(separator: " ") : parts[0], paramType: parts[1]))
+                }
+                if !params.isEmpty { parsed.params = params }
+            }
+        }
+        _item = State(initialValue: parsed)
+        self.projectManager = projectManager
+        self.onSave = onSave
+        self.onCancel = onCancel
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -22,8 +46,29 @@ struct ItemEditView: View {
                       allowsMultipleSelection: false) { result in
             if case .success(let urls) = result, let url = urls.first {
                 item.luaPath = url.path
+                parseParams(from: url.path)
             }
         }
+    }
+
+    private func parseParams(from path: String) {
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        var params: [ParamEntry] = []
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("-- @param ") else {
+                if !trimmed.hasPrefix("--") { break }
+                continue
+            }
+            let parts = trimmed.dropFirst("-- @param ".count).components(separatedBy: " ")
+            guard parts.count >= 2 else { continue }
+            let key = parts[0]
+            let paramType = parts[1]
+            let label = parts.count >= 3 ? parts[2...].joined(separator: " ") : key
+            let existing = item.params.first { $0.key == key }
+            params.append(ParamEntry(key: key, value: existing?.value ?? "", label: label, paramType: paramType))
+        }
+        item.params = params
     }
 
     private var header: some View {
@@ -89,7 +134,23 @@ struct ItemEditView: View {
                     Divider().opacity(0.3)
                     ForEach($item.params) { $param in
                         FormRow(param.label.isEmpty ? param.key : param.label) {
-                            TextField("value", text: $param.value).textFieldStyle(.plain).font(.system(size: 11))
+                            if param.paramType == "file" {
+                                HStack(spacing: 6) {
+                                    Text(param.value.isEmpty ? "No file" : (param.value as NSString).lastPathComponent)
+                                        .font(.system(size: 11)).foregroundColor(param.value.isEmpty ? .secondary : .primary).lineLimit(1)
+                                    Spacer()
+                                    Button("Browse") {
+                                        let panel = NSOpenPanel()
+                                        panel.canChooseFiles = true
+                                        panel.canChooseDirectories = false
+                                        if panel.runModal() == .OK, let url = panel.url {
+                                            param.value = url.path
+                                        }
+                                    }.controlSize(.small)
+                                }
+                            } else {
+                                TextField("value", text: $param.value).textFieldStyle(.plain).font(.system(size: 11))
+                            }
                         }
                     }
                 }

@@ -46,12 +46,22 @@ struct PopoverView: View {
     }
 
     private var dialogContent: some View {
-        let items = projectManager.activeState.dialogItems
+        let state = projectManager.activeState
+        let items = state.dialogItems
         return Group {
-            if items.isEmpty {
+            if items.isEmpty && !state.isRunning {
                 VStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text("Loading...").font(.system(size: 11)).foregroundColor(.secondary)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if items.isEmpty && state.isRunning {
+                VStack(spacing: 10) {
+                    Text(state.statusText.isEmpty ? "No dialog content" : state.statusText)
+                        .font(.system(size: 12))
+                        .foregroundColor(state.statusColor)
+                    if let err = state.lastError {
+                        Text(err).font(.system(size: 10)).foregroundColor(.orange)
+                    }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.vertical, showsIndicators: true) {

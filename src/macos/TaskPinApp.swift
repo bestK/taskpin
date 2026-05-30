@@ -54,19 +54,17 @@ struct TaskPinApp: App {
             VStack(spacing: 0) {
                 tabBar
                 Divider().opacity(0.5)
-                ZStack {
-                    PopoverView(projectManager: state.projectManager, configManager: state.configManager)
-                        .opacity(selectedTab == .status ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .status)
-                    ItemsListView(configManager: state.configManager, projectManager: state.projectManager)
-                        .opacity(selectedTab == .items ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .items)
-                    SettingsView(configManager: state.configManager)
-                        .opacity(selectedTab == .settings ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .settings)
-                    MarketView(configManager: state.configManager, projectManager: state.projectManager)
-                        .opacity(selectedTab == .market ? 1 : 0)
-                        .allowsHitTesting(selectedTab == .market)
+                Group {
+                    switch selectedTab {
+                    case .status:
+                        PopoverView(projectManager: state.projectManager, configManager: state.configManager)
+                    case .items:
+                        ItemsListView(configManager: state.configManager, projectManager: state.projectManager)
+                    case .settings:
+                        SettingsView(configManager: state.configManager)
+                    case .market:
+                        MarketView(configManager: state.configManager, projectManager: state.projectManager)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

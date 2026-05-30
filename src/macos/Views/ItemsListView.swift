@@ -77,7 +77,7 @@ struct ItemsListView: View {
         HStack(spacing: 10) {
             Image(systemName: item.type == .lua ? "chevron.left.forwardslash.chevron.right" : "globe")
                 .font(.system(size: 14))
-                .foregroundColor(item.pinned ? .accentColor : .secondary)
+                .foregroundColor(item.pinned ? .primary : .secondary)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -150,20 +150,13 @@ struct ItemsListView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(hoveredId == item.id ? Color.primary.opacity(0.06) : Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                .fill(hoveredId == item.id ? Color.primary.opacity(0.08) : Color.primary.opacity(0.03))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(item.pinned ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(Color.primary.opacity(hoveredId == item.id ? 0.1 : 0.05), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
-        .contentShape(RoundedRectangle(cornerRadius: 8))
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                editingItem = item
-                isAdding = false
-            }
-        }
         .onHover { isHovered in
             withAnimation(.easeInOut(duration: 0.1)) {
                 hoveredId = isHovered ? item.id : nil
@@ -184,7 +177,7 @@ struct ItemsListView: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .buttonStyle(.plain)
-            .foregroundColor(.accentColor)
+            .foregroundColor(.primary)
 
             Spacer()
 
@@ -229,7 +222,7 @@ struct ItemsListView: View {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .foregroundColor(.accentColor)
+            .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

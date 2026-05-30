@@ -9,6 +9,7 @@ struct LuaResult {
     var dialogItems: [DialogItemModel] = []
     var dialogWidth: Int = 400
     var dialogHeight: Int = 300
+    var dialogRefresh: Int = 0
     var clickable: Bool = false
 }
 
@@ -92,6 +93,7 @@ class LuaExecutor {
             tp_lua_get_dialog_into(3, specPtr)
             result.dialogWidth = Int(specPtr.pointee.width)
             result.dialogHeight = Int(specPtr.pointee.height)
+            result.dialogRefresh = Int(specPtr.pointee.refresh)
             result.dialogItems = Self.parseDialogItems(from: specPtr)
         }
 
@@ -146,6 +148,35 @@ class LuaExecutor {
                     m.imageHeight = Int(rawPtr.pointee.image_height)
                     if !imgStr.isEmpty {
                         m.image = loadImage(from: imgStr, width: m.imageWidth, height: m.imageHeight)
+                    }
+                    items.append(m)
+                case "table":
+                    var m = DialogItemModel(kind: .table)
+                    let colCount = Int(rawPtr.pointee.col_count)
+                    let rowCount = Int(rawPtr.pointee.row_count)
+                    withUnsafeBytes(of: rawPtr.pointee.columns) { buf in
+                        let base = buf.baseAddress!
+                        for c in 0..<colCount {
+                            let ptr = base.advanced(by: c * 64).assumingMemoryBound(to: CChar.self)
+                            m.columns.append(String(cString: ptr))
+                        }
+                    }
+                    withUnsafeBytes(of: rawPtr.pointee.cells) { cellsBuf in
+                        withUnsafeBytes(of: rawPtr.pointee.row_urls) { urlsBuf in
+                            let cellsBase = cellsBuf.baseAddress!
+                            let urlsBase = urlsBuf.baseAddress!
+                            for r in 0..<rowCount {
+                                var cells: [String] = []
+                                for c in 0..<colCount {
+                                    let ptr = cellsBase.advanced(by: (r * 6 + c) * 64).assumingMemoryBound(to: CChar.self)
+                                    cells.append(String(cString: ptr))
+                                }
+                                let urlPtr = urlsBase.advanced(by: r * 256).assumingMemoryBound(to: CChar.self)
+                                let rowUrlStr = String(cString: urlPtr)
+                                let rowUrl = rowUrlStr.isEmpty ? nil : URL(string: rowUrlStr)
+                                m.rows.append(TableRow(cells: cells, url: rowUrl, cmd: nil))
+                            }
+                        }
                     }
                     items.append(m)
                 default:
