@@ -493,6 +493,43 @@ local mx = sys.mouse_x()
 local my = sys.mouse_y()
 ```
 
+## sys.window_at(x, y)
+
+返回指定屏幕坐标处的顶层窗口句柄（整数）。自动跳过桌面和 TaskPin 自身窗口。无窗口时返回 nil。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| x | number | 屏幕 X 坐标 |
+| y | number | 屏幕 Y 坐标 |
+
+**返回值**: 窗口句柄（整数），无窗口返回 nil。
+
+```lua
+local hwnd = sys.window_at(500, 300)
+if hwnd then
+    sys.move_window(hwnd, 0, 5)  -- 向下推 5px
+end
+```
+
+## sys.move_window(hwnd, dx, dy)
+
+将窗口相对移动指定像素偏移量。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| hwnd | number | 窗口句柄（由 `sys.window_at` 获取） |
+| dx | number | 水平偏移（正=右，负=左） |
+| dy | number | 垂直偏移（正=下，负=上） |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+local hwnd = sys.window_at(sys.mouse_x(), sys.mouse_y())
+if hwnd then
+    sys.move_window(hwnd, 10, 0)  -- 向右推 10px
+end
+```
+
 ---
 
 ## 全局变量

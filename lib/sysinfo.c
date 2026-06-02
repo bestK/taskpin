@@ -542,6 +542,42 @@ static int l_sys_mouse_y(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_window_at(lua_State *ls) {
+    int x = (int)luaL_checkinteger(ls, 1);
+    int y = (int)luaL_checkinteger(ls, 2);
+    POINT pt = { x, y };
+    HWND hwnd = WindowFromPoint(pt);
+    if (!hwnd || hwnd == GetDesktopWindow() || hwnd == GetShellWindow()) {
+        lua_pushnil(ls);
+        return 1;
+    }
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root) hwnd = root;
+    /* Skip TaskPin's own dialog windows */
+    WCHAR cls[64];
+    GetClassNameW(hwnd, cls, 64);
+    if (lstrcmpW(cls, L"TaskPinScriptDialog") == 0 ||
+        lstrcmpW(cls, L"TaskPinBarClass") == 0) {
+        lua_pushnil(ls);
+        return 1;
+    }
+    lua_pushinteger(ls, (lua_Integer)(intptr_t)hwnd);
+    return 1;
+}
+
+static int l_sys_move_window(lua_State *ls) {
+    HWND hwnd = (HWND)(intptr_t)luaL_checkinteger(ls, 1);
+    int dx = (int)luaL_checkinteger(ls, 2);
+    int dy = (int)luaL_checkinteger(ls, 3);
+    if (!IsWindow(hwnd)) { lua_pushboolean(ls, 0); return 1; }
+    RECT rc;
+    GetWindowRect(hwnd, &rc);
+    SetWindowPos(hwnd, NULL, rc.left + dx, rc.top + dy, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    lua_pushboolean(ls, 1);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -586,5 +622,9 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "mouse_x");
     lua_pushcfunction(ls, l_sys_mouse_y);
     lua_setfield(ls, -2, "mouse_y");
+    lua_pushcfunction(ls, l_sys_window_at);
+    lua_setfield(ls, -2, "window_at");
+    lua_pushcfunction(ls, l_sys_move_window);
+    lua_setfield(ls, -2, "move_window");
     lua_setglobal(ls, "sys");
 }

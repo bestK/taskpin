@@ -484,6 +484,43 @@ Returns the current mouse Y coordinate (screen pixels).
 local my = sys.mouse_y()
 ```
 
+## sys.window_at(x, y)
+
+Returns the top-level window handle (integer) at the specified screen coordinates. Automatically skips the desktop and TaskPin's own windows. Returns nil if no window is found.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| x | number | Screen X coordinate |
+| y | number | Screen Y coordinate |
+
+**Returns**: Window handle (integer), or nil if no window.
+
+```lua
+local hwnd = sys.window_at(500, 300)
+if hwnd then
+    sys.move_window(hwnd, 0, 5)  -- push down 5px
+end
+```
+
+## sys.move_window(hwnd, dx, dy)
+
+Moves a window by the specified pixel offset (relative movement).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| hwnd | number | Window handle (from `sys.window_at`) |
+| dx | number | Horizontal offset (positive=right, negative=left) |
+| dy | number | Vertical offset (positive=down, negative=up) |
+
+**Returns**: boolean, true on success.
+
+```lua
+local hwnd = sys.window_at(sys.mouse_x(), sys.mouse_y())
+if hwnd then
+    sys.move_window(hwnd, 10, 0)  -- push right 10px
+end
+```
+
 ---
 
 ## Global Variables
