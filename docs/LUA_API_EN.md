@@ -521,6 +521,129 @@ if hwnd then
 end
 ```
 
+## sys.window_rect(hwnd)
+
+Returns the position and size of a window.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| hwnd | number | Window handle |
+
+**Returns**: table `{x, y, w, h}`, or nil for invalid handle.
+
+```lua
+local hwnd = sys.window_at(500, 300)
+if hwnd then
+    local r = sys.window_rect(hwnd)
+    log(r.x, r.y, r.w, r.h)
+end
+```
+
+## sys.window_title(hwnd)
+
+Returns the window title text.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| hwnd | number | Window handle |
+
+**Returns**: string, or nil for invalid handle.
+
+```lua
+local hwnd = sys.active_window()
+local title = sys.window_title(hwnd)  -- "Visual Studio Code"
+```
+
+## sys.window_list()
+
+Returns a list of all visible windows. Automatically excludes the desktop and TaskPin's own windows.
+
+**Returns**: Array table, each entry contains `{hwnd, title}`.
+
+```lua
+local wins = sys.window_list()
+for _, w in ipairs(wins) do
+    log(w.hwnd, w.title)
+end
+```
+
+## sys.active_window()
+
+Returns the foreground (active) window handle.
+
+**Returns**: Window handle (integer), or nil if none.
+
+```lua
+local hwnd = sys.active_window()
+```
+
+## sys.is_fullscreen()
+
+Checks whether the current foreground window is in fullscreen mode.
+
+**Returns**: boolean.
+
+```lua
+if sys.is_fullscreen() then
+    return ""  -- hide when fullscreen
+end
+```
+
+## sys.clipboard()
+
+Reads text content from the system clipboard.
+
+**Returns**: string, or nil if clipboard is empty or has no text.
+
+```lua
+local text = sys.clipboard()
+```
+
+## sys.set_clipboard(text)
+
+Writes text to the system clipboard.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| text | string | Text to write |
+
+**Returns**: boolean, true on success.
+
+```lua
+sys.set_clipboard("Hello from TaskPin")
+```
+
+## sys.shell(cmd)
+
+Opens a file or executes a command (non-blocking). Equivalent to double-clicking a file or using the Run dialog.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| cmd | string | File path, URL, or command |
+
+**Returns**: boolean, true on success.
+
+```lua
+sys.shell("https://github.com")            -- open URL
+sys.shell("C:\\Windows\\notepad.exe")       -- launch program
+sys.shell("C:\\Users\\me\\document.pdf")    -- open file
+```
+
+## sys.notify(title, msg)
+
+Shows a system tray notification balloon.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| title | string | Notification title |
+| msg | string | Notification body |
+
+**Returns**: boolean.
+
+```lua
+sys.notify("TaskPin", "CPU usage exceeded 90%!")
+```
+
 ---
 
 ## Global Variables

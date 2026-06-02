@@ -2,6 +2,7 @@
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include <windows.h>
+#include <shellapi.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -578,6 +579,135 @@ static int l_sys_move_window(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_window_rect(lua_State *ls) {
+    HWND hwnd = (HWND)(intptr_t)luaL_checkinteger(ls, 1);
+    if (!IsWindow(hwnd)) { lua_pushnil(ls); return 1; }
+    RECT rc;
+    GetWindowRect(hwnd, &rc);
+    lua_newtable(ls);
+    lua_pushinteger(ls, rc.left);   lua_setfield(ls, -2, "x");
+    lua_pushinteger(ls, rc.top);    lua_setfield(ls, -2, "y");
+    lua_pushinteger(ls, rc.right - rc.left);  lua_setfield(ls, -2, "w");
+    lua_pushinteger(ls, rc.bottom - rc.top);  lua_setfield(ls, -2, "h");
+    return 1;
+}
+
+static int l_sys_window_title(lua_State *ls) {
+    HWND hwnd = (HWND)(intptr_t)luaL_checkinteger(ls, 1);
+    if (!IsWindow(hwnd)) { lua_pushnil(ls); return 1; }
+    WCHAR wbuf[256];
+    GetWindowTextW(hwnd, wbuf, 256);
+    char buf[768];
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, sizeof(buf), NULL, NULL);
+    lua_pushstring(ls, buf);
+    return 1;
+}
+
+static BOOL CALLBACK enum_windows_cb(HWND hwnd, LPARAM lp) {
+    if (!IsWindowVisible(hwnd)) return TRUE;
+    WCHAR cls[64];
+    GetClassNameW(hwnd, cls, 64);
+    if (lstrcmpW(cls, L"TaskPinScriptDialog") == 0 ||
+        lstrcmpW(cls, L"TaskPinBarClass") == 0) return TRUE;
+    if (hwnd == GetDesktopWindow() || hwnd == GetShellWindow()) return TRUE;
+
+    lua_State *ls = (lua_State *)lp;
+    int idx = (int)lua_rawlen(ls, -1) + 1;
+    lua_newtable(ls);
+    lua_pushinteger(ls, (lua_Integer)(intptr_t)hwnd);
+    lua_setfield(ls, -2, "hwnd");
+    WCHAR wbuf[256];
+    GetWindowTextW(hwnd, wbuf, 256);
+    char buf[768];
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, sizeof(buf), NULL, NULL);
+    lua_pushstring(ls, buf);
+    lua_setfield(ls, -2, "title");
+    lua_rawseti(ls, -2, idx);
+    return TRUE;
+}
+
+static int l_sys_window_list(lua_State *ls) {
+    lua_newtable(ls);
+    EnumWindows(enum_windows_cb, (LPARAM)ls);
+    return 1;
+}
+
+static int l_sys_active_window(lua_State *ls) {
+    HWND hwnd = GetForegroundWindow();
+    if (!hwnd) { lua_pushnil(ls); return 1; }
+    lua_pushinteger(ls, (lua_Integer)(intptr_t)hwnd);
+    return 1;
+}
+
+static int l_sys_is_fullscreen(lua_State *ls) {
+    HWND hwnd = GetForegroundWindow();
+    if (!hwnd) { lua_pushboolean(ls, 0); return 1; }
+    RECT rc;
+    GetWindowRect(hwnd, &rc);
+    int sw = GetSystemMetrics(SM_CXSCREEN);
+    int sh = GetSystemMetrics(SM_CYSCREEN);
+    lua_pushboolean(ls, rc.left <= 0 && rc.top <= 0 &&
+        rc.right >= sw && rc.bottom >= sh);
+    return 1;
+}
+
+static int l_sys_clipboard(lua_State *ls) {
+    if (!OpenClipboard(NULL)) { lua_pushnil(ls); return 1; }
+    HANDLE h = GetClipboardData(CF_UNICODETEXT);
+    if (!h) { CloseClipboard(); lua_pushnil(ls); return 1; }
+    WCHAR *wstr = (WCHAR *)GlobalLock(h);
+    if (!wstr) { CloseClipboard(); lua_pushnil(ls); return 1; }
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
+    char *buf = (char *)malloc(len);
+    WideCharToMultiByte(CP_UTF8, 0, wstr, -1, buf, len, NULL, NULL);
+    GlobalUnlock(h);
+    CloseClipboard();
+    lua_pushstring(ls, buf);
+    free(buf);
+    return 1;
+}
+
+static int l_sys_set_clipboard(lua_State *ls) {
+    const char *text = luaL_checkstring(ls, 1);
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, wlen * sizeof(WCHAR));
+    if (!hg) { lua_pushboolean(ls, 0); return 1; }
+    WCHAR *dst = (WCHAR *)GlobalLock(hg);
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, dst, wlen);
+    GlobalUnlock(hg);
+    if (!OpenClipboard(NULL)) { GlobalFree(hg); lua_pushboolean(ls, 0); return 1; }
+    EmptyClipboard();
+    SetClipboardData(CF_UNICODETEXT, hg);
+    CloseClipboard();
+    lua_pushboolean(ls, 1);
+    return 1;
+}
+
+static int l_sys_shell(lua_State *ls) {
+    const char *cmd = luaL_checkstring(ls, 1);
+    WCHAR wcmd[1024];
+    MultiByteToWideChar(CP_UTF8, 0, cmd, -1, wcmd, 1024);
+    HINSTANCE r = ShellExecuteW(NULL, L"open", wcmd, NULL, NULL, SW_SHOWNORMAL);
+    lua_pushboolean(ls, (intptr_t)r > 32);
+    return 1;
+}
+
+static int l_sys_notify(lua_State *ls) {
+    const char *title = luaL_checkstring(ls, 1);
+    const char *msg = luaL_checkstring(ls, 2);
+    NOTIFYICONDATAW nid = {0};
+    nid.cbSize = sizeof(nid);
+    nid.hWnd = FindWindowW(L"TaskPinBarClass", NULL);
+    nid.uID = 9999;
+    nid.uFlags = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO;
+    MultiByteToWideChar(CP_UTF8, 0, title, -1, nid.szInfoTitle, 64);
+    MultiByteToWideChar(CP_UTF8, 0, msg, -1, nid.szInfo, 256);
+    Shell_NotifyIconW(NIM_MODIFY, &nid);
+    lua_pushboolean(ls, 1);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -626,5 +756,23 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "window_at");
     lua_pushcfunction(ls, l_sys_move_window);
     lua_setfield(ls, -2, "move_window");
+    lua_pushcfunction(ls, l_sys_window_rect);
+    lua_setfield(ls, -2, "window_rect");
+    lua_pushcfunction(ls, l_sys_window_title);
+    lua_setfield(ls, -2, "window_title");
+    lua_pushcfunction(ls, l_sys_window_list);
+    lua_setfield(ls, -2, "window_list");
+    lua_pushcfunction(ls, l_sys_active_window);
+    lua_setfield(ls, -2, "active_window");
+    lua_pushcfunction(ls, l_sys_is_fullscreen);
+    lua_setfield(ls, -2, "is_fullscreen");
+    lua_pushcfunction(ls, l_sys_clipboard);
+    lua_setfield(ls, -2, "clipboard");
+    lua_pushcfunction(ls, l_sys_set_clipboard);
+    lua_setfield(ls, -2, "set_clipboard");
+    lua_pushcfunction(ls, l_sys_shell);
+    lua_setfield(ls, -2, "shell");
+    lua_pushcfunction(ls, l_sys_notify);
+    lua_setfield(ls, -2, "notify");
     lua_setglobal(ls, "sys");
 }

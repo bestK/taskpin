@@ -530,6 +530,129 @@ if hwnd then
 end
 ```
 
+## sys.window_rect(hwnd)
+
+返回窗口的位置和尺寸。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| hwnd | number | 窗口句柄 |
+
+**返回值**: table `{x, y, w, h}`，无效句柄返回 nil。
+
+```lua
+local hwnd = sys.window_at(500, 300)
+if hwnd then
+    local r = sys.window_rect(hwnd)
+    log(r.x, r.y, r.w, r.h)
+end
+```
+
+## sys.window_title(hwnd)
+
+返回窗口标题文本。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| hwnd | number | 窗口句柄 |
+
+**返回值**: string，无效句柄返回 nil。
+
+```lua
+local hwnd = sys.active_window()
+local title = sys.window_title(hwnd)  -- "Visual Studio Code"
+```
+
+## sys.window_list()
+
+返回当前所有可见窗口列表。自动排除桌面和 TaskPin 自身窗口。
+
+**返回值**: 数组 table，每项含 `{hwnd, title}`。
+
+```lua
+local wins = sys.window_list()
+for _, w in ipairs(wins) do
+    log(w.hwnd, w.title)
+end
+```
+
+## sys.active_window()
+
+返回当前前台窗口句柄。
+
+**返回值**: 窗口句柄（整数），无前台窗口返回 nil。
+
+```lua
+local hwnd = sys.active_window()
+```
+
+## sys.is_fullscreen()
+
+检测当前前台窗口是否为全屏模式。
+
+**返回值**: boolean。
+
+```lua
+if sys.is_fullscreen() then
+    return ""  -- 全屏时隐藏
+end
+```
+
+## sys.clipboard()
+
+读取系统剪贴板文本内容。
+
+**返回值**: string，剪贴板为空或无文本时返回 nil。
+
+```lua
+local text = sys.clipboard()
+```
+
+## sys.set_clipboard(text)
+
+将文本写入系统剪贴板。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| text | string | 写入内容 |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+sys.set_clipboard("Hello from TaskPin")
+```
+
+## sys.shell(cmd)
+
+打开文件或执行命令（非阻塞）。等同于双击文件或在运行对话框中输入命令。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| cmd | string | 文件路径、URL 或命令 |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+sys.shell("https://github.com")            -- 打开网页
+sys.shell("C:\\Windows\\notepad.exe")       -- 启动程序
+sys.shell("C:\\Users\\me\\document.pdf")    -- 打开文件
+```
+
+## sys.notify(title, msg)
+
+显示系统托盘通知气泡。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| title | string | 通知标题 |
+| msg | string | 通知内容 |
+
+**返回值**: boolean。
+
+```lua
+sys.notify("TaskPin", "CPU 使用率超过 90%!")
+```
+
 ---
 
 ## 全局变量
