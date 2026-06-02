@@ -644,6 +644,189 @@ Shows a system tray notification balloon.
 sys.notify("TaskPin", "CPU usage exceeded 90%!")
 ```
 
+## sys.resize_window(hwnd, w, h)
+
+Resizes a window (does not move it).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| hwnd | number | Window handle |
+| w | number | New width in px |
+| h | number | New height in px |
+
+**Returns**: boolean, true on success.
+
+```lua
+local hwnd = sys.active_window()
+sys.resize_window(hwnd, 800, 600)
+```
+
+## sys.topmost_window(hwnd, on)
+
+Sets or clears the always-on-top flag for a window.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| hwnd | number | Window handle |
+| on | boolean | true=set topmost, false=clear topmost |
+
+**Returns**: boolean, true on success.
+
+```lua
+local hwnd = sys.active_window()
+sys.topmost_window(hwnd, true)  -- pin on top
+```
+
+## sys.is_running(name)
+
+Checks whether a process with the given name is currently running.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| name | string | Process name (e.g. `"chrome.exe"`) |
+
+**Returns**: boolean.
+
+```lua
+if sys.is_running("docker.exe") then
+    return font("Docker: ON", "#0F0", 9)
+else
+    return font("Docker: OFF", "#F00", 9)
+end
+```
+
+## sys.process_list()
+
+Returns a list of all running processes.
+
+**Returns**: Array table, each entry contains `{pid, name}`.
+
+```lua
+local procs = sys.process_list()
+for _, p in ipairs(procs) do
+    log(p.pid, p.name)
+end
+```
+
+## sys.kill(pid)
+
+Terminates a process by PID.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| pid | number | Process ID |
+
+**Returns**: boolean, true on success.
+
+```lua
+sys.kill(1234)
+```
+
+## sys.volume()
+
+Returns current system volume (0-100 integer). Returns -1 on failure.
+
+```lua
+local vol = sys.volume()  -- 75
+```
+
+## sys.set_volume(n)
+
+Sets the system volume.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| n | number | Volume level (0-100) |
+
+**Returns**: boolean, true on success.
+
+```lua
+sys.set_volume(50)
+```
+
+## sys.is_muted()
+
+Checks whether the system audio is muted.
+
+**Returns**: boolean.
+
+```lua
+if sys.is_muted() then
+    return font("MUTED", "#F00", 9)
+end
+```
+
+## sys.wifi_name()
+
+Returns the name of the currently connected WiFi network. Returns nil if not connected to WiFi.
+
+**Returns**: string or nil.
+
+```lua
+local ssid = sys.wifi_name()  -- "MyNetwork"
+```
+
+## sys.is_connected()
+
+Checks whether the system has an active network connection.
+
+**Returns**: boolean.
+
+```lua
+if not sys.is_connected() then
+    return font("OFFLINE", "#F00", 9)
+end
+```
+
+## sys.is_dark_mode()
+
+Checks whether the system is in dark mode.
+
+**Returns**: boolean.
+
+```lua
+local color = sys.is_dark_mode() and "#FFF" or "#000"
+return font("Hello", color, 9)
+```
+
+## sys.monitor_count()
+
+Returns the number of connected monitors.
+
+```lua
+local n = sys.monitor_count()  -- 2
+```
+
+## sys.monitor_rect(n)
+
+Returns the display area of the nth monitor (1-based index).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| n | number | Monitor index (starting from 1) |
+
+**Returns**: table `{x, y, w, h}`, or nil for invalid index.
+
+```lua
+local m = sys.monitor_rect(2)
+-- m.x = 1920, m.y = 0, m.w = 2560, m.h = 1440
+```
+
+## sys.env(name)
+
+Reads an environment variable.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| name | string | Environment variable name |
+
+**Returns**: string, or nil if not set.
+
+```lua
+local home = sys.env("USERPROFILE")
+local path = sys.env("PATH")
+```
+
 ---
 
 ## Global Variables

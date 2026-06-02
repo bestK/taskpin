@@ -5,6 +5,10 @@
 #include <shellapi.h>
 #include <string.h>
 #include <stdio.h>
+#include <initguid.h>
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
+#include <wininet.h>
 
 /* ─── CPU usage via GetSystemTimes delta ─── */
 
@@ -708,6 +712,226 @@ static int l_sys_notify(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_resize_window(lua_State *ls) {
+    HWND hwnd = (HWND)(intptr_t)luaL_checkinteger(ls, 1);
+    int w = (int)luaL_checkinteger(ls, 2);
+    int h = (int)luaL_checkinteger(ls, 3);
+    if (!IsWindow(hwnd)) { lua_pushboolean(ls, 0); return 1; }
+    SetWindowPos(hwnd, NULL, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    lua_pushboolean(ls, 1);
+    return 1;
+}
+
+static int l_sys_topmost_window(lua_State *ls) {
+    HWND hwnd = (HWND)(intptr_t)luaL_checkinteger(ls, 1);
+    int on = lua_toboolean(ls, 2);
+    if (!IsWindow(hwnd)) { lua_pushboolean(ls, 0); return 1; }
+    SetWindowPos(hwnd, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    lua_pushboolean(ls, 1);
+    return 1;
+}
+
+static int l_sys_is_running(lua_State *ls) {
+    const char *name = luaL_checkstring(ls, 1);
+    WCHAR wname[256];
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wname, 256);
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) { lua_pushboolean(ls, 0); return 1; }
+    PROCESSENTRY32W pe = { .dwSize = sizeof(pe) };
+    BOOL found = FALSE;
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (lstrcmpiW(pe.szExeFile, wname) == 0) { found = TRUE; break; }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    lua_pushboolean(ls, found);
+    return 1;
+}
+
+static int l_sys_process_list(lua_State *ls) {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) { lua_newtable(ls); return 1; }
+    PROCESSENTRY32W pe = { .dwSize = sizeof(pe) };
+    lua_newtable(ls);
+    int idx = 1;
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            lua_newtable(ls);
+            lua_pushinteger(ls, pe.th32ProcessID);
+            lua_setfield(ls, -2, "pid");
+            char buf[512];
+            WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1, buf, sizeof(buf), NULL, NULL);
+            lua_pushstring(ls, buf);
+            lua_setfield(ls, -2, "name");
+            lua_rawseti(ls, -2, idx++);
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return 1;
+}
+
+static int l_sys_kill(lua_State *ls) {
+    DWORD pid = (DWORD)luaL_checkinteger(ls, 1);
+    HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (!hp) { lua_pushboolean(ls, 0); return 1; }
+    BOOL ok = TerminateProcess(hp, 1);
+    CloseHandle(hp);
+    lua_pushboolean(ls, ok);
+    return 1;
+}
+
+/* Audio volume via IAudioEndpointVolume (COM) */
+DEFINE_GUID(CLSID_MMDeviceEnumerator_local, 0xBCDE0395,0xE52F,0x467C,0x8E,0x3D,0xC4,0x57,0x92,0x91,0x69,0x2E);
+DEFINE_GUID(IID_IMMDeviceEnumerator_local, 0xA95664D2,0x9614,0x4F35,0xA7,0x46,0xDE,0x8D,0xB6,0x36,0x17,0xE6);
+DEFINE_GUID(IID_IAudioEndpointVolume_local, 0x5CDF2C82,0x841E,0x4546,0x97,0x22,0x0C,0xF7,0x40,0x78,0x22,0x9A);
+
+static IAudioEndpointVolume *get_volume_endpoint(void) {
+    IMMDeviceEnumerator *pEnum = NULL;
+    IMMDevice *pDevice = NULL;
+    IAudioEndpointVolume *pVol = NULL;
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(CoCreateInstance(&CLSID_MMDeviceEnumerator_local, NULL, CLSCTX_ALL,
+            &IID_IMMDeviceEnumerator_local, (void **)&pEnum))) return NULL;
+    if (FAILED(pEnum->lpVtbl->GetDefaultAudioEndpoint(pEnum, eRender, eConsole, &pDevice))) {
+        pEnum->lpVtbl->Release(pEnum); return NULL;
+    }
+    if (FAILED(pDevice->lpVtbl->Activate(pDevice, &IID_IAudioEndpointVolume_local,
+            CLSCTX_ALL, NULL, (void **)&pVol))) {
+        pDevice->lpVtbl->Release(pDevice); pEnum->lpVtbl->Release(pEnum); return NULL;
+    }
+    pDevice->lpVtbl->Release(pDevice);
+    pEnum->lpVtbl->Release(pEnum);
+    return pVol;
+}
+
+static int l_sys_volume(lua_State *ls) {
+    IAudioEndpointVolume *pVol = get_volume_endpoint();
+    if (!pVol) { lua_pushinteger(ls, -1); return 1; }
+    float level = 0;
+    pVol->lpVtbl->GetMasterVolumeLevelScalar(pVol, &level);
+    pVol->lpVtbl->Release(pVol);
+    lua_pushinteger(ls, (int)(level * 100 + 0.5f));
+    return 1;
+}
+
+static int l_sys_set_volume(lua_State *ls) {
+    int vol = (int)luaL_checkinteger(ls, 1);
+    if (vol < 0) vol = 0;
+    if (vol > 100) vol = 100;
+    IAudioEndpointVolume *pVol = get_volume_endpoint();
+    if (!pVol) { lua_pushboolean(ls, 0); return 1; }
+    pVol->lpVtbl->SetMasterVolumeLevelScalar(pVol, vol / 100.0f, NULL);
+    pVol->lpVtbl->Release(pVol);
+    lua_pushboolean(ls, 1);
+    return 1;
+}
+
+static int l_sys_is_muted(lua_State *ls) {
+    IAudioEndpointVolume *pVol = get_volume_endpoint();
+    if (!pVol) { lua_pushboolean(ls, 0); return 1; }
+    BOOL muted = FALSE;
+    pVol->lpVtbl->GetMute(pVol, &muted);
+    pVol->lpVtbl->Release(pVol);
+    lua_pushboolean(ls, muted);
+    return 1;
+}
+
+static int l_sys_wifi_name(lua_State *ls) {
+    /* Use netsh to get WiFi SSID - simpler than wlanapi dynamic loading */
+    FILE *fp = _popen("netsh wlan show interfaces", "r");
+    if (!fp) { lua_pushnil(ls); return 1; }
+    char line[512];
+    char ssid[256] = {0};
+    while (fgets(line, sizeof(line), fp)) {
+        char *p = strstr(line, "SSID");
+        if (p && !strstr(line, "BSSID")) {
+            p = strchr(p, ':');
+            if (p) {
+                p++;
+                while (*p == ' ') p++;
+                char *end = p + strlen(p) - 1;
+                while (end > p && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+                strncpy(ssid, p, sizeof(ssid) - 1);
+                break;
+            }
+        }
+    }
+    _pclose(fp);
+    if (ssid[0]) lua_pushstring(ls, ssid);
+    else lua_pushnil(ls);
+    return 1;
+}
+
+static int l_sys_is_connected(lua_State *ls) {
+    /* Quick check: try to resolve a known host */
+    DWORD flags = 0;
+    BOOL online = InternetGetConnectedState(&flags, 0);
+    lua_pushboolean(ls, online);
+    return 1;
+}
+
+static int l_sys_is_dark_mode(lua_State *ls) {
+    HKEY hkey;
+    DWORD val = 1, size = sizeof(val);
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            0, KEY_READ, &hkey) == ERROR_SUCCESS) {
+        RegQueryValueExW(hkey, L"AppsUseLightTheme", NULL, NULL, (BYTE *)&val, &size);
+        RegCloseKey(hkey);
+    }
+    lua_pushboolean(ls, val == 0);
+    return 1;
+}
+
+static int l_sys_monitor_count(lua_State *ls) {
+    lua_pushinteger(ls, GetSystemMetrics(SM_CMONITORS));
+    return 1;
+}
+
+static BOOL CALLBACK monitor_enum_cb(HMONITOR hMon, HDC hdc, LPRECT lprc, LPARAM lp) {
+    (void)hdc; (void)lprc;
+    int *ctx = (int *)lp; /* ctx[0] = target index (1-based), ctx[1] = current */
+    ctx[1]++;
+    if (ctx[1] == ctx[0]) {
+        MONITORINFO mi = { .cbSize = sizeof(mi) };
+        GetMonitorInfoW(hMon, &mi);
+        ctx[2] = mi.rcMonitor.left;
+        ctx[3] = mi.rcMonitor.top;
+        ctx[4] = mi.rcMonitor.right - mi.rcMonitor.left;
+        ctx[5] = mi.rcMonitor.bottom - mi.rcMonitor.top;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static int l_sys_monitor_rect(lua_State *ls) {
+    int idx = (int)luaL_checkinteger(ls, 1);
+    int ctx[6] = { idx, 0, 0, 0, 0, 0 };
+    EnumDisplayMonitors(NULL, NULL, monitor_enum_cb, (LPARAM)ctx);
+    if (ctx[1] < idx) { lua_pushnil(ls); return 1; }
+    lua_newtable(ls);
+    lua_pushinteger(ls, ctx[2]); lua_setfield(ls, -2, "x");
+    lua_pushinteger(ls, ctx[3]); lua_setfield(ls, -2, "y");
+    lua_pushinteger(ls, ctx[4]); lua_setfield(ls, -2, "w");
+    lua_pushinteger(ls, ctx[5]); lua_setfield(ls, -2, "h");
+    return 1;
+}
+
+static int l_sys_env(lua_State *ls) {
+    const char *name = luaL_checkstring(ls, 1);
+    WCHAR wname[256];
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wname, 256);
+    WCHAR wval[4096];
+    DWORD len = GetEnvironmentVariableW(wname, wval, 4096);
+    if (len == 0) { lua_pushnil(ls); return 1; }
+    char buf[4096];
+    WideCharToMultiByte(CP_UTF8, 0, wval, -1, buf, sizeof(buf), NULL, NULL);
+    lua_pushstring(ls, buf);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -774,5 +998,33 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "shell");
     lua_pushcfunction(ls, l_sys_notify);
     lua_setfield(ls, -2, "notify");
+    lua_pushcfunction(ls, l_sys_resize_window);
+    lua_setfield(ls, -2, "resize_window");
+    lua_pushcfunction(ls, l_sys_topmost_window);
+    lua_setfield(ls, -2, "topmost_window");
+    lua_pushcfunction(ls, l_sys_is_running);
+    lua_setfield(ls, -2, "is_running");
+    lua_pushcfunction(ls, l_sys_process_list);
+    lua_setfield(ls, -2, "process_list");
+    lua_pushcfunction(ls, l_sys_kill);
+    lua_setfield(ls, -2, "kill");
+    lua_pushcfunction(ls, l_sys_volume);
+    lua_setfield(ls, -2, "volume");
+    lua_pushcfunction(ls, l_sys_set_volume);
+    lua_setfield(ls, -2, "set_volume");
+    lua_pushcfunction(ls, l_sys_is_muted);
+    lua_setfield(ls, -2, "is_muted");
+    lua_pushcfunction(ls, l_sys_wifi_name);
+    lua_setfield(ls, -2, "wifi_name");
+    lua_pushcfunction(ls, l_sys_is_connected);
+    lua_setfield(ls, -2, "is_connected");
+    lua_pushcfunction(ls, l_sys_is_dark_mode);
+    lua_setfield(ls, -2, "is_dark_mode");
+    lua_pushcfunction(ls, l_sys_monitor_count);
+    lua_setfield(ls, -2, "monitor_count");
+    lua_pushcfunction(ls, l_sys_monitor_rect);
+    lua_setfield(ls, -2, "monitor_rect");
+    lua_pushcfunction(ls, l_sys_env);
+    lua_setfield(ls, -2, "env");
     lua_setglobal(ls, "sys");
 }

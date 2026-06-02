@@ -653,6 +653,189 @@ sys.shell("C:\\Users\\me\\document.pdf")    -- 打开文件
 sys.notify("TaskPin", "CPU 使用率超过 90%!")
 ```
 
+## sys.resize_window(hwnd, w, h)
+
+调整窗口大小（不移动位置）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| hwnd | number | 窗口句柄 |
+| w | number | 新宽度（px） |
+| h | number | 新高度（px） |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+local hwnd = sys.active_window()
+sys.resize_window(hwnd, 800, 600)
+```
+
+## sys.topmost_window(hwnd, on)
+
+设置或取消窗口置顶。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| hwnd | number | 窗口句柄 |
+| on | boolean | true=置顶，false=取消置顶 |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+local hwnd = sys.active_window()
+sys.topmost_window(hwnd, true)  -- 置顶
+```
+
+## sys.is_running(name)
+
+判断指定名称的进程是否正在运行。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| name | string | 进程名（如 `"chrome.exe"`） |
+
+**返回值**: boolean。
+
+```lua
+if sys.is_running("docker.exe") then
+    return font("Docker: ON", "#0F0", 9)
+else
+    return font("Docker: OFF", "#F00", 9)
+end
+```
+
+## sys.process_list()
+
+返回所有进程列表。
+
+**返回值**: 数组 table，每项含 `{pid, name}`。
+
+```lua
+local procs = sys.process_list()
+for _, p in ipairs(procs) do
+    log(p.pid, p.name)
+end
+```
+
+## sys.kill(pid)
+
+结束指定 PID 的进程。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| pid | number | 进程 ID |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+sys.kill(1234)
+```
+
+## sys.volume()
+
+返回当前系统音量（0-100 整数）。获取失败返回 -1。
+
+```lua
+local vol = sys.volume()  -- 75
+```
+
+## sys.set_volume(n)
+
+设置系统音量。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| n | number | 音量值 (0-100) |
+
+**返回值**: boolean，成功返回 true。
+
+```lua
+sys.set_volume(50)
+```
+
+## sys.is_muted()
+
+检测系统是否静音。
+
+**返回值**: boolean。
+
+```lua
+if sys.is_muted() then
+    return font("MUTED", "#F00", 9)
+end
+```
+
+## sys.wifi_name()
+
+返回当前连接的 WiFi 名称。未连接 WiFi 时返回 nil。
+
+**返回值**: string 或 nil。
+
+```lua
+local ssid = sys.wifi_name()  -- "MyNetwork"
+```
+
+## sys.is_connected()
+
+检测是否有网络连接。
+
+**返回值**: boolean。
+
+```lua
+if not sys.is_connected() then
+    return font("OFFLINE", "#F00", 9)
+end
+```
+
+## sys.is_dark_mode()
+
+检测系统是否为深色模式。
+
+**返回值**: boolean。
+
+```lua
+local color = sys.is_dark_mode() and "#FFF" or "#000"
+return font("Hello", color, 9)
+```
+
+## sys.monitor_count()
+
+返回显示器数量。
+
+```lua
+local n = sys.monitor_count()  -- 2
+```
+
+## sys.monitor_rect(n)
+
+返回第 n 个显示器的区域（1-based）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| n | number | 显示器序号（从 1 开始） |
+
+**返回值**: table `{x, y, w, h}`，无效序号返回 nil。
+
+```lua
+local m = sys.monitor_rect(2)
+-- m.x = 1920, m.y = 0, m.w = 2560, m.h = 1440
+```
+
+## sys.env(name)
+
+读取环境变量。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| name | string | 环境变量名 |
+
+**返回值**: string，不存在返回 nil。
+
+```lua
+local home = sys.env("USERPROFILE")
+local path = sys.env("PATH")
+```
+
 ---
 
 ## 全局变量
