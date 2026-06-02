@@ -160,8 +160,8 @@ elseif g.state == "peck" then
     g.vy = 0
 
     if g.state_timer % 8 == 0 then
-        local check_x = g.x + goose_w / 2
-        local check_y = g.y + goose_h
+        local check_x = math.floor(g.x + goose_w / 2)
+        local check_y = math.floor(g.y + goose_h)
         local hwnd = sys.window_at(check_x, check_y)
         if hwnd then
             sys.move_window(hwnd, 0, 3)
