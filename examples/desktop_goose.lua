@@ -4,16 +4,18 @@
 -- @bar_width 100
 -- @require 1.4.0
 
--- GitHub 代理检测
-local function is_china()
-    local geo = http.get("https://api.ip.sb/geoip")
-    if not geo then return false end
-    local info = json.decode(geo)
-    return info and info.country_code == "CN"
+-- GitHub 代理检测（只执行一次）
+if _G._goose_sprite == nil then
+    local function is_china()
+        local geo = http.get("https://api.ip.sb/geoip")
+        if not geo then return false end
+        local info = json.decode(geo)
+        return info and info.country_code == "CN"
+    end
+    local proxy = is_china() and "https://gh-proxy.com/" or ""
+    _G._goose_sprite = proxy .. "https://raw.githubusercontent.com/bestK/taskpin-plugins/master/goose_sprites.png"
 end
-
-local proxy = is_china() and "https://gh-proxy.com/" or ""
-local sprite_sheet = proxy .. "https://raw.githubusercontent.com/bestK/taskpin-plugins/master/goose_sprites.png"
+local sprite_sheet = _G._goose_sprite
 
 local frame_w = 32
 local frame_h = 32

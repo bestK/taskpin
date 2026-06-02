@@ -10,15 +10,13 @@ local claude_dir = home .. sep .. ".claude"
 
 local github_base = "https://raw.githubusercontent.com/bestK/taskpin-plugins/master/"
 
--- 检测是否在中国，加 GitHub 代理前缀
-local function is_china()
+-- 检测是否在中国，加 GitHub 代理前缀（只执行一次）
+if _G._claude_proxy == nil then
     local geo = http.get("https://api.ip.sb/geoip")
-    if not geo then return false end
-    local info = json.decode(geo)
-    return info and info.country_code == "CN"
+    local info = geo and json.decode(geo)
+    _G._claude_proxy = (info and info.country_code == "CN") and "https://gh-proxy.com/" or ""
 end
-
-local proxy = is_china() and "https://gh-proxy.com/" or ""
+local proxy = _G._claude_proxy
 local claude_icon = proxy .. github_base .. "claude.png"
 local claude_spinner = proxy .. github_base .. "claude_spinner.gif"
 
