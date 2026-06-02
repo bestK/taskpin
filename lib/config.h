@@ -42,6 +42,8 @@ typedef struct {
     int   bar_x;                     /* -1 = auto position */
     int   bar_y;                     /* -1 = auto position */
     COLORREF bar_bg_color;           /* 0xFFFFFFFF = use global default */
+    int   dlg_x;                     /* dialog position, -1 = center */
+    int   dlg_y;
 } PinItem;
 
 typedef struct {

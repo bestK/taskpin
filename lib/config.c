@@ -94,6 +94,8 @@ void config_load(TaskPinConfig *cfg) {
         WCHAR bg_buf[16];
         GetPrivateProfileStringW(sec, L"bar_bg_color", L"FFFFFFFF", bg_buf, 16, path);
         cfg->items[i].bar_bg_color = (COLORREF)wcstoul(bg_buf, NULL, 16);
+        cfg->items[i].dlg_x = GetPrivateProfileIntW(sec, L"dlg_x", -1, path);
+        cfg->items[i].dlg_y = GetPrivateProfileIntW(sec, L"dlg_y", -1, path);
         for (int j = 0; j < cfg->items[i].param_count; j++) {
             WCHAR pk[32], pv[32], pl[32];
             wsprintfW(pk, L"param_key_%d", j);
@@ -270,6 +272,10 @@ void config_save(const TaskPinConfig *cfg) {
         WritePrivateProfileStringW(sec, L"bar_y", tmp, path);
         wsprintfW(tmp, L"%08X", (unsigned int)cfg->items[i].bar_bg_color);
         WritePrivateProfileStringW(sec, L"bar_bg_color", tmp, path);
+        wsprintfW(tmp, L"%d", cfg->items[i].dlg_x);
+        WritePrivateProfileStringW(sec, L"dlg_x", tmp, path);
+        wsprintfW(tmp, L"%d", cfg->items[i].dlg_y);
+        WritePrivateProfileStringW(sec, L"dlg_y", tmp, path);
         for (int j = 0; j < cfg->items[i].param_count; j++) {
             WCHAR pk[32], pv[32], pl[32];
             wsprintfW(pk, L"param_key_%d", j);

@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern TaskPinConfig g_cfg;
+
 #define DIALOG_CLASS L"TaskPinScriptDialog"
 #define DIALOG_BG       RGB(30, 30, 30)
 #define DIALOG_FG       RGB(220, 220, 220)
@@ -20,6 +22,15 @@
 #define DLG_MAX_BUTTONS 8
 #define DLG_TBL_BTN_BASE_ID 7100
 #define DLG_MAX_TBL_BUTTONS 24
+
+/* Find config item index by lua_path */
+static int dlg_find_item(const WCHAR *lua_path) {
+    for (int i = 0; i < g_cfg.count; i++) {
+        if (lstrcmpiW(g_cfg.items[i].lua_path, lua_path) == 0)
+            return i;
+    }
+    return -1;
+}
 
 typedef struct {
     DialogSpec spec;
@@ -92,6 +103,14 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     int screen_h = GetSystemMetrics(SM_CYSCREEN);
     int x = (screen_w - win_w) / 2;
     int y = (screen_h - win_h) / 2;
+
+    if (spec->borderless) {
+        int idx = dlg_find_item(state->lua_path);
+        if (idx >= 0 && g_cfg.items[idx].dlg_x >= 0 && g_cfg.items[idx].dlg_y >= 0) {
+            x = g_cfg.items[idx].dlg_x;
+            y = g_cfg.items[idx].dlg_y;
+        }
+    }
 
     s_dialog_hwnd = CreateWindowExW(exstyle, DIALOG_CLASS, spec->title,
         style,
@@ -635,6 +654,16 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     case WM_DESTROY:
         KillTimer(hwnd, IDT_DIALOG_REFRESH);
         KillTimer(hwnd, IDT_DIALOG_ESC);
+        if (state && state->spec.borderless && state->lua_path[0]) {
+            RECT wr2;
+            GetWindowRect(hwnd, &wr2);
+            int idx = dlg_find_item(state->lua_path);
+            if (idx >= 0) {
+                g_cfg.items[idx].dlg_x = wr2.left;
+                g_cfg.items[idx].dlg_y = wr2.top;
+                config_save(&g_cfg);
+            }
+        }
         if (state) HeapFree(GetProcessHeap(), 0, state);
         s_dialog_hwnd = NULL;
         return 0;
