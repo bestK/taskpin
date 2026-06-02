@@ -1,5 +1,12 @@
 #include "ui.h"
 #include "image.h"
+#include "json.h"
+#include "logger.h"
+#include <stdio.h>
+
+static void event_log_btn(const char *msg) {
+    logger_write(LOG_INFO, "button clicked: %s", msg);
+}
 
 /* ─── Helper: get BarInstance from HWND ─── */
 
@@ -84,6 +91,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_PAINT: {
         if (!bar) break;
+        bar->button_count = 0;
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
@@ -92,7 +100,11 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         COLORREF bg = (bar->item_index >= 0 && bar->item_index < g_cfg.count
             && g_cfg.items[bar->item_index].bar_bg_color != 0xFFFFFFFF)
             ? g_cfg.items[bar->item_index].bar_bg_color : g_cfg.bg_color;
-        if (bar->show_border) bg = RGB(39, 39, 39);
+        BOOL has_buttons = FALSE;
+        for (int i = 0; i < bar->rich.count; i++) {
+            if (bar->rich.spans[i].is_button) { has_buttons = TRUE; break; }
+        }
+        if (bar->show_border && !has_buttons) bg = RGB(39, 39, 39);
         HBRUSH hBrush = CreateSolidBrush(bg);
         FillRect(hdc, &rc, hBrush);
         DeleteObject(hBrush);
@@ -137,9 +149,12 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 HFONT old = (HFONT)SelectObject(hdc, hf);
                 SIZE sz;
                 GetTextExtentPoint32W(hdc, sp->text, lstrlenW(sp->text), &sz);
-                span_widths[i] = sz.cx;
+                /* Buttons get extra padding */
+                int extra_w = sp->is_button ? 12 : 0;
+                int margin = sp->margin;
+                span_widths[i] = sz.cx + extra_w + margin;
                 span_heights[i] = sz.cy;
-                if (sp->align != SPAN_ALIGN_RIGHT) left_total[cur_line] += sz.cx;
+                if (sp->align != SPAN_ALIGN_RIGHT) left_total[cur_line] += sz.cx + extra_w;
                 SelectObject(hdc, old);
                 DeleteObject(hf);
             }
@@ -189,7 +204,6 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 HFONT old = (HFONT)SelectObject(hdc, hf);
 
                 COLORREF clr = (sp->color != 0xFFFFFFFF) ? sp->color : g_cfg.font_color;
-                SetTextColor(hdc, clr);
 
                 int draw_x, draw_y;
                 draw_y = has_newline ? line_y[cur_line] : (rc.bottom - span_heights[i]) / 2;
@@ -204,7 +218,62 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     left_x[cur_line] += span_widths[i];
                 }
 
-                TextOutW(hdc, draw_x, draw_y, sp->text, lstrlenW(sp->text));
+                if (sp->is_button) {
+                    int bbd = 1, brad = 4;
+                    int bh = 28;
+                    int by = (rc.bottom - bh) / 2;
+                    int btn_w = span_widths[i] - sp->margin;
+                    RECT br = { draw_x, by, draw_x + btn_w, by + bh };
+
+                    BOOL is_hover = (bar->button_count == bar->hover_button);
+                    COLORREF bgc;
+                    if (is_hover && sp->hover_bg != 0xFFFFFFFF)
+                        bgc = sp->hover_bg;
+                    else if (is_hover)
+                        bgc = RGB(39, 39, 39);
+                    else
+                        bgc = (sp->bg_color != 0xFFFFFFFF) ? sp->bg_color : RGB(64,64,64);
+
+                    COLORREF txt_clr;
+                    if (is_hover && sp->hover_color != 0xFFFFFFFF)
+                        txt_clr = sp->hover_color;
+                    else
+                        txt_clr = clr;
+
+                    HBRUSH hb = CreateSolidBrush(bgc);
+                    COLORREF bdr = (sp->border_color != 0xFFFFFFFF) ? sp->border_color : bgc;
+                    HPEN hp = CreatePen(PS_SOLID, bbd, bdr);
+                    HBRUSH hOldBr = (HBRUSH)SelectObject(hdc, hb);
+                    HPEN hOldPn = (HPEN)SelectObject(hdc, hp);
+                    RoundRect(hdc, br.left, br.top, br.right, br.bottom, brad, brad);
+                    SelectObject(hdc, hOldBr);
+                    SelectObject(hdc, hOldPn);
+                    DeleteObject(hb);
+                    DeleteObject(hp);
+
+                    SetTextColor(hdc, txt_clr);
+                    SetBkMode(hdc, TRANSPARENT);
+                    DrawTextW(hdc, sp->text, lstrlenW(sp->text), &br,
+                        DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+
+                    /* Store for hit-test */
+                    if (bar->button_count < MAX_BAR_BUTTONS) {
+                        BarButton *bb = &bar->buttons[bar->button_count];
+                        bb->rect = br;
+                        if (sp->cmd[0]) strncpy(bb->cmd, sp->cmd, 511);
+                        else bb->cmd[0] = '\0';
+                        if (sp->response[0]) strncpy(bb->response, sp->response, 511);
+                        else bb->response[0] = '\0';
+                        bb->bg_color = (sp->bg_color != 0xFFFFFFFF) ? sp->bg_color : RGB(64,64,64);
+                        bb->color = clr;
+                        bb->hover_bg = sp->hover_bg;
+                        bb->hover_color = sp->hover_color;
+                        bar->button_count++;
+                    }
+                } else {
+                    SetTextColor(hdc, clr);
+                    TextOutW(hdc, draw_x, draw_y, sp->text, lstrlenW(sp->text));
+                }
                 SelectObject(hdc, old);
                 DeleteObject(hf);
             }
@@ -234,6 +303,27 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         EndPaint(hwnd, &ps);
+
+        /* Auto-expand when buttons present, restore when cleared */
+        if (bar->button_count > 0) {
+            int needed = bar->text_width + 16;
+            RECT wr;
+            GetWindowRect(hwnd, &wr);
+            int cur_w = wr.right - wr.left;
+            if (needed > cur_w) {
+                SetWindowPos(hwnd, NULL, 0, 0, needed, wr.bottom - wr.top,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        } else {
+            RECT wr;
+            GetWindowRect(hwnd, &wr);
+            int cur_w = wr.right - wr.left;
+            if (cur_w != bar->configured_width) {
+                SetWindowPos(hwnd, NULL, 0, 0, bar->configured_width, wr.bottom - wr.top,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+
         return 0;
     }
 
@@ -328,29 +418,117 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_MOUSEMOVE:
-        if (bar && !bar->show_border) {
-            TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
-            TrackMouseEvent(&tme);
-            bar->show_border = TRUE;
-            InvalidateRect(hwnd, NULL, TRUE);
+        if (bar) {
+            if (!bar->show_border) {
+                TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
+                TrackMouseEvent(&tme);
+                bar->show_border = TRUE;
+                if (bar->button_count == 0)
+                    InvalidateRect(hwnd, NULL, TRUE);
+            }
+            if (bar->button_count > 0) {
+                POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+                int prev = bar->hover_button;
+                bar->hover_button = -1;
+                for (int i = 0; i < bar->button_count; i++) {
+                    if (PtInRect(&bar->buttons[i].rect, pt)) {
+                        bar->hover_button = i;
+                        break;
+                    }
+                }
+                if (bar->hover_button != prev)
+                    InvalidateRect(hwnd, NULL, TRUE);
+            }
         }
         return 0;
 
     case WM_MOUSELEAVE:
         if (bar && bar->show_border) {
             bar->show_border = FALSE;
+            bar->hover_button = -1;
             InvalidateRect(hwnd, NULL, TRUE);
         }
         return 0;
 
+    case WM_LBUTTONDOWN:
+        if (bar && bar->button_count > 0) {
+            POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            for (int i = 0; i < bar->button_count; i++) {
+                BarButton *bb = &bar->buttons[i];
+                if (PtInRect(&bb->rect, pt) && (bb->cmd[0] || bb->response[0])) {
+                    event_log_btn(bb->response[0] ? bb->response : bb->cmd);
+                    if (bb->response[0]) {
+                        char resp_path[MAX_PATH];
+                        event_get_response_file(resp_path, MAX_PATH);
+                        if (resp_path[0]) {
+                            FILE *f = fopen(resp_path, "w");
+                            if (f) { fputs(bb->response, f); fclose(f); }
+                        }
+                    } else if (bb->cmd[0]) {
+                        STARTUPINFOW si;
+                        memset(&si, 0, sizeof(si));
+                        si.cb = sizeof(si);
+                        si.dwFlags = STARTF_USESHOWWINDOW;
+                        si.wShowWindow = SW_HIDE;
+                        PROCESS_INFORMATION pi;
+                        WCHAR wcmd[600];
+                        MultiByteToWideChar(CP_UTF8, 0, bb->cmd, -1, wcmd, 600);
+                        WCHAR cmdline[700];
+                        wsprintfW(cmdline, L"cmd /c %s", wcmd);
+                        if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
+                                CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                            CloseHandle(pi.hProcess);
+                            CloseHandle(pi.hThread);
+                        }
+                    }
+                    event_clear();
+                    bar->button_count = 0;
+                    InvalidateRect(hwnd, NULL, TRUE);
+                    return 0;
+                }
+            }
+        }
+        break;
+
     case WM_LBUTTONUP:
-        if (bar && bar->script_result.clickable) {
-            if (bar->script_result.click_action == CLICK_DIALOG && bar->item_index >= 0) {
-                PinItem *it = &g_cfg.items[bar->item_index];
-                show_script_dialog(it->lua_path, it->params, it->param_count,
-                    &bar->script_result.dialog);
-            } else if (bar->script_result.click_url[0]) {
-                ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
+        if (bar) {
+            /* Check if click is on a bar button first */
+            POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            for (int i = 0; i < bar->button_count; i++) {
+                BarButton *bb = &bar->buttons[i];
+                if (PtInRect(&bb->rect, pt) && bb->cmd[0]) {
+                    /* Execute button command async */
+                    STARTUPINFOW si;
+                    memset(&si, 0, sizeof(si));
+                    si.cb = sizeof(si);
+                    si.dwFlags = STARTF_USESHOWWINDOW;
+                    si.wShowWindow = SW_HIDE;
+                    PROCESS_INFORMATION pi;
+                    WCHAR wcmd[600];
+                    MultiByteToWideChar(CP_UTF8, 0, bb->cmd, -1, wcmd, 600);
+                    WCHAR cmdline[700];
+                    wsprintfW(cmdline, L"cmd /c %s", wcmd);
+                    if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
+                            CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                        CloseHandle(pi.hProcess);
+                        CloseHandle(pi.hThread);
+                    }
+                    bar->button_count = 0;
+                    InvalidateRect(hwnd, NULL, TRUE);
+                    return 0;
+                }
+            }
+            /* Fall through to global click action */
+            bar->button_count = 0;
+            InvalidateRect(hwnd, NULL, TRUE);
+            if (bar->script_result.clickable) {
+                if (bar->script_result.click_action == CLICK_DIALOG && bar->item_index >= 0) {
+                    PinItem *it = &g_cfg.items[bar->item_index];
+                    show_script_dialog(it->lua_path, it->params, it->param_count,
+                        &bar->script_result.dialog);
+                } else if (bar->script_result.click_url[0]) {
+                    ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
+                }
             }
         }
         return 0;
@@ -358,6 +536,19 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONDBLCLK:
         show_main_window();
         return 0;
+
+    case WM_COPYDATA: {
+        COPYDATASTRUCT *cds = (COPYDATASTRUCT *)lp;
+        if (cds && cds->dwData == COPYDATA_EVENT_ID) {
+            event_receive(cds->lpData, (int)cds->cbData);
+            for (int i = 0; i < g_bar_count; i++) {
+                if (g_bars[i].hwnd)
+                    PostMessageW(g_bars[i].hwnd, WM_TIMER, IDT_REFRESH, 0);
+            }
+            return TRUE;
+        }
+        break;
+    }
 
     case WM_MOUSEWHEEL: {
         if (!bar || bar->item_index < 0) break;
@@ -448,9 +639,11 @@ void bars_create_all(void) {
         BarInstance *bar = &g_bars[g_bar_count];
         memset(bar, 0, sizeof(*bar));
         bar->item_index = i;
+        bar->hover_button = -1;
         lstrcpyW(bar->display, g_cfg.items[i].name);
 
         int w = g_cfg.items[i].bar_width > 0 ? g_cfg.items[i].bar_width : g_cfg.width;
+        bar->configured_width = w;
 
         bar->hwnd = CreateWindowExW(
             WS_EX_TOOLWINDOW,
@@ -482,6 +675,8 @@ void bars_create_all(void) {
         BarInstance *bar = &g_bars[0];
         memset(bar, 0, sizeof(*bar));
         bar->item_index = -1;
+        bar->hover_button = -1;
+        bar->configured_width = g_cfg.width;
         lstrcpyW(bar->display, L"TaskPin");
 
         bar->hwnd = CreateWindowExW(

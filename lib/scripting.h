@@ -21,6 +21,14 @@ typedef struct {
     BOOL is_image;       /* TRUE = this span is an image, not text */
     char img_source[IMG_SOURCE_MAX]; /* image source: path/url/data URI */
     int img_w, img_h;    /* requested display size */
+    BOOL is_button;      /* TRUE = clickable button with bg fill + border */
+    char cmd[512];       /* shell command (when is_button) */
+    char response[512];  /* response content to write to event response_file */
+    COLORREF bg_color;   /* button background color, 0xFFFFFFFF = default */
+    COLORREF hover_bg;   /* button hover background, 0xFFFFFFFF = default */
+    COLORREF hover_color;/* button hover text color, 0xFFFFFFFF = default */
+    COLORREF border_color;/* button border color, 0xFFFFFFFF = use text color */
+    int margin;          /* margin-right in pixels, default 0 */
 } DisplaySpan;
 
 typedef struct {

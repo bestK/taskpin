@@ -30,6 +30,7 @@ void config_load(TaskPinConfig *cfg) {
     GetPrivateProfileStringW(kGlobal, L"bg_color", L"000000", color_buf, 16, path);
     cfg->bg_color = (COLORREF)wcstoul(color_buf, NULL, 16);
     cfg->scroll_enabled = GetPrivateProfileIntW(kGlobal, L"scroll_enabled", 1, path);
+    cfg->log_level = GetPrivateProfileIntW(kGlobal, L"log_level", 0, path);
 
     if (cfg->count > CFG_MAX_ITEMS) cfg->count = CFG_MAX_ITEMS;
 
@@ -201,6 +202,9 @@ void config_save(const TaskPinConfig *cfg) {
 
     wsprintfW(tmp, L"%d", cfg->scroll_enabled ? 1 : 0);
     WritePrivateProfileStringW(kGlobal, L"scroll_enabled", tmp, path);
+
+    wsprintfW(tmp, L"%d", cfg->log_level);
+    WritePrivateProfileStringW(kGlobal, L"log_level", tmp, path);
 
     for (int i = 0; i < cfg->count; i++) {
         WCHAR sec[32];

@@ -54,6 +54,7 @@ typedef struct {
     COLORREF font_color;
     COLORREF bg_color;  /* background, use 0xFFFFFFFF for transparent */
     BOOL  scroll_enabled; /* auto-scroll long text, default TRUE */
+    int   log_level;      /* 0=off, 1=error, 2=info, 3=debug */
     /* Plugin market sources (GitHub repos like "user/repo") */
     WCHAR sources[CFG_MAX_SOURCES][CFG_MAX_NAME];
     int   source_count;

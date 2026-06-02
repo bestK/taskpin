@@ -15,6 +15,7 @@
 #include "fetcher.h"
 #include "json.h"
 #include "scripting.h"
+#include "event.h"
 #include "script_dialog.h"
 #include "update.h"
 
@@ -51,6 +52,19 @@
 #define IDB_OK      5008
 #define IDB_CANCEL  5009
 
+/* Bar button hit-test record */
+#define MAX_BAR_BUTTONS 8
+
+typedef struct {
+    RECT rect;
+    char cmd[512];
+    char response[512];
+    COLORREF bg_color;
+    COLORREF color;
+    COLORREF hover_bg;
+    COLORREF hover_color;
+} BarButton;
+
 /* Bar instance (one per pinned item) */
 #define MAX_BARS 16
 
@@ -74,6 +88,10 @@ typedef struct {
     BOOL fetching;
     BOOL show_border;
     char last_response[FETCH_BUF_SIZE];
+    BarButton buttons[MAX_BAR_BUTTONS];
+    int button_count;
+    int hover_button;   /* index of hovered button, -1 = none */
+    int configured_width; /* original bar width from config */
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

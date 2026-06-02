@@ -1,6 +1,7 @@
 #include "scripting.h"
 #include "sysinfo.h"
 #include "image.h"
+#include "event.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -326,6 +327,60 @@ static int l_icon(lua_State *ls) {
     return 1;
 }
 
+/* button(text, cmd, bg, color, size) -> span table with __is_button marker */
+static int l_button(lua_State *ls) {
+    const char *text = luaL_checkstring(ls, 1);
+    const char *cmd = NULL;
+    const char *bg_str = NULL;
+    const char *color_str = NULL;
+    int font_size = 0;
+
+    if (lua_gettop(ls) >= 2 && !lua_isnil(ls, 2))
+        cmd = lua_tostring(ls, 2);
+    if (lua_gettop(ls) >= 3 && !lua_isnil(ls, 3))
+        bg_str = lua_tostring(ls, 3);
+    if (lua_gettop(ls) >= 4 && !lua_isnil(ls, 4))
+        color_str = lua_tostring(ls, 4);
+    if (lua_gettop(ls) >= 5 && !lua_isnil(ls, 5))
+        font_size = (int)lua_tointeger(ls, 5);
+
+    lua_newtable(ls);
+
+    lua_pushstring(ls, text);
+    lua_setfield(ls, -2, "text");
+
+    if (cmd) {
+        lua_pushstring(ls, cmd);
+        lua_setfield(ls, -2, "cmd");
+    }
+
+    if (bg_str) {
+        lua_pushstring(ls, bg_str);
+        lua_setfield(ls, -2, "bg");
+    }
+
+    if (color_str) {
+        lua_pushstring(ls, color_str);
+        lua_setfield(ls, -2, "color");
+    }
+
+    if (font_size > 0) {
+        lua_pushinteger(ls, font_size);
+        lua_setfield(ls, -2, "size");
+    }
+
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, -2, "__is_button");
+
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, -2, "__is_span");
+
+    luaL_getmetatable(ls, SPAN_MT);
+    lua_setmetatable(ls, -2);
+
+    return 1;
+}
+
 static void register_font_api(lua_State *ls) {
     /* Create span metatable */
     luaL_newmetatable(ls, SPAN_MT);
@@ -340,6 +395,10 @@ static void register_font_api(lua_State *ls) {
     /* Register global icon() */
     lua_pushcfunction(ls, l_icon);
     lua_setglobal(ls, "icon");
+
+    /* Register global button() */
+    lua_pushcfunction(ls, l_button);
+    lua_setglobal(ls, "button");
 }
 
 static int parse_align_str(const char *s) {
@@ -411,6 +470,45 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
             const char *a = lua_tostring(ls, -1);
             sp->align = parse_align_str(a);
             lua_pop(ls, 1);
+            /* Button fields for single span */
+            lua_getfield(ls, idx, "__is_button");
+            if (lua_toboolean(ls, -1)) {
+                sp->is_button = TRUE;
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "cmd");
+                const char *bc = lua_tostring(ls, -1);
+                if (bc) strncpy(sp->cmd, bc, 511);
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "response");
+                const char *br = lua_tostring(ls, -1);
+                if (br) strncpy(sp->response, br, 511);
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "bg");
+                const char *bg = lua_tostring(ls, -1);
+                if (bg) sp->bg_color = parse_color_str(bg);
+                else sp->bg_color = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "hover_bg");
+                const char *hbg = lua_tostring(ls, -1);
+                if (hbg) sp->hover_bg = parse_color_str(hbg);
+                else sp->hover_bg = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "hover_color");
+                const char *hc = lua_tostring(ls, -1);
+                if (hc) sp->hover_color = parse_color_str(hc);
+                else sp->hover_color = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "border_color");
+                const char *brc = lua_tostring(ls, -1);
+                if (brc) sp->border_color = parse_color_str(brc);
+                else sp->border_color = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "margin");
+                if (!lua_isnil(ls, -1)) sp->margin = (int)lua_tointeger(ls, -1);
+                lua_pop(ls, 1);
+            } else {
+                lua_pop(ls, 1);
+            }
             rich->count = 1;
         } else {
             lua_pop(ls, 1);
@@ -480,6 +578,46 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
             const char *al = lua_tostring(ls, -1);
             sp->align = parse_align_str(al);
             lua_pop(ls, 1);
+
+            /* Button fields */
+            lua_getfield(ls, -1, "__is_button");
+            if (lua_toboolean(ls, -1)) {
+                sp->is_button = TRUE;
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "cmd");
+                const char *bc = lua_tostring(ls, -1);
+                if (bc) strncpy(sp->cmd, bc, 511);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "response");
+                const char *br = lua_tostring(ls, -1);
+                if (br) strncpy(sp->response, br, 511);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "bg");
+                const char *bg = lua_tostring(ls, -1);
+                if (bg) sp->bg_color = parse_color_str(bg);
+                else sp->bg_color = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "hover_bg");
+                const char *hbg = lua_tostring(ls, -1);
+                if (hbg) sp->hover_bg = parse_color_str(hbg);
+                else sp->hover_bg = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "hover_color");
+                const char *hc = lua_tostring(ls, -1);
+                if (hc) sp->hover_color = parse_color_str(hc);
+                else sp->hover_color = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "border_color");
+                const char *brc = lua_tostring(ls, -1);
+                if (brc) sp->border_color = parse_color_str(brc);
+                else sp->border_color = 0xFFFFFFFF;
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "margin");
+                if (!lua_isnil(ls, -1)) sp->margin = (int)lua_tointeger(ls, -1);
+                lua_pop(ls, 1);
+            } else {
+                lua_pop(ls, 1);
+            }
 
             rich->count++;
         }
@@ -766,6 +904,8 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
     lua_pushstring(L, response_raw ? response_raw : "");
     lua_setglobal(L, "response");
 
+    event_push_lua(L);
+
     /* Wrap code so multiple return values work */
     char wrapped[4096];
     snprintf(wrapped, sizeof(wrapped),
@@ -855,6 +995,8 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
         }
     }
     lua_setglobal(L, "args");
+
+    event_push_lua(L);
 
     char path8[512];
     WideCharToMultiByte(CP_UTF8, 0, full_path, -1, path8, 512, NULL, NULL);

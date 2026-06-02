@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "logger.h"
 
 static BOOL g_settings_done = FALSE;
 static BOOL g_settings_accepted = FALSE;
@@ -88,6 +89,19 @@ void show_settings_dialog(HWND parent) {
     SendMessageW(s_eScroll, WM_SETFONT, (WPARAM)g_font, TRUE);
     SendMessageW(s_eScroll, BM_SETCHECK, g_cfg.scroll_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
 
+    y += 28;
+    CreateWindowExW(0, L"STATIC", L"Log level:",
+        WS_CHILD | WS_VISIBLE, 10, y + 2, 70, 20, hDlg, NULL, g_hinst, NULL);
+    HWND s_eLogLevel = CreateWindowExW(0, L"COMBOBOX", NULL,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        80, y, 100, 120, hDlg, (HMENU)5062, g_hinst, NULL);
+    SendMessageW(s_eLogLevel, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Off");
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Error");
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Info");
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Debug");
+    SendMessageW(s_eLogLevel, CB_SETCURSEL, g_cfg.log_level, 0);
+
     y += 30;
     CreateWindowExW(0, L"BUTTON", L"OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
@@ -154,6 +168,9 @@ void show_settings_dialog(HWND parent) {
         g_cfg.pos_y = _wtoi(tmp2);
 
         g_cfg.scroll_enabled = (SendMessageW(s_eScroll, BM_GETCHECK, 0, 0) == BST_CHECKED);
+        g_cfg.log_level = (int)SendMessageW(s_eLogLevel, CB_GETCURSEL, 0, 0);
+        if (g_cfg.log_level == CB_ERR) g_cfg.log_level = 0;
+        logger_init(g_cfg.log_level);
 
         config_save(&g_cfg);
 
