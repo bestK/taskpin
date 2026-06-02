@@ -93,7 +93,10 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | refresh | number | Auto-refresh interval in seconds, 0 or omit to disable |
 | borderless | boolean | No title bar / no border / no scrollbar, default false |
 | clickthrough | boolean | Mouse clicks pass through (for HUD overlays), default false |
+| x | number | Window X position in px, -1 or omit for auto positioning |
+| y | number | Window Y position in px, -1 or omit for auto positioning |
 | opacity | number | Window opacity 0-255 (0=fully transparent, 255=opaque), default 255 |
+| transparent_bg | boolean | Transparent background (no window fill), default false |
 | content | table | Array of content items (max 8) |
 
 **Borderless mode**:
@@ -107,9 +110,10 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | type | Fields | Description |
 |------|--------|-------------|
 | `"text"` | value, color, size, bold, image, image_width, image_height | Text line (optional inline image) |
-| `"image"` | source, width, height | Standalone image block |
+| `"image"` | source, width, height, src_x, src_y, src_w, src_h | Standalone image block (supports sprite sheet cropping) |
 | `"hr"` | — | Horizontal separator |
 | `"table"` | columns, rows | Table (max 6 columns × 24 rows) |
+| `"button"` | value, cmd, url, color, bg, size | Clickable button |
 
 **Image + text example**:
 
@@ -117,6 +121,23 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 { type = "text", value = "Claude Code", color = "#D97757", size = 12,
   image = "claude.png", image_width = 16, image_height = 16 },
 { type = "image", source = "logo.png", width = 64, height = 64 },
+```
+
+**Sprite sheet cropping** (extract sub-region from a larger image):
+
+```lua
+{ type = "image", source = "sprites.png",
+  src_x = 64, src_y = 0, src_w = 32, src_h = 32,  -- source crop region
+  width = 96, height = 96 },                         -- display size
+```
+
+**Button example**:
+
+```lua
+{ type = "button", value = "Open Page", url = "https://example.com",
+  color = "#FFFFFF", bg = "#336699", size = 10 },
+{ type = "button", value = "Run Command", cmd = "notepad.exe",
+  color = "#FFF", bg = "#444", size = 10 },
 ```
 
 ```lua
@@ -155,6 +176,38 @@ return font("Clock", "#FFF", 9), true, hud
 
 ---
 
+## button(text, cmd, bg, color, size)
+
+Creates a clickable button span for the taskbar or dialog. Clicking executes a command or opens a URL.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| text | string | Button text (required) |
+| cmd | string\|nil | Command or URL to execute on click |
+| bg | string\|nil | Background color in `"#RRGGBB"` format |
+| color | string\|nil | Text color in `"#RRGGBB"` format |
+| size | number\|nil | Font size in points |
+
+**Returns**: A span object. Use `..` to concatenate with other spans.
+
+```lua
+return font("Status: OK", "#0F0", 9) .. button("Open", "https://example.com", "#333", "#FFF", 9)
+```
+
+---
+
+## log(...)
+
+Writes to the script log. Accepts any number of arguments, separated by tabs in output.
+
+```lua
+log("request started", url)
+local data = json.decode(http.get(url))
+log("result:", data.status, data.message)
+```
+
+---
+
 ## json.decode(str)
 
 Parses a JSON string into a Lua table.
@@ -163,6 +216,23 @@ Parses a JSON string into a Lua table.
 local data = json.decode(response)
 print(data.name)       -- access object fields
 print(data[1].id)      -- access array elements
+```
+
+## json.encode(value [, pretty])
+
+Encodes a Lua table into a JSON string.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| value | any | Lua value to encode (table, string, number, etc.) |
+| pretty | boolean\|nil | Whether to format with indentation, default false |
+
+**Returns**: JSON string.
+
+```lua
+local t = { name = "test", value = 42, tags = {"a", "b"} }
+local str = json.encode(t)          -- compact output
+local pretty = json.encode(t, true)  -- formatted output
 ```
 
 ---
@@ -333,6 +403,87 @@ local newest = sys.find_newest("C:\\logs", ".log")
 -- returns full path of the most recently modified .log file
 ```
 
+## sys.read_file(path)
+
+Reads entire file content as a string. Automatically skips UTF-8 BOM. Returns nil if file does not exist, empty string for empty files.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | File path |
+
+**Returns**: File content string, or nil on failure.
+
+```lua
+local content = sys.read_file("C:\\config\\settings.json")
+if content then
+    local cfg = json.decode(content)
+end
+```
+
+## sys.write_file(path, content)
+
+Writes a string to a file (overwrites existing content).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | File path |
+| content | string | Content to write |
+
+**Returns**: boolean, true on success.
+
+```lua
+local ok = sys.write_file("C:\\temp\\output.txt", "Hello World")
+```
+
+## sys.exe_path()
+
+Returns the full path to the TaskPin executable.
+
+```lua
+local path = sys.exe_path()
+-- "C:\\Program Files\\TaskPin\\taskpin.exe"
+```
+
+## sys.version()
+
+Returns the TaskPin version string.
+
+```lua
+local ver = sys.version()  -- "1.4.1"
+```
+
+## sys.screen_width()
+
+Returns the primary screen width in pixels.
+
+```lua
+local w = sys.screen_width()  -- 1920
+```
+
+## sys.screen_height()
+
+Returns the primary screen height in pixels.
+
+```lua
+local h = sys.screen_height()  -- 1080
+```
+
+## sys.mouse_x()
+
+Returns the current mouse X coordinate (screen pixels).
+
+```lua
+local mx = sys.mouse_x()
+```
+
+## sys.mouse_y()
+
+Returns the current mouse Y coordinate (screen pixels).
+
+```lua
+local my = sys.mouse_y()
+```
+
 ---
 
 ## Global Variables
@@ -341,6 +492,7 @@ local newest = sys.find_newest("C:\\logs", ".log")
 |----------|-------------|
 | `response` | Raw HTTP response text (available in URL mode Template expressions) |
 | `args` | Parameter table (key-value) configured by user (available in Lua File mode) |
+| `event` | External event table (nil when no event), contains source, name, and parameter fields |
 
 ```lua
 -- Access parameters in Lua File mode
@@ -348,16 +500,53 @@ local server = args.server or "localhost"
 local port = args.port or "8080"
 ```
 
----
+### event Global Variable
 
-## Script Parameter Declarations
+When an external process sends an event via IPC, the `event` table becomes available. Scripts should call `event.clear()` after handling the event.
 
-Declare parameters in the script file header using comments. TaskPin will auto-generate input fields in the UI:
+| Field | Type | Description |
+|-------|------|-------------|
+| source | string | Event source identifier |
+| name | string | Event name |
+| clear | function | Call `event.clear()` to clear the current event |
+| ... | any | JSON parameter fields from the event are merged into the table |
 
 ```lua
+if event then
+    log("received event:", event.source, event.name)
+    if event.name == "refresh" then
+        -- handle refresh event
+    end
+    event.clear()
+end
+```
+
+---
+
+## Script Declarations
+
+Declare metadata in the script file header using `-- @xxx` comments. TaskPin recognizes them automatically:
+
+| Declaration | Type | Description |
+|-------------|------|-------------|
+| `@param key type desc` | — | Declare a script parameter, auto-generates input field in UI |
+| `@name text` | string | Script display name (overrides auto-naming) |
+| `@refresh ms` | number | Refresh interval in milliseconds, overrides default |
+| `@bar_width px` | number | Taskbar display width in pixels |
+| `@version ver` | string | Script version |
+| `@require ver` | string | Minimum TaskPin version required (shows warning if not met) |
+
+**Auto-naming rule**: If no `@name` is present, TaskPin extracts "Description" from the first comment line `-- file.lua - Description`.
+
+```lua
+-- system_monitor.lua - System Monitor
+-- @name System Monitor
+-- @refresh 1000
+-- @bar_width 120
+-- @version 1.0.0
+-- @require 1.4.0
 -- @param server string Server address
 -- @param port number Port number
--- @param token string API Token
 
 local resp = http.get("http://" .. args.server .. ":" .. args.port .. "/status")
 ```

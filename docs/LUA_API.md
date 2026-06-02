@@ -93,7 +93,10 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | refresh | number | 自动刷新间隔（秒），0 或不填则不刷新 |
 | borderless | boolean | 无标题栏/无边框/无滚动条模式，默认 false |
 | clickthrough | boolean | 鼠标点击穿透（配合 borderless 做 HUD），默认 false |
+| x | number | 窗口 X 坐标（px），-1 或不填为自动定位 |
+| y | number | 窗口 Y 坐标（px），-1 或不填为自动定位 |
 | opacity | number | 窗口透明度 0-255（0=全透明，255=不透明），默认 255 |
+| transparent_bg | boolean | 透明背景（窗口内容区域无底色），默认 false |
 | content | table | 内容项数组（最多 8 项） |
 
 **borderless 模式**：
@@ -107,9 +110,10 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | type | 字段 | 说明 |
 |------|------|------|
 | `"text"` | value, color, size, bold, image, image_width, image_height | 文本行（可选内嵌图片） |
-| `"image"` | source, width, height | 独立图片块 |
+| `"image"` | source, width, height, src_x, src_y, src_w, src_h | 独立图片块（支持精灵表裁切） |
 | `"hr"` | — | 水平分隔线 |
 | `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
+| `"button"` | value, cmd, url, color, bg, size | 可点击按钮 |
 
 **图文混排示例**：
 
@@ -117,6 +121,23 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 { type = "text", value = "Claude Code", color = "#D97757", size = 12,
   image = "claude.png", image_width = 16, image_height = 16 },
 { type = "image", source = "logo.png", width = 64, height = 64 },
+```
+
+**精灵表裁切**（从大图中取子区域显示）：
+
+```lua
+{ type = "image", source = "sprites.png",
+  src_x = 64, src_y = 0, src_w = 32, src_h = 32,  -- 源图裁切区域
+  width = 96, height = 96 },                         -- 显示尺寸
+```
+
+**按钮示例**：
+
+```lua
+{ type = "button", value = "打开网页", url = "https://example.com",
+  color = "#FFFFFF", bg = "#336699", size = 10 },
+{ type = "button", value = "执行命令", cmd = "notepad.exe",
+  color = "#FFF", bg = "#444", size = 10 },
 ```
 
 ```lua
@@ -155,6 +176,38 @@ return font("Clock", "#FFF", 9), true, hud
 
 ---
 
+## button(text, cmd, bg, color, size)
+
+创建可点击按钮 span，用于任务栏或对话框中。点击后执行指定命令或打开 URL。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| text | string | 按钮文本（必填） |
+| cmd | string\|nil | 点击执行的命令或 URL |
+| bg | string\|nil | 背景色，格式 `"#RRGGBB"` |
+| color | string\|nil | 文字色，格式 `"#RRGGBB"` |
+| size | number\|nil | 字号（pt） |
+
+**返回值**: span 对象，支持 `..` 拼接。
+
+```lua
+return font("Status: OK", "#0F0", 9) .. button("Open", "https://example.com", "#333", "#FFF", 9)
+```
+
+---
+
+## log(...)
+
+写入脚本日志。接受任意数量参数，用制表符分隔输出。
+
+```lua
+log("请求开始", url)
+local data = json.decode(http.get(url))
+log("结果:", data.status, data.message)
+```
+
+---
+
 ## json.decode(str)
 
 解析 JSON 字符串为 Lua table。
@@ -163,6 +216,23 @@ return font("Clock", "#FFF", 9), true, hud
 local data = json.decode(response)
 print(data.name)       -- 访问对象字段
 print(data[1].id)      -- 访问数组元素
+```
+
+## json.encode(value [, pretty])
+
+将 Lua table 编码为 JSON 字符串。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| value | any | 要编码的 Lua 值（table、string、number 等） |
+| pretty | boolean\|nil | 是否格式化输出（缩进），默认 false |
+
+**返回值**: JSON 字符串。
+
+```lua
+local t = { name = "test", value = 42, tags = {"a", "b"} }
+local str = json.encode(t)         -- 紧凑输出
+local pretty = json.encode(t, true) -- 格式化输出
 ```
 
 ---
@@ -342,6 +412,87 @@ local newest = sys.find_newest("C:\\logs", ".log")
 -- 返回最近修改的 .log 文件完整路径
 ```
 
+## sys.read_file(path)
+
+读取文件全部内容为字符串。自动跳过 UTF-8 BOM。文件不存在返回 nil，空文件返回空串。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| path | string | 文件路径 |
+
+**返回值**: 文件内容字符串，失败返回 nil。
+
+```lua
+local content = sys.read_file("C:\\config\\settings.json")
+if content then
+    local cfg = json.decode(content)
+end
+```
+
+## sys.write_file(path, content)
+
+将字符串写入文件（覆盖写入）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| path | string | 文件路径 |
+| content | string | 写入内容 |
+
+**返回值**: boolean，写入成功返回 true。
+
+```lua
+local ok = sys.write_file("C:\\temp\\output.txt", "Hello World")
+```
+
+## sys.exe_path()
+
+返回 TaskPin 可执行文件的完整路径。
+
+```lua
+local path = sys.exe_path()
+-- "C:\\Program Files\\TaskPin\\taskpin.exe"
+```
+
+## sys.version()
+
+返回 TaskPin 版本号字符串。
+
+```lua
+local ver = sys.version()  -- "1.4.1"
+```
+
+## sys.screen_width()
+
+返回主屏幕宽度（像素）。
+
+```lua
+local w = sys.screen_width()  -- 1920
+```
+
+## sys.screen_height()
+
+返回主屏幕高度（像素）。
+
+```lua
+local h = sys.screen_height()  -- 1080
+```
+
+## sys.mouse_x()
+
+返回鼠标当前 X 坐标（屏幕像素）。
+
+```lua
+local mx = sys.mouse_x()
+```
+
+## sys.mouse_y()
+
+返回鼠标当前 Y 坐标（屏幕像素）。
+
+```lua
+local my = sys.mouse_y()
+```
+
 ---
 
 ## 全局变量
@@ -350,6 +501,7 @@ local newest = sys.find_newest("C:\\logs", ".log")
 |------|------|
 | `response` | URL 模式下，HTTP 响应原始文本（仅在 Template 表达式中可用） |
 | `args` | Lua File 模式下，用户配置的参数表（key-value） |
+| `event` | 外部事件表（无事件时为 nil），含 source、name 及参数字段 |
 
 ```lua
 -- 在 Lua File 模式中访问参数
@@ -357,16 +509,53 @@ local server = args.server or "localhost"
 local port = args.port or "8080"
 ```
 
----
+### event 全局变量
 
-## 脚本参数声明
+当外部通过 IPC 发送事件时，`event` 表可用。脚本处理完事件后应调用 `event.clear()` 清除。
 
-在脚本文件头部用注释声明参数，TaskPin 会自动生成输入框：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| source | string | 事件来源标识 |
+| name | string | 事件名称 |
+| clear | function | 调用 `event.clear()` 清除当前事件 |
+| ... | any | 事件附带的 JSON 参数字段会合并到表中 |
 
 ```lua
+if event then
+    log("收到事件:", event.source, event.name)
+    if event.name == "refresh" then
+        -- 处理刷新事件
+    end
+    event.clear()
+end
+```
+
+---
+
+## 脚本声明
+
+在脚本文件头部用 `-- @xxx` 注释声明元数据，TaskPin 会自动识别：
+
+| 声明 | 类型 | 说明 |
+|------|------|------|
+| `@param key type desc` | — | 声明脚本参数，自动生成输入框 |
+| `@name text` | string | 脚本显示名称（覆盖自动命名） |
+| `@refresh ms` | number | 刷新间隔（毫秒），覆盖默认值 |
+| `@bar_width px` | number | 任务栏显示宽度（像素） |
+| `@version ver` | string | 脚本版本号 |
+| `@require ver` | string | 最低 TaskPin 版本要求（不满足时显示提示） |
+
+**自动命名规则**：若无 `@name`，TaskPin 从首行注释 `-- file.lua - 描述` 中提取"描述"作为名称。
+
+```lua
+-- system_monitor.lua - 系统监控
+-- @name 系统监控
+-- @refresh 1000
+-- @bar_width 120
+-- @version 1.0.0
+-- @require 1.4.0
 -- @param server string 服务器地址
 -- @param port number 端口号
--- @param token string API Token
 
 local resp = http.get("http://" .. args.server .. ":" .. args.port .. "/status")
 ```
