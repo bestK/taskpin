@@ -1,6 +1,12 @@
 -- claude_status.lua - Claude Code 状态指示器
 -- @refresh 3000
--- @require 1.3.9
+-- @require 1.4.0
+-- @version 1.0.0
+-- @bar_width 200
+
+local sep = package.config:sub(1, 1)
+local home = os.getenv("USERPROFILE") or os.getenv("HOME") or ""
+local claude_dir = home .. sep .. ".claude"
 
 local github_base = "https://raw.githubusercontent.com/bestK/taskpin-plugins/master/"
 
@@ -18,8 +24,7 @@ local claude_spinner = proxy .. github_base .. "claude_spinner.gif"
 
 -- 查找最新 session jsonl
 local function find_latest_session()
-    local home = os.getenv("USERPROFILE") or os.getenv("HOME") or ""
-    local base = home .. "\\.claude\\projects"
+    local base = claude_dir .. sep .. "projects"
     return sys.find_newest(base, ".jsonl")
 end
 
@@ -67,7 +72,7 @@ local function detect_status(path)
 end
 
 -- Hook 管理
-local settings_path = (os.getenv("USERPROFILE") or os.getenv("HOME") or "") .. "\\.claude\\settings.json"
+local settings_path = claude_dir .. sep .. "settings.json"
 
 local function read_settings()
     local raw = sys.read_file(settings_path)
@@ -115,20 +120,16 @@ end
 
 local function uninstall_hook()
     local raw = sys.read_file(settings_path)
-    if not raw then log("uninstall: no file"); return end
+    if not raw then return end
     local cfg = json.decode(raw)
-    if not cfg then log("uninstall: decode failed"); return end
+    if not cfg then return end
     local idx = find_taskpin_hook(cfg)
-    if not idx then log("uninstall: hook not found"); return end
-    log("uninstall: removing index " .. idx)
+    if not idx then return end
     table.remove(cfg.hooks.PermissionRequest, idx)
     if #cfg.hooks.PermissionRequest == 0 then
         cfg.hooks.PermissionRequest = nil
     end
-    local out = json.encode(cfg, true)
-    log("uninstall: writing " .. tostring(#out) .. " bytes")
-    local ok = sys.write_file(settings_path, out)
-    log("uninstall: write result = " .. tostring(ok))
+    sys.write_file(settings_path, json.encode(cfg, true))
 end
 
 -- 按钮响应内容
@@ -160,13 +161,10 @@ local permission_cmd = ""
 local permission_desc = ""
 
 if event and event.source == "claude-code" and event.name == "install-hook" then
-    log("install_hook triggered")
     install_hook()
     event.clear()
 elseif event and event.source == "claude-code" and event.name == "uninstall-hook" then
-    log("uninstall_hook triggered")
     uninstall_hook()
-    log("uninstall_hook done")
     event.clear()
 elseif is_permission then
     status = "permission"
@@ -211,7 +209,8 @@ end
 -- 对话框
 local session_name = session_path and session_path:match("([^\\/]+)%.jsonl$") or "-"
 local hook_installed = is_hook_installed()
-local exe = sys.exe_path():gsub("\\", "\\\\")
+local exe = sys.exe_path()
+local exe_escaped = exe:gsub("\\", "\\\\")
 
 local dialog_content = {
     { type = "text", value = ai_title or "Claude Code", color = "#D97757", size = 12, bold = true },
@@ -225,13 +224,13 @@ local dialog_content = {
 if hook_installed then
     dialog_content[#dialog_content + 1] = {
         type = "button", value = "卸载 Hook",
-        cmd = '"' .. exe .. '" --source claude-code --event uninstall-hook',
+        cmd = '"' .. exe_escaped .. '" --source claude-code --event uninstall-hook',
         bg = "#333333", color = "#C62828", size = 10
     }
 else
     dialog_content[#dialog_content + 1] = {
         type = "button", value = "安装 Hook",
-        cmd = '"' .. exe .. '" --source claude-code --event install-hook',
+        cmd = '"' .. exe_escaped .. '" --source claude-code --event install-hook',
         bg = "#333333", color = "#2E7D32", size = 10
     }
 end

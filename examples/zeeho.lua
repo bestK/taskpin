@@ -32,8 +32,8 @@ local fp = d.front_tire_pressure or "-"
 local rp = d.rear_tire_pressure or "-"
 
 -- Bar: 上下两行布局
-local bar = font(charge_icon .. tostring(soc) .. "%", soc_color, 9)
-    .. font(" " .. range .. "km", "#FFFFFF", 8,"right")
+local bar = font(charge_icon .. tostring(math.floor(soc)) .. "%", soc_color, 9)
+    .. font(" " .. tostring(math.floor(range)) .. "km", "#FFFFFF", 8,"right")
     .. font("\n")
     .. font("F:" .. fp, "#FFFFFF", 8)
     .. font(" R:" .. rp, "#FFFFFF", 8,"right")
@@ -49,8 +49,8 @@ local info = dialog({
         { type = "table",
           columns = { "项目", "数值" },
           rows = {
-            { "电量 SOC", tostring(soc) .. "%" },
-            { "续航里程", tostring(range) .. " km" },
+            { "电量 SOC", tostring(math.floor(soc)) .. "%" },
+            { "续航里程", tostring(math.floor(range)) .. " km" },
             { "充电状态", d.is_charging and "充电中" or "未充电" },
             { "前胎压", fp .. " bar / " .. (d.front_tire_temp or "-") .. "°C" },
             { "后胎压", rp .. " bar / " .. (d.rear_tire_temp or "-") .. "°C" },

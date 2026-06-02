@@ -218,7 +218,32 @@ static void mkt_download_script(void) {
     if (f) {
         fwrite(content, 1, strlen(content), f);
         fclose(f);
-        mkt_set_status(L"下载完成!");
+
+        /* Auto-add to config and pin */
+        if (g_cfg.count < CFG_MAX_ITEMS) {
+            PinItem *it = &g_cfg.items[g_cfg.count];
+            memset(it, 0, sizeof(*it));
+            it->type = ITEM_TYPE_LUA;
+            /* Use script name (without .lua) as display name */
+            WCHAR wname[CFG_MAX_NAME];
+            MultiByteToWideChar(CP_UTF8, 0, ms->name[0] ? ms->name : ms->file, -1, wname, CFG_MAX_NAME);
+            lstrcpynW(it->name, wname, CFG_MAX_NAME);
+            lstrcpynW(it->lua_path, filepath, CFG_MAX_PATH);
+            int refresh = script_parse_refresh(filepath);
+            it->interval_ms = refresh > 0 ? (DWORD)refresh : 5000;
+            int bw = script_parse_bar_width(filepath);
+            if (bw > 0) it->bar_width = bw;
+            it->bar_x = -1;
+            it->bar_y = -1;
+            it->bar_bg_color = 0xFFFFFFFF;
+            it->pinned = TRUE;
+            g_cfg.count++;
+            config_save(&g_cfg);
+            bars_destroy_all();
+            bars_create_all();
+            listview_populate();
+        }
+        mkt_set_status(L"下载并添加成功!");
     } else {
         mkt_set_status(L"保存失败");
     }
