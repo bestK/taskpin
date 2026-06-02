@@ -115,4 +115,14 @@ int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_d
    Returns milliseconds (0 if not declared). */
 int script_parse_refresh(const WCHAR *lua_path);
 
+/* Parse @bar_width declaration from a Lua file header.
+   Returns pixels (0 if not declared). */
+int script_parse_bar_width(const WCHAR *lua_path);
+
+/* Parse @version declaration from a Lua file header. */
+void script_parse_version(const WCHAR *lua_path, char *out, int out_size);
+
+/* Check @require declaration. Returns TRUE if satisfied or not declared. */
+BOOL script_check_require(const WCHAR *lua_path, char *required, int req_size);
+
 #endif

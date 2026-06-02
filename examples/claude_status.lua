@@ -1,6 +1,6 @@
 -- claude_status.lua - Claude Code 状态指示器
 -- @refresh 3000
--- bar_width 推荐: 权限模式 260+, 普通模式 160+
+-- @require 1.3.9
 
 local github_base = "https://raw.githubusercontent.com/bestK/taskpin-plugins/master/"
 
@@ -66,20 +66,86 @@ local function detect_status(path)
     return "working", "工作中"
 end
 
+-- Hook 管理
+local settings_path = (os.getenv("USERPROFILE") or os.getenv("HOME") or "") .. "\\.claude\\settings.json"
+
+local function read_settings()
+    local raw = sys.read_file(settings_path)
+    if not raw then return nil end
+    return json.decode(raw)
+end
+
+local function find_taskpin_hook(cfg)
+    if not cfg or not cfg.hooks then return nil, nil end
+    local arr = cfg.hooks.PermissionRequest
+    if type(arr) ~= "table" then return nil, nil end
+    for i, entry in ipairs(arr) do
+        if entry.hooks then
+            for _, h in ipairs(entry.hooks) do
+                if h.command and h.command:find("taskpin", 1, true) then
+                    return i, entry
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function is_hook_installed()
+    return find_taskpin_hook(read_settings()) ~= nil
+end
+
+local function install_hook()
+    local raw = sys.read_file(settings_path)
+    local cfg = raw and json.decode(raw) or {}
+    if not cfg.hooks then cfg.hooks = {} end
+    if type(cfg.hooks.PermissionRequest) ~= "table" then cfg.hooks.PermissionRequest = {} end
+    if find_taskpin_hook(cfg) then return end
+    cfg.hooks.PermissionRequest[#cfg.hooks.PermissionRequest + 1] = {
+        matcher = ".*",
+        hooks = {{
+            type = "command",
+            command = sys.exe_path(),
+            args = {"--source", "claude-code", "--event", "permission", "--wait"},
+            timeout = 120
+        }}
+    }
+    sys.write_file(settings_path, json.encode(cfg, true))
+end
+
+local function uninstall_hook()
+    local raw = sys.read_file(settings_path)
+    if not raw then log("uninstall: no file"); return end
+    local cfg = json.decode(raw)
+    if not cfg then log("uninstall: decode failed"); return end
+    local idx = find_taskpin_hook(cfg)
+    if not idx then log("uninstall: hook not found"); return end
+    log("uninstall: removing index " .. idx)
+    table.remove(cfg.hooks.PermissionRequest, idx)
+    if #cfg.hooks.PermissionRequest == 0 then
+        cfg.hooks.PermissionRequest = nil
+    end
+    local out = json.encode(cfg, true)
+    log("uninstall: writing " .. tostring(#out) .. " bytes")
+    local ok = sys.write_file(settings_path, out)
+    log("uninstall: write result = " .. tostring(ok))
+end
+
 -- 按钮响应内容
-local allow_json = '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
-local deny_json = '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}'
+local function hook_response(behavior)
+    return '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"' .. behavior .. '"}}}'
+end
 
 local function btn_allow()
     local b = button("允许", nil, "#000000", "#2E7D32", 8)
     b.margin = 4
-    b.response = allow_json
+    b.response = hook_response("allow")
     return b
 end
 
 local function btn_deny()
     local b = button("拒绝", nil, "#000000", "#C62828", 8)
-    b.response = deny_json
+    b.response = hook_response("deny")
     return b
 end
 
@@ -88,15 +154,26 @@ local session_path = find_latest_session()
 local status, detail = detect_status(session_path)
 local ai_title = session_path and read_ai_title(session_path)
 
--- event 驱动：hook 推送 permission 事件时覆盖状态
+-- event 驱动
 local is_permission = (event and event.source == "claude-code" and event.name == "permission")
+local permission_cmd = ""
 local permission_desc = ""
-if is_permission then
+
+if event and event.source == "claude-code" and event.name == "install-hook" then
+    log("install_hook triggered")
+    install_hook()
+    event.clear()
+elseif event and event.source == "claude-code" and event.name == "uninstall-hook" then
+    log("uninstall_hook triggered")
+    uninstall_hook()
+    log("uninstall_hook done")
+    event.clear()
+elseif is_permission then
     status = "permission"
-    -- tool_input.description 由 hook stdin 透传到 event params
-    local desc = event.tool_input and event.tool_input.description
+    local ti = event.tool_input or {}
     local tname = event.tool_name or ""
-    permission_desc = desc or tname
+    permission_cmd = ti.command or ti.file_path or ti.query or tname
+    permission_desc = ti.description or ""
     detail = "等待确认"
 end
 
@@ -114,15 +191,13 @@ local bar
 local title_text = ai_title or detail
 
 if is_permission then
-    local ptext = permission_desc ~= "" and permission_desc or title_text
     bar = icon(claude_icon, 16, 16)
-        .. font(" ", nil, 6)
-        .. icon(claude_spinner, 14, 14)
-        .. font(" " .. ptext, color, 8)
-        .. font("  ", nil, 6)
+        .. font(" " .. permission_cmd, "#FFFFFF", 8)
         .. btn_allow()
         .. font(" ", nil, 4)
         .. btn_deny()
+        .. font("\n")
+        .. font("  " .. permission_desc, "#888888", 7)
 elseif status == "working" then
     bar = icon(claude_icon, 16, 16)
         .. font(" ", nil, 9)
@@ -135,31 +210,35 @@ end
 
 -- 对话框
 local session_name = session_path and session_path:match("([^\\/]+)%.jsonl$") or "-"
+local hook_installed = is_hook_installed()
+local exe = sys.exe_path():gsub("\\", "\\\\")
 
 local dialog_content = {
     { type = "text", value = ai_title or "Claude Code", color = "#D97757", size = 12, bold = true },
     { type = "hr" },
     { type = "text", value = "状态: " .. detail, color = color, size = 10 },
     { type = "text", value = "会话: " .. session_name, color = "#666666", size = 9 },
+    { type = "hr" },
+    { type = "text", value = "Hook: " .. (hook_installed and "已安装" or "未安装"), color = hook_installed and "#33CC33" or "#888888", size = 9 },
 }
 
-if is_permission then
-    dialog_content[#dialog_content + 1] = { type = "hr" }
+if hook_installed then
     dialog_content[#dialog_content + 1] = {
-        type = "button", value = "允许",
-        response = allow_json,
-        bg = "#000000", color = "#2E7D32", size = 11
+        type = "button", value = "卸载 Hook",
+        cmd = '"' .. exe .. '" --source claude-code --event uninstall-hook',
+        bg = "#333333", color = "#C62828", size = 10
     }
+else
     dialog_content[#dialog_content + 1] = {
-        type = "button", value = "拒绝",
-        response = deny_json,
-        bg = "#000000", color = "#C62828", size = 11
+        type = "button", value = "安装 Hook",
+        cmd = '"' .. exe .. '" --source claude-code --event install-hook',
+        bg = "#333333", color = "#2E7D32", size = 10
     }
 end
 
 local info = dialog({
     title = "Claude",
-    width = 340, height = is_permission and 260 or 200,
+    width = 340, height = 240,
     refresh = 3,
     content = dialog_content,
 })

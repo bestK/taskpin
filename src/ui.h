@@ -92,6 +92,7 @@ typedef struct {
     int button_count;
     int hover_button;   /* index of hovered button, -1 = none */
     int configured_width; /* original bar width from config */
+    BOOL width_expanded;  /* TRUE while bar is auto-expanded for buttons */
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

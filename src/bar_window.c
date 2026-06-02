@@ -164,6 +164,21 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             int right_x[2] = { rc.right - margin, rc.right - margin };
             cur_line = 0;
 
+            /* Calculate first line's image offset for second line alignment */
+            if (has_newline) {
+                int img_offset = 0;
+                for (int i = 0; i < bar->rich.count; i++) {
+                    DisplaySpan *sp = &bar->rich.spans[i];
+                    if (sp->newline) break;
+                    if (sp->is_image && span_widths[i] > 0) {
+                        img_offset += span_widths[i];
+                    } else {
+                        break;
+                    }
+                }
+                left_x[1] = margin + img_offset;
+            }
+
             for (int i = 0; i < bar->rich.count; i++) {
                 DisplaySpan *sp = &bar->rich.spans[i];
                 if (sp->newline) { cur_line = 1; continue; }
@@ -171,7 +186,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (sp->is_image) {
                     if (span_widths[i] <= 0) continue;
                     int draw_x, draw_y;
-                    draw_y = has_newline ? line_y[cur_line] : (rc.bottom - span_heights[i]) / 2;
+                    draw_y = (rc.bottom - span_heights[i]) / 2;
                     if (sp->align == SPAN_ALIGN_RIGHT) {
                         right_x[cur_line] -= span_widths[i];
                         draw_x = right_x[cur_line];
@@ -206,7 +221,12 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 COLORREF clr = (sp->color != 0xFFFFFFFF) ? sp->color : g_cfg.font_color;
 
                 int draw_x, draw_y;
-                draw_y = has_newline ? line_y[cur_line] : (rc.bottom - span_heights[i]) / 2;
+                if (has_newline) {
+                    int line_h = rc.bottom / 2;
+                    draw_y = line_y[cur_line] + (line_h - span_heights[i]) / 2;
+                } else {
+                    draw_y = (rc.bottom - span_heights[i]) / 2;
+                }
 
                 if (sp->align == SPAN_ALIGN_RIGHT) {
                     right_x[cur_line] -= span_widths[i];
@@ -304,23 +324,19 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         EndPaint(hwnd, &ps);
 
-        /* Auto-expand when buttons present, restore when cleared */
-        if (bar->button_count > 0) {
+        /* Auto-expand when buttons present */
+        if (bar->button_count > 0 && !bar->width_expanded) {
             int needed = bar->text_width + 16;
             RECT wr;
             GetWindowRect(hwnd, &wr);
             int cur_w = wr.right - wr.left;
             if (needed > cur_w) {
-                SetWindowPos(hwnd, NULL, 0, 0, needed, wr.bottom - wr.top,
-                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        } else {
-            RECT wr;
-            GetWindowRect(hwnd, &wr);
-            int cur_w = wr.right - wr.left;
-            if (cur_w != bar->configured_width) {
-                SetWindowPos(hwnd, NULL, 0, 0, bar->configured_width, wr.bottom - wr.top,
-                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+                bar->configured_width = cur_w;
+                bar->width_expanded = TRUE;
+                int idx = bar->item_index;
+                int px = (idx >= 0) ? g_cfg.items[idx].bar_x : -1;
+                int py = (idx >= 0) ? g_cfg.items[idx].bar_y : -1;
+                appbar_embed(hwnd, needed, px, py);
             }
         }
 
@@ -483,7 +499,18 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     }
                     event_clear();
                     bar->button_count = 0;
-                    InvalidateRect(hwnd, NULL, TRUE);
+                    bar->hover_button = -1;
+                    bar->rich.count = 0;
+                    bar->width_expanded = FALSE;
+                    /* Restore configured width and refresh immediately */
+                    if (bar->configured_width > 0) {
+                        int idx = bar->item_index;
+                        int px = (idx >= 0) ? g_cfg.items[idx].bar_x : -1;
+                        int py = (idx >= 0) ? g_cfg.items[idx].bar_y : -1;
+                        appbar_embed(hwnd, bar->configured_width, px, py);
+                    }
+                    start_fetch(bar);
+                    return 0;
                     return 0;
                 }
             }
@@ -642,7 +669,11 @@ void bars_create_all(void) {
         bar->hover_button = -1;
         lstrcpyW(bar->display, g_cfg.items[i].name);
 
-        int w = g_cfg.items[i].bar_width > 0 ? g_cfg.items[i].bar_width : g_cfg.width;
+        int w = g_cfg.items[i].bar_width;
+        if (w <= 0 && g_cfg.items[i].lua_path[0]) {
+            w = script_parse_bar_width(g_cfg.items[i].lua_path);
+        }
+        if (w <= 0) w = g_cfg.width;
         bar->configured_width = w;
 
         bar->hwnd = CreateWindowExW(

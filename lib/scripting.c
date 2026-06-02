@@ -83,6 +83,133 @@ static int l_json_decode(lua_State *ls) {
     return 1;
 }
 
+static void json_encode_value(lua_State *ls, int idx, luaL_Buffer *b);
+
+/* ─── json.encode: Lua table → JSON string ─── */
+
+typedef struct {
+    char *buf;
+    int len;
+    int cap;
+} JsonBuf;
+
+static void jb_init(JsonBuf *jb) { jb->buf = NULL; jb->len = 0; jb->cap = 0; }
+static void jb_ensure(JsonBuf *jb, int need) {
+    if (jb->len + need >= jb->cap) {
+        int newcap = (jb->cap == 0) ? 1024 : jb->cap * 2;
+        while (newcap < jb->len + need + 1) newcap *= 2;
+        jb->buf = (char *)realloc(jb->buf, newcap);
+        jb->cap = newcap;
+    }
+}
+static void jb_addchar(JsonBuf *jb, char c) { jb_ensure(jb, 1); jb->buf[jb->len++] = c; }
+static void jb_addstr(JsonBuf *jb, const char *s) {
+    int n = (int)strlen(s); jb_ensure(jb, n); memcpy(jb->buf + jb->len, s, n); jb->len += n;
+}
+
+static void jb_encode_string(JsonBuf *jb, const char *s) {
+    jb_addchar(jb, '"');
+    if (!s) { jb_addchar(jb, '"'); return; }
+    for (; *s; s++) {
+        switch (*s) {
+            case '"':  jb_addstr(jb, "\\\""); break;
+            case '\\': jb_addstr(jb, "\\\\"); break;
+            case '\n': jb_addstr(jb, "\\n"); break;
+            case '\r': jb_addstr(jb, "\\r"); break;
+            case '\t': jb_addstr(jb, "\\t"); break;
+            default:
+                if ((unsigned char)*s < 0x20) {
+                    char esc[8]; snprintf(esc, sizeof(esc), "\\u%04x", (unsigned char)*s);
+                    jb_addstr(jb, esc);
+                } else {
+                    jb_addchar(jb, *s);
+                }
+                break;
+        }
+    }
+    jb_addchar(jb, '"');
+}
+
+static void jb_indent(JsonBuf *jb, int depth) {
+    jb_addchar(jb, '\n');
+    for (int i = 0; i < depth; i++) jb_addstr(jb, "  ");
+}
+
+static void jb_encode_value(lua_State *ls, int idx, JsonBuf *jb, int depth) {
+    idx = lua_absindex(ls, idx);
+    int t = lua_type(ls, idx);
+    switch (t) {
+    case LUA_TNIL:
+        jb_addstr(jb, "null");
+        break;
+    case LUA_TBOOLEAN:
+        jb_addstr(jb, lua_toboolean(ls, idx) ? "true" : "false");
+        break;
+    case LUA_TNUMBER: {
+        char num[64];
+        if (lua_isinteger(ls, idx))
+            snprintf(num, sizeof(num), "%lld", (long long)lua_tointeger(ls, idx));
+        else
+            snprintf(num, sizeof(num), "%.17g", lua_tonumber(ls, idx));
+        jb_addstr(jb, num);
+        break;
+    }
+    case LUA_TSTRING:
+        jb_encode_string(jb, lua_tostring(ls, idx));
+        break;
+    case LUA_TTABLE: {
+        lua_rawgeti(ls, idx, 1);
+        BOOL is_array = !lua_isnil(ls, -1);
+        lua_pop(ls, 1);
+        if (is_array) {
+            jb_addchar(jb, '[');
+            int len = (int)lua_rawlen(ls, idx);
+            for (int i = 1; i <= len; i++) {
+                if (i > 1) jb_addchar(jb, ',');
+                if (depth >= 0) jb_indent(jb, depth + 1);
+                lua_rawgeti(ls, idx, i);
+                jb_encode_value(ls, -1, jb, depth >= 0 ? depth + 1 : -1);
+                lua_pop(ls, 1);
+            }
+            if (depth >= 0 && len > 0) jb_indent(jb, depth);
+            jb_addchar(jb, ']');
+        } else {
+            jb_addchar(jb, '{');
+            int first = 1;
+            lua_pushnil(ls);
+            while (lua_next(ls, idx) != 0) {
+                if (lua_type(ls, -2) == LUA_TSTRING) {
+                    if (!first) jb_addchar(jb, ',');
+                    first = 0;
+                    if (depth >= 0) jb_indent(jb, depth + 1);
+                    jb_encode_string(jb, lua_tostring(ls, -2));
+                    jb_addstr(jb, depth >= 0 ? ": " : ":");
+                    jb_encode_value(ls, -1, jb, depth >= 0 ? depth + 1 : -1);
+                }
+                lua_pop(ls, 1);
+            }
+            if (depth >= 0 && !first) jb_indent(jb, depth);
+            jb_addchar(jb, '}');
+        }
+        break;
+    }
+    default:
+        jb_addstr(jb, "null");
+        break;
+    }
+}
+
+static int l_json_encode(lua_State *ls) {
+    BOOL pretty = lua_toboolean(ls, 2);
+    JsonBuf jb;
+    jb_init(&jb);
+    jb_encode_value(ls, 1, &jb, pretty ? 0 : -1);
+    jb_addchar(&jb, '\0');
+    lua_pushstring(ls, jb.buf ? jb.buf : "null");
+    free(jb.buf);
+    return 1;
+}
+
 /* ─── built-in http.get / http.post for Lua ─── */
 
 #include "httputil.h"
@@ -854,6 +981,8 @@ void script_init(void) {
     lua_newtable(L);
     lua_pushcfunction(L, l_json_decode);
     lua_setfield(L, -2, "decode");
+    lua_pushcfunction(L, l_json_encode);
+    lua_setfield(L, -2, "encode");
     lua_setglobal(L, "json");
 
     /* Register http.get / http.post */
@@ -973,6 +1102,19 @@ static void resolve_lua_path(const WCHAR *lua_path, WCHAR *full_path) {
 BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                       ScriptResult *result) {
     if (!L || !lua_path || !lua_path[0] || !result) return FALSE;
+
+    /* Version check */
+    char required_ver[32] = {0};
+    if (!script_check_require(lua_path, required_ver, sizeof(required_ver))) {
+        WCHAR msg[256];
+        WCHAR wreq[32];
+        MultiByteToWideChar(CP_UTF8, 0, required_ver, -1, wreq, 32);
+        wsprintfW(msg, L"需要 TaskPin v%s+ (当前 v" L"" TASKPIN_VERSION L")", wreq);
+        lstrcpynW(result->display, msg, 2048);
+        result->clickable = FALSE;
+        result->rich.count = 0;
+        return TRUE;
+    }
 
     EnterCriticalSection(&g_lua_cs);
     result->display[0] = L'\0';
@@ -1121,4 +1263,107 @@ int script_parse_refresh(const WCHAR *lua_path) {
     }
     fclose(f);
     return result;
+}
+
+/* ─── parse @bar_width declaration ─── */
+
+int script_parse_bar_width(const WCHAR *lua_path) {
+    if (!lua_path || !lua_path[0]) return 0;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return 0;
+
+    char line[512];
+    int result = 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@bar_width", 10) != 0) continue;
+        p += 10;
+        while (*p == ' ' || *p == '\t') p++;
+        result = atoi(p);
+        break;
+    }
+    fclose(f);
+    return result;
+}
+
+/* ─── parse @version declaration ─── */
+
+void script_parse_version(const WCHAR *lua_path, char *out, int out_size) {
+    out[0] = '\0';
+    if (!lua_path || !lua_path[0]) return;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return;
+
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@version", 8) != 0) continue;
+        p += 8;
+        while (*p == ' ' || *p == '\t') p++;
+        char *end = p + strlen(p) - 1;
+        while (end > p && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+        strncpy(out, p, out_size - 1);
+        break;
+    }
+    fclose(f);
+}
+
+/* ─── parse @require declaration and check ─── */
+
+static int version_compare(const char *a, const char *b) {
+    int a1=0,a2=0,a3=0, b1=0,b2=0,b3=0;
+    sscanf(a, "%d.%d.%d", &a1, &a2, &a3);
+    sscanf(b, "%d.%d.%d", &b1, &b2, &b3);
+    if (a1 != b1) return a1 - b1;
+    if (a2 != b2) return a2 - b2;
+    return a3 - b3;
+}
+
+BOOL script_check_require(const WCHAR *lua_path, char *required, int req_size) {
+    if (!lua_path || !lua_path[0]) return TRUE;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return TRUE;
+
+    char line[512];
+    char min_ver[32] = {0};
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@require", 8) != 0) continue;
+        p += 8;
+        while (*p == ' ' || *p == '\t') p++;
+        /* trim trailing whitespace */
+        char *end = p + strlen(p) - 1;
+        while (end > p && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+        strncpy(min_ver, p, 31);
+        break;
+    }
+    fclose(f);
+
+    if (!min_ver[0]) return TRUE;
+    if (required) strncpy(required, min_ver, req_size - 1);
+    return version_compare(TASKPIN_VERSION, min_ver) >= 0;
 }

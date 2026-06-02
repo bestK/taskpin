@@ -488,6 +488,38 @@ static int l_sys_read_file(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_write_file(lua_State *ls) {
+    const char *path = luaL_checkstring(ls, 1);
+    size_t len = 0;
+    const char *content = luaL_checklstring(ls, 2, &len);
+    WCHAR wpath[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_PATH);
+
+    HANDLE hFile = CreateFileW(wpath, GENERIC_WRITE, 0, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) { lua_pushboolean(ls, 0); return 1; }
+
+    DWORD written = 0;
+    WriteFile(hFile, content, (DWORD)len, &written, NULL);
+    CloseHandle(hFile);
+    lua_pushboolean(ls, written == (DWORD)len);
+    return 1;
+}
+
+static int l_sys_exe_path(lua_State *ls) {
+    WCHAR wpath[MAX_PATH];
+    GetModuleFileNameW(NULL, wpath, MAX_PATH);
+    char path[MAX_PATH * 3];
+    WideCharToMultiByte(CP_UTF8, 0, wpath, -1, path, sizeof(path), NULL, NULL);
+    lua_pushstring(ls, path);
+    return 1;
+}
+
+static int l_sys_version(lua_State *ls) {
+    lua_pushstring(ls, TASKPIN_VERSION);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -518,5 +550,11 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "find_newest");
     lua_pushcfunction(ls, l_sys_read_file);
     lua_setfield(ls, -2, "read_file");
+    lua_pushcfunction(ls, l_sys_write_file);
+    lua_setfield(ls, -2, "write_file");
+    lua_pushcfunction(ls, l_sys_exe_path);
+    lua_setfield(ls, -2, "exe_path");
+    lua_pushcfunction(ls, l_sys_version);
+    lua_setfield(ls, -2, "version");
     lua_setglobal(ls, "sys");
 }
