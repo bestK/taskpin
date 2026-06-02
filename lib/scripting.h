@@ -119,6 +119,9 @@ int script_parse_refresh(const WCHAR *lua_path);
    Returns pixels (0 if not declared). */
 int script_parse_bar_width(const WCHAR *lua_path);
 
+/* Parse @name declaration or first-line description from a Lua file header. */
+void script_parse_name(const WCHAR *lua_path, WCHAR *out, int out_size);
+
 /* Parse @version declaration from a Lua file header. */
 void script_parse_version(const WCHAR *lua_path, char *out, int out_size);
 

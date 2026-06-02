@@ -1294,6 +1294,55 @@ int script_parse_bar_width(const WCHAR *lua_path) {
     return result;
 }
 
+/* ─── parse @name declaration ─── */
+
+void script_parse_name(const WCHAR *lua_path, WCHAR *out, int out_size) {
+    out[0] = L'\0';
+    if (!lua_path || !lua_path[0]) return;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return;
+
+    char line[512];
+    char fallback[256] = {0};
+    BOOL first_line = TRUE;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        /* First line: extract "-- xxx.lua - Description" → Description */
+        if (first_line) {
+            first_line = FALSE;
+            char *dash = strstr(p, " - ");
+            if (dash) {
+                dash += 3;
+                char *end = dash + strlen(dash) - 1;
+                while (end > dash && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+                strncpy(fallback, dash, sizeof(fallback) - 1);
+            }
+        }
+        /* Explicit @name overrides */
+        if (strncmp(p, "@name", 5) == 0) {
+            p += 5;
+            while (*p == ' ' || *p == '\t') p++;
+            char *end = p + strlen(p) - 1;
+            while (end > p && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+            MultiByteToWideChar(CP_UTF8, 0, p, -1, out, out_size);
+            fclose(f);
+            return;
+        }
+    }
+    fclose(f);
+    if (fallback[0]) {
+        MultiByteToWideChar(CP_UTF8, 0, fallback, -1, out, out_size);
+    }
+}
+
 /* ─── parse @version declaration ─── */
 
 void script_parse_version(const WCHAR *lua_path, char *out, int out_size) {

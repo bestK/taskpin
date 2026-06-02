@@ -224,11 +224,17 @@ static void mkt_download_script(void) {
             PinItem *it = &g_cfg.items[g_cfg.count];
             memset(it, 0, sizeof(*it));
             it->type = ITEM_TYPE_LUA;
-            /* Use script name (without .lua) as display name */
-            WCHAR wname[CFG_MAX_NAME];
-            MultiByteToWideChar(CP_UTF8, 0, ms->name[0] ? ms->name : ms->file, -1, wname, CFG_MAX_NAME);
-            lstrcpynW(it->name, wname, CFG_MAX_NAME);
             lstrcpynW(it->lua_path, filepath, CFG_MAX_PATH);
+            /* Use @name or first-line description as display name */
+            WCHAR parsed_name[CFG_MAX_NAME] = {0};
+            script_parse_name(filepath, parsed_name, CFG_MAX_NAME);
+            if (parsed_name[0]) {
+                lstrcpynW(it->name, parsed_name, CFG_MAX_NAME);
+            } else {
+                WCHAR wname[CFG_MAX_NAME];
+                MultiByteToWideChar(CP_UTF8, 0, ms->name[0] ? ms->name : ms->file, -1, wname, CFG_MAX_NAME);
+                lstrcpynW(it->name, wname, CFG_MAX_NAME);
+            }
             int refresh = script_parse_refresh(filepath);
             it->interval_ms = refresh > 0 ? (DWORD)refresh : 5000;
             int bw = script_parse_bar_width(filepath);
