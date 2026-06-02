@@ -91,7 +91,7 @@ local bar = font(text, "#CCCCCC", 9)
 local info = dialog({
     title = "Reader",
     width = 400, height = 300,
-    refresh = 5,
+    refresh = 5000,
     content = {
         { type = "text", value = "摸鱼阅读器", color = "#D97757", size = 11, bold = true },
         { type = "hr" },

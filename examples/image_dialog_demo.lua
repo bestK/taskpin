@@ -19,7 +19,7 @@ local bar = font("Demo", "#AAAAAA", 9)
 local info = dialog({
     title = "Image Demo",
     width = 340, height = 220,
-    refresh = 5,
+    refresh = 5000,
     content = {
         { type = "text", value = "Claude Code", color = "#D97757", size = 12, bold = true,
           image = claude_png, image_width = 20, image_height = 20 },

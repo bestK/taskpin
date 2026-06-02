@@ -1,8 +1,8 @@
+-- zentao_task.lua - 禅道未完成任务显示
 -- @param BASE_URL string 禅道地址
 -- @param ACCOUNT string 账号
 -- @param PASSWORD string 密码
 -- @refresh 60000
--- zentao_task.lua - 禅道未完成任务显示
 
 local BASE_URL = args.BASE_URL or "https://zentao.example.com"
 local ACCOUNT  = args.ACCOUNT or ""
@@ -96,7 +96,7 @@ end
 local info = dialog({
     title = "禅道任务",
     width = 420, height = 320,
-    refresh = 60,
+    refresh = 60000,
     content = content,
 })
 

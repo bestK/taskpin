@@ -42,7 +42,7 @@ local bar = font(charge_icon .. tostring(math.floor(soc)) .. "%", soc_color, 9)
 local info = dialog({
     title = "Zeeho " .. (d.vehicle_name or ""),
     width = 320, height = 260,
-    refresh = 30,
+    refresh = 30000,
     content = {
         { type = "text", value = (d.vehicle_name or "Zeeho") .. " " .. charge_icon, color = "#4FC3F7", size = 12, bold = true },
         { type = "hr" },

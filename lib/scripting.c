@@ -792,12 +792,24 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
     if (!lua_isnil(ls, -1)) spec->refresh = (int)lua_tointeger(ls, -1);
     lua_pop(ls, 1);
 
+    lua_getfield(ls, idx, "x");
+    spec->x = lua_isnil(ls, -1) ? -1 : (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "y");
+    spec->y = lua_isnil(ls, -1) ? -1 : (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
     lua_getfield(ls, idx, "borderless");
     spec->borderless = lua_toboolean(ls, -1);
     lua_pop(ls, 1);
 
     lua_getfield(ls, idx, "clickthrough");
     spec->clickthrough = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, idx, "transparent_bg");
+    spec->transparent_bg = lua_toboolean(ls, -1);
     lua_pop(ls, 1);
 
     lua_getfield(ls, idx, "opacity");
@@ -922,6 +934,18 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "height");
             item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "src_x");
+            item->src_x = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "src_y");
+            item->src_y = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "src_w");
+            item->src_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "src_h");
+            item->src_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
         } else if (strcmp(type, "button") == 0) {
             item->type = DI_BUTTON;

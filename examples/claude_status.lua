@@ -238,7 +238,7 @@ end
 local info = dialog({
     title = "Claude",
     width = 340, height = 240,
-    refresh = 3,
+    refresh = 3000,
     content = dialog_content,
 })
 

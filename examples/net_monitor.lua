@@ -24,7 +24,7 @@ end
 local detail = dialog({
     title = "Network Activity",
     width = 440, height = 380,
-    refresh = 2,
+    refresh = 2000,
     content = {
         { type = "text", value = "Active Connections (" .. #procs .. " processes)", color = "#4FC3F7", size = 11, bold = true },
         { type = "hr" },

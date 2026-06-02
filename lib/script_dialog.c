@@ -92,7 +92,7 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     DWORD exstyle = WS_EX_TOPMOST;
     if (spec->borderless)
         exstyle |= WS_EX_TOOLWINDOW;
-    if (spec->clickthrough || spec->opacity < 255)
+    if (spec->clickthrough || spec->opacity < 255 || spec->transparent_bg)
         exstyle |= WS_EX_LAYERED;
     RECT wr = {0, 0, w, h};
     AdjustWindowRectEx(&wr, style, FALSE, exstyle);
@@ -104,7 +104,10 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     int x = (screen_w - win_w) / 2;
     int y = (screen_h - win_h) / 2;
 
-    if (spec->borderless) {
+    /* Use explicit x/y from spec first, then saved position */
+    if (spec->x >= 0 && spec->y >= 0) {
+        x = spec->x; y = spec->y;
+    } else if (spec->borderless) {
         int idx = dlg_find_item(state->lua_path);
         if (idx >= 0 && g_cfg.items[idx].dlg_x >= 0 && g_cfg.items[idx].dlg_y >= 0) {
             x = g_cfg.items[idx].dlg_x;
@@ -117,7 +120,9 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
         x, y, win_w, win_h,
         NULL, NULL, GetModuleHandle(NULL), state);
 
-    if (spec->opacity < 255 || spec->clickthrough) {
+    if (spec->transparent_bg) {
+        SetLayeredWindowAttributes(s_dialog_hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
+    } else if (spec->opacity < 255 || spec->clickthrough) {
         SetLayeredWindowAttributes(s_dialog_hwnd, 0,
             (BYTE)(spec->opacity < 255 ? spec->opacity : 255), LWA_ALPHA);
     }
@@ -187,7 +192,8 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
     state->button_count = 0;
     state->tbl_button_count = 0;
 
-    HBRUSH bg = CreateSolidBrush(DIALOG_BG);
+    COLORREF bg_color = state->spec.transparent_bg ? RGB(255, 0, 255) : DIALOG_BG;
+    HBRUSH bg = CreateSolidBrush(bg_color);
     FillRect(hdc, &rc, bg);
     DeleteObject(bg);
 
@@ -331,17 +337,37 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             if (!item->img_source[0]) break;
             int rw = item->img_w > 0 ? item->img_w : 64;
             int rh = item->img_h > 0 ? item->img_h : 64;
-            int out_w = 0, out_h = 0;
-            HBITMAP hbmp = image_load(item->img_source, rw, rh, &out_w, &out_h);
-            if (hbmp) {
-                HDC mem = CreateCompatibleDC(hdc);
-                HBITMAP old_bmp = (HBITMAP)SelectObject(mem, hbmp);
-                int dw = out_w > 0 ? out_w : rw;
-                int dh = out_h > 0 ? out_h : rh;
-                StretchBlt(hdc, PADDING_X, y, dw, dh, mem, 0, 0, dw, dh, SRCCOPY);
-                SelectObject(mem, old_bmp);
-                DeleteDC(mem);
-                y += dh;
+
+            if (item->src_w > 0 && item->src_h > 0) {
+                /* Sprite sheet crop mode: load at native size, blit region centered */
+                int out_w = 0, out_h = 0;
+                HBITMAP hbmp = image_load(item->img_source, 0, 0, &out_w, &out_h);
+                if (hbmp) {
+                    HDC mem = CreateCompatibleDC(hdc);
+                    HBITMAP old_bmp = (HBITMAP)SelectObject(mem, hbmp);
+                    int dx = (rc.right - rc.left - rw) / 2;
+                    int dy = (rc.bottom - rc.top - rh) / 2;
+                    BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+                    AlphaBlend(hdc, dx, dy, rw, rh,
+                        mem, item->src_x, item->src_y, item->src_w, item->src_h, bf);
+                    SelectObject(mem, old_bmp);
+                    DeleteDC(mem);
+                    y += rh;
+                }
+            } else {
+                int out_w = 0, out_h = 0;
+                HBITMAP hbmp = image_load(item->img_source, rw, rh, &out_w, &out_h);
+                if (hbmp) {
+                    HDC mem = CreateCompatibleDC(hdc);
+                    HBITMAP old_bmp = (HBITMAP)SelectObject(mem, hbmp);
+                    int dw = out_w > 0 ? out_w : rw;
+                    int dh = out_h > 0 ? out_h : rh;
+                    BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+                    AlphaBlend(hdc, PADDING_X, y, dw, dh, mem, 0, 0, dw, dh, bf);
+                    SelectObject(mem, old_bmp);
+                    DeleteDC(mem);
+                    y += dh;
+                }
             }
             break;
         }
@@ -381,6 +407,11 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
         if (result->click_action == CLICK_DIALOG && result->dialog.item_count > 0) {
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
             InvalidateRect(hwnd, NULL, TRUE);
+            /* Move window if x/y specified */
+            if (state->spec.x >= 0 && state->spec.y >= 0) {
+                SetWindowPos(hwnd, NULL, state->spec.x, state->spec.y, 0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
         }
     }
     HeapFree(GetProcessHeap(), 0, result);
@@ -411,7 +442,7 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         state = (ScriptDialogState *)cs->lpCreateParams;
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)state);
         if (state->spec.refresh > 0) {
-            SetTimer(hwnd, IDT_DIALOG_REFRESH, state->spec.refresh * 1000, NULL);
+            SetTimer(hwnd, IDT_DIALOG_REFRESH, (UINT)state->spec.refresh, NULL);
         }
         if (state->spec.borderless) {
             SetTimer(hwnd, IDT_DIALOG_ESC, 100, NULL);

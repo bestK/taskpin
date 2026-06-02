@@ -7,7 +7,7 @@ local bar = font(os.date("%H:%M"), "#FFFFFF", 10)
 local info = dialog({
     title = "Clock",
     width = 200, height = 80,
-    refresh = 1,
+    refresh = 1000,
     borderless = true,
     clickthrough = true,
     opacity = 180,

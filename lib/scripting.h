@@ -21,6 +21,7 @@ typedef struct {
     BOOL is_image;       /* TRUE = this span is an image, not text */
     char img_source[IMG_SOURCE_MAX]; /* image source: path/url/data URI */
     int img_w, img_h;    /* requested display size */
+    int src_x, src_y, src_w, src_h;  /* sprite sheet crop (0 = full) */
     BOOL is_button;      /* TRUE = clickable button with bg fill + border */
     char cmd[512];       /* shell command (when is_button) */
     char response[512];  /* response content to write to event response_file */
@@ -64,6 +65,7 @@ typedef struct {
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int img_w, img_h;
+    int src_x, src_y, src_w, src_h;  /* sprite sheet crop region (0 = use full image) */
     /* button/link url or command */
     char url[512];
     char cmd[512];
@@ -72,10 +74,12 @@ typedef struct {
 typedef struct {
     WCHAR title[128];
     int width, height;
-    int refresh;         /* seconds, 0 = no auto-refresh */
+    int refresh;         /* milliseconds, 0 = no auto-refresh */
     BOOL borderless;     /* TRUE = no title bar */
     BOOL clickthrough;   /* TRUE = mouse clicks pass through */
+    BOOL transparent_bg; /* TRUE = background is transparent (color key) */
     int opacity;         /* 0-255, 0=fully transparent, 255=opaque (default) */
+    int x, y;            /* window position, -1 = center/no-move */
     DialogItem items[DIALOG_MAX_ITEMS];
     int item_count;
 } DialogSpec;

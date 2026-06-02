@@ -520,6 +520,28 @@ static int l_sys_version(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_screen_width(lua_State *ls) {
+    lua_pushinteger(ls, GetSystemMetrics(SM_CXSCREEN));
+    return 1;
+}
+
+static int l_sys_screen_height(lua_State *ls) {
+    lua_pushinteger(ls, GetSystemMetrics(SM_CYSCREEN));
+    return 1;
+}
+
+static int l_sys_mouse_x(lua_State *ls) {
+    POINT pt; GetCursorPos(&pt);
+    lua_pushinteger(ls, pt.x);
+    return 1;
+}
+
+static int l_sys_mouse_y(lua_State *ls) {
+    POINT pt; GetCursorPos(&pt);
+    lua_pushinteger(ls, pt.y);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -556,5 +578,13 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "exe_path");
     lua_pushcfunction(ls, l_sys_version);
     lua_setfield(ls, -2, "version");
+    lua_pushcfunction(ls, l_sys_screen_width);
+    lua_setfield(ls, -2, "screen_width");
+    lua_pushcfunction(ls, l_sys_screen_height);
+    lua_setfield(ls, -2, "screen_height");
+    lua_pushcfunction(ls, l_sys_mouse_x);
+    lua_setfield(ls, -2, "mouse_x");
+    lua_pushcfunction(ls, l_sys_mouse_y);
+    lua_setfield(ls, -2, "mouse_y");
     lua_setglobal(ls, "sys");
 }
