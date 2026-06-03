@@ -109,6 +109,8 @@ typedef struct {
 
 void script_init(void);
 void script_shutdown(void);
+void script_set_global_bool(const char *name, BOOL value);
+void script_set_global_string(const char *name, const char *value);
 
 BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *result);
 

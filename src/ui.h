@@ -76,6 +76,7 @@ typedef struct {
     int   param_count;
     ScriptResult result;
     BOOL  success;
+    BOOL  other_mode;
 } LuaContext;
 
 #define MAX_BAR_INPUTS 4
@@ -102,6 +103,7 @@ typedef struct {
     COLORREF input_color[MAX_BAR_INPUTS];
     COLORREF input_border[MAX_BAR_INPUTS];
     int input_count;
+    BOOL other_mode;
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

@@ -18,6 +18,10 @@ static BarInstance *bar_from_hwnd(HWND hwnd) {
 
 static DWORD WINAPI lua_worker_thread(LPVOID param) {
     LuaContext *ctx = (LuaContext *)param;
+    if (ctx->other_mode)
+        script_set_global_bool("_other_mode", TRUE);
+    else
+        script_set_global_bool("_other_mode", FALSE);
     ctx->success = script_exec_file(ctx->lua_path, ctx->params, ctx->param_count, &ctx->result);
     PostMessageW(ctx->hwnd, WM_LUA_DONE, 0, (LPARAM)ctx);
     return 0;
@@ -51,6 +55,7 @@ void start_fetch(BarInstance *bar) {
         lstrcpynW(lctx->lua_path, it->lua_path, MAX_PATH);
         memcpy(lctx->params, it->params, sizeof(it->params));
         lctx->param_count = it->param_count;
+        lctx->other_mode = bar->other_mode;
         HANDLE hThread = CreateThread(NULL, 0, lua_worker_thread, lctx, 0, NULL);
         if (hThread) CloseHandle(hThread);
         else { HeapFree(GetProcessHeap(), 0, lctx); bar->fetching = FALSE; }
@@ -561,11 +566,12 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         }
                     }
                     if (bb->keep_event) {
-                        /* Don't clear event, just refresh to update UI */
+                        bar->other_mode = TRUE;
                         start_fetch(bar);
                         return 0;
                     }
                     event_clear();
+                    bar->other_mode = FALSE;
                     bar->button_count = 0;
                     bar->hover_button = -1;
                     bar->rich.count = 0;

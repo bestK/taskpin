@@ -1166,6 +1166,22 @@ void script_shutdown(void) {
     DeleteCriticalSection(&g_lua_cs);
 }
 
+void script_set_global_bool(const char *name, BOOL value) {
+    if (!L) return;
+    EnterCriticalSection(&g_lua_cs);
+    lua_pushboolean(L, value);
+    lua_setglobal(L, name);
+    LeaveCriticalSection(&g_lua_cs);
+}
+
+void script_set_global_string(const char *name, const char *value) {
+    if (!L) return;
+    EnterCriticalSection(&g_lua_cs);
+    lua_pushstring(L, value ? value : "");
+    lua_setglobal(L, name);
+    LeaveCriticalSection(&g_lua_cs);
+}
+
 /* ─── execute template code ─── */
 
 BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *result) {

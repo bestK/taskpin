@@ -152,17 +152,11 @@ end
 local session_path = find_latest_session()
 local status, detail = detect_status(session_path)
 local ai_title = session_path and read_ai_title(session_path)
-local other_flag = os.getenv("TEMP") .. "\\taskpin_other_mode"
 
 -- event 驱动
 local is_permission = (event and event.source == "claude-code" and event.name == "permission")
 local permission_cmd = ""
 local permission_desc = ""
-
--- 清理 Other 模式标记（非 question 状态时）
-if not is_permission and sys.file_mtime(other_flag) then
-    os.remove(other_flag)
-end
 
 if event then
     log("event:", event.source, event.name, json.encode(event))
@@ -213,7 +207,7 @@ if status == "question" then
     local questions = ti.questions or {}
     local q = questions[1]
 
-    if sys.file_mtime(other_flag) then
+    if _other_mode then
         -- Other 模式: [icon] [input] [OK]
         bar = icon(claude_icon, 16, 16)
             .. font(" ", nil, 4)
@@ -257,7 +251,6 @@ if status == "question" then
                 bar = bar .. b
             end
             local other_btn = button(" Other ", nil, "#FFFFFF", "#555555", 7)
-            other_btn.cmd = "cmd /c echo.>" .. other_flag:gsub("\\", "\\\\")
             other_btn.keep_event = true
             bar = bar .. other_btn
         end
