@@ -284,7 +284,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     continue;
                 }
 
-                if (!sp->text[0]) continue;
+                if (!sp->text[0] && !sp->is_input) continue;
 
                 int pt = sp->font_size > 0 ? sp->font_size : g_cfg.font_size;
                 int fh = -MulDiv(pt, 96, 72);
@@ -373,6 +373,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     int ih = sp->input_h > 0 ? sp->input_h : 22;
                     int iy = (rc.bottom - ih) / 2;
                     int iw = sp->input_w > 0 ? sp->input_w : (span_widths[i] > 0 ? span_widths[i] : 120);
+                    logger_write(LOG_INFO, "render input: draw_x=%d iy=%d iw=%d ih=%d", draw_x, iy, iw, ih);
                     int idx = bar->input_count;
                     if (idx < MAX_BAR_INPUTS) {
                         strncpy(bar->input_names[idx], sp->prompt, 255);
