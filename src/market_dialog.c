@@ -467,13 +467,14 @@ void import_script_from_url(const WCHAR *url) {
     tdc.nDefaultButton = BTN_INSTALL;
 
     int pressed = 0;
-    TaskDialogIndirect(&tdc, &pressed, NULL, NULL);
-
-    if (pressed == BTN_VIEW) {
-        ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
-        DeleteFileW(tmp_path);
-        free(content);
-        return;
+    for (;;) {
+        pressed = 0;
+        TaskDialogIndirect(&tdc, &pressed, NULL, NULL);
+        if (pressed == BTN_VIEW) {
+            ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+            continue;
+        }
+        break;
     }
     if (pressed != BTN_INSTALL) {
         DeleteFileW(tmp_path);
