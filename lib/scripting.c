@@ -685,6 +685,9 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_getfield(ls, idx, "margin");
                 if (!lua_isnil(ls, -1)) sp->margin = (int)lua_tointeger(ls, -1);
                 lua_pop(ls, 1);
+                lua_getfield(ls, idx, "keep_event");
+                sp->keep_event = lua_toboolean(ls, -1);
+                lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);
                 lua_getfield(ls, idx, "__is_input");
@@ -826,6 +829,9 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_pop(ls, 1);
                 lua_getfield(ls, -1, "margin");
                 if (!lua_isnil(ls, -1)) sp->margin = (int)lua_tointeger(ls, -1);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "keep_event");
+                sp->keep_event = lua_toboolean(ls, -1);
                 lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);

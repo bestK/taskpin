@@ -63,6 +63,7 @@ typedef struct {
     COLORREF color;
     COLORREF hover_bg;
     COLORREF hover_color;
+    BOOL keep_event;
 } BarButton;
 
 /* Bar instance (one per pinned item) */

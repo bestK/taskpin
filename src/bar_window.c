@@ -289,6 +289,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         bb->color = clr;
                         bb->hover_bg = sp->hover_bg;
                         bb->hover_color = sp->hover_color;
+                        bb->keep_event = sp->keep_event;
                         bar->button_count++;
                     }
                 } else if (sp->is_input) {
@@ -558,6 +559,11 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                             CloseHandle(pi.hProcess);
                             CloseHandle(pi.hThread);
                         }
+                    }
+                    if (bb->keep_event) {
+                        /* Don't clear event, just refresh to update UI */
+                        start_fetch(bar);
+                        return 0;
                     }
                     event_clear();
                     bar->button_count = 0;

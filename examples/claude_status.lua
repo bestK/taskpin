@@ -152,11 +152,17 @@ end
 local session_path = find_latest_session()
 local status, detail = detect_status(session_path)
 local ai_title = session_path and read_ai_title(session_path)
+local other_flag = os.getenv("TEMP") .. "\\taskpin_other_mode"
 
 -- event 驱动
 local is_permission = (event and event.source == "claude-code" and event.name == "permission")
 local permission_cmd = ""
 local permission_desc = ""
+
+-- 清理 Other 模式标记（非 question 状态时）
+if not is_permission and sys.file_mtime(other_flag) then
+    os.remove(other_flag)
+end
 
 if event then
     log("event:", event.source, event.name, json.encode(event))
@@ -206,30 +212,12 @@ if status == "question" then
     local ti = event.tool_input or {}
     local questions = ti.questions or {}
     local q = questions[1]
-    bar = icon(claude_icon, 16, 16)
-        .. font(" " .. (q and q.question or ""), "#FFFFFF", 8)
 
-    if q and type(q.options) == "table" then
-        for oi, opt in ipairs(q.options) do
-            local b = button(" " .. opt.label .. " ", nil, "#000000", "#1565C0", 7)
-            local answers = {}
-            answers[q.question] = opt.label
-            b.response = json.encode({
-                hookSpecificOutput = {
-                    hookEventName = "PermissionRequest",
-                    decision = {
-                        behavior = "allow",
-                        updatedInput = {
-                            questions = questions,
-                            answers = answers
-                        }
-                    }
-                }
-            })
-            bar = bar .. b
-        end
-        -- Other: input + submit
-        bar = bar .. font(" ", nil, 4) .. input("otherAnswer", "Other...")
+    if sys.file_mtime(other_flag) then
+        -- Other 模式: [icon] [input] [OK]
+        bar = icon(claude_icon, 16, 16)
+            .. font(" ", nil, 4)
+            .. input("otherAnswer", "Type your answer...", 200, 22, "#222", "#FFF", "#555")
         local submit = button(" OK ", nil, "#000000", "#2E7D32", 7)
         submit.response = json.encode({
             hookSpecificOutput = {
@@ -244,6 +232,35 @@ if status == "question" then
             }
         })
         bar = bar .. submit
+    else
+        -- 选项模式: [icon] 问题 [选项1] [选项2] ... [Other]
+        bar = icon(claude_icon, 16, 16)
+            .. font(" " .. (q and q.question or ""), "#FFFFFF", 8)
+
+        if q and type(q.options) == "table" then
+            for oi, opt in ipairs(q.options) do
+                local b = button(" " .. opt.label .. " ", nil, "#000000", "#1565C0", 7)
+                local answers = {}
+                answers[q.question] = opt.label
+                b.response = json.encode({
+                    hookSpecificOutput = {
+                        hookEventName = "PermissionRequest",
+                        decision = {
+                            behavior = "allow",
+                            updatedInput = {
+                                questions = questions,
+                                answers = answers
+                            }
+                        }
+                    }
+                })
+                bar = bar .. b
+            end
+            local other_btn = button(" Other ", nil, "#FFFFFF", "#555555", 7)
+            other_btn.cmd = "cmd /c echo.>" .. other_flag:gsub("\\", "\\\\")
+            other_btn.keep_event = true
+            bar = bar .. other_btn
+        end
     end
 elseif is_permission then
     bar = icon(claude_icon, 16, 16)
