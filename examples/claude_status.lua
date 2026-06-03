@@ -229,7 +229,7 @@ if status == "question" then
             bar = bar .. b
         end
         -- Other: input + submit
-        bar = bar .. font(" ", nil, 4) .. input("otherAnswer")
+        bar = bar .. font(" ", nil, 4) .. input("otherAnswer", "Other...")
         local submit = button(" OK ", nil, "#000000", "#2E7D32", 7)
         submit.response = json.encode({
             hookSpecificOutput = {
@@ -238,7 +238,7 @@ if status == "question" then
                     behavior = "allow",
                     updatedInput = {
                         questions = questions,
-                        answers = { [q.question] = "{input}" }
+                        answers = { [q.question] = "{otherAnswer}" }
                     }
                 }
             }

@@ -26,7 +26,8 @@ typedef struct {
     BOOL is_input;       /* TRUE = render as EDIT input field */
     char cmd[512];       /* shell command (when is_button) */
     char response[4096]; /* response content to write to event response_file */
-    char prompt[256];    /* placeholder text for input field */
+    char prompt[256];    /* input name (used as {name} placeholder in response) */
+    char placeholder[256]; /* input cue banner text */
     COLORREF bg_color;   /* button background color, 0xFFFFFFFF = default */
     COLORREF hover_bg;   /* button hover background, 0xFFFFFFFF = default */
     COLORREF hover_color;/* button hover text color, 0xFFFFFFFF = default */

@@ -77,6 +77,8 @@ typedef struct {
     BOOL  success;
 } LuaContext;
 
+#define MAX_BAR_INPUTS 4
+
 typedef struct {
     int item_index;
     HWND hwnd;
@@ -93,7 +95,9 @@ typedef struct {
     int hover_button;   /* index of hovered button, -1 = none */
     int configured_width; /* original bar width from config */
     BOOL width_expanded;  /* TRUE while bar is auto-expanded for buttons */
-    HWND input_hwnd;      /* EDIT control for input mode */
+    HWND input_hwnds[MAX_BAR_INPUTS];
+    char input_names[MAX_BAR_INPUTS][256];
+    int input_count;
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

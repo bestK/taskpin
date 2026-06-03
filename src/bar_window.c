@@ -92,6 +92,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_PAINT: {
         if (!bar) break;
         bar->button_count = 0;
+        bar->input_count = 0;
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
@@ -294,23 +295,28 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     int ih = 22;
                     int iy = (rc.bottom - ih) / 2;
                     int iw = span_widths[i] > 0 ? span_widths[i] : 120;
-                    if (!bar->input_hwnd) {
-                        bar->input_hwnd = CreateWindowExW(0, L"EDIT", L"",
-                            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
-                            draw_x, iy, iw, ih,
-                            hwnd, NULL, GetModuleHandle(NULL), NULL);
-                        HFONT hif = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-                        SendMessageW(bar->input_hwnd, WM_SETFONT, (WPARAM)hif, TRUE);
-                        if (sp->prompt[0]) {
-                            WCHAR wp[256];
-                            MultiByteToWideChar(CP_UTF8, 0, sp->prompt, -1, wp, 256);
-                            SendMessageW(bar->input_hwnd, EM_SETCUEBANNER, TRUE, (LPARAM)wp);
+                    int idx = bar->input_count;
+                    if (idx < MAX_BAR_INPUTS) {
+                        strncpy(bar->input_names[idx], sp->prompt, 255);
+                        if (!bar->input_hwnds[idx]) {
+                            bar->input_hwnds[idx] = CreateWindowExW(0, L"EDIT", L"",
+                                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+                                draw_x, iy, iw, ih,
+                                hwnd, NULL, GetModuleHandle(NULL), NULL);
+                            HFONT hif = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+                            SendMessageW(bar->input_hwnds[idx], WM_SETFONT, (WPARAM)hif, TRUE);
+                            if (sp->placeholder[0]) {
+                                WCHAR wp[256];
+                                MultiByteToWideChar(CP_UTF8, 0, sp->placeholder, -1, wp, 256);
+                                SendMessageW(bar->input_hwnds[idx], EM_SETCUEBANNER, TRUE, (LPARAM)wp);
+                            }
+                        } else {
+                            MoveWindow(bar->input_hwnds[idx], draw_x, iy, iw, ih, TRUE);
+                            ShowWindow(bar->input_hwnds[idx], SW_SHOW);
                         }
-                    } else {
-                        MoveWindow(bar->input_hwnd, draw_x, iy, iw, ih, TRUE);
-                        ShowWindow(bar->input_hwnd, SW_SHOW);
+                        bar->input_count++;
                     }
                 } else {
                     SetTextColor(hdc, clr);
@@ -499,25 +505,39 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         char resp_path[MAX_PATH];
                         event_get_response_file(resp_path, MAX_PATH);
                         if (resp_path[0]) {
-                            /* Replace {input} with text from input control */
+                            /* Replace {name} placeholders with input control values */
                             char final_resp[4096];
-                            char *placeholder = strstr(bb->response, "{input}");
-                            if (placeholder && bar->input_hwnd) {
+                            strncpy(final_resp, bb->response, 4095);
+                            final_resp[4095] = '\0';
+                            for (int ii = 0; ii < bar->input_count && ii < MAX_BAR_INPUTS; ii++) {
+                                if (!bar->input_names[ii][0]) continue;
+                                char tag[260];
+                                snprintf(tag, sizeof(tag), "{%s}", bar->input_names[ii]);
+                                char *ph = strstr(final_resp, tag);
+                                if (!ph) continue;
                                 WCHAR winput[512];
-                                GetWindowTextW(bar->input_hwnd, winput, 512);
+                                GetWindowTextW(bar->input_hwnds[ii], winput, 512);
                                 char input_utf8[1024];
                                 WideCharToMultiByte(CP_UTF8, 0, winput, -1, input_utf8, sizeof(input_utf8), NULL, NULL);
-                                int prefix_len = (int)(placeholder - bb->response);
-                                memcpy(final_resp, bb->response, prefix_len);
-                                int ilen = (int)strlen(input_utf8);
-                                memcpy(final_resp + prefix_len, input_utf8, ilen);
-                                strcpy(final_resp + prefix_len + ilen, placeholder + 7);
-                                FILE *f = fopen(resp_path, "w");
-                                if (f) { fputs(final_resp, f); fclose(f); }
-                            } else {
-                                FILE *f = fopen(resp_path, "w");
-                                if (f) { fputs(bb->response, f); fclose(f); }
+                                char escaped[2048];
+                                int ei = 0;
+                                for (int k = 0; input_utf8[k] && ei < 2040; k++) {
+                                    if (input_utf8[k] == '"') { escaped[ei++] = '\\'; escaped[ei++] = '"'; }
+                                    else if (input_utf8[k] == '\\') { escaped[ei++] = '\\'; escaped[ei++] = '\\'; }
+                                    else escaped[ei++] = input_utf8[k];
+                                }
+                                escaped[ei] = '\0';
+                                int prefix_len = (int)(ph - final_resp);
+                                int tag_len = (int)strlen(tag);
+                                int elen = (int)strlen(escaped);
+                                int tail_len = (int)strlen(ph + tag_len);
+                                if (prefix_len + elen + tail_len < 4095) {
+                                    memmove(ph + elen, ph + tag_len, tail_len + 1);
+                                    memcpy(ph, escaped, elen);
+                                }
                             }
+                            FILE *f = fopen(resp_path, "w");
+                            if (f) { fputs(final_resp, f); fclose(f); }
                         }
                     } else if (bb->cmd[0]) {
                         STARTUPINFOW si;
@@ -542,9 +562,14 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     bar->rich.count = 0;
                     bar->width_expanded = FALSE;
                     bar->script_result.clickable = FALSE;
-                    if (bar->input_hwnd) {
-                        DestroyWindow(bar->input_hwnd);
-                        bar->input_hwnd = NULL;
+                    if (bar->input_count > 0) {
+                        for (int ii = 0; ii < bar->input_count; ii++) {
+                            if (bar->input_hwnds[ii]) {
+                                DestroyWindow(bar->input_hwnds[ii]);
+                                bar->input_hwnds[ii] = NULL;
+                            }
+                        }
+                        bar->input_count = 0;
                     }
                     /* Restore configured width and refresh immediately */
                     if (bar->configured_width > 0) {

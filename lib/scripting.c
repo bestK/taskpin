@@ -508,16 +508,20 @@ static int l_button(lua_State *ls) {
     return 1;
 }
 
-/* input(placeholder) -> span table with __is_input marker */
+/* input(name, placeholder) -> span table with __is_input marker */
 static int l_input(lua_State *ls) {
+    const char *name = luaL_checkstring(ls, 1);
     const char *placeholder = "";
-    if (lua_gettop(ls) >= 1 && !lua_isnil(ls, 1))
-        placeholder = lua_tostring(ls, 1);
+    if (lua_gettop(ls) >= 2 && !lua_isnil(ls, 2))
+        placeholder = lua_tostring(ls, 2);
 
     lua_newtable(ls);
 
+    lua_pushstring(ls, name);
+    lua_setfield(ls, -2, "name");
+
     lua_pushstring(ls, placeholder);
-    lua_setfield(ls, -2, "prompt");
+    lua_setfield(ls, -2, "placeholder");
 
     lua_pushboolean(ls, 1);
     lua_setfield(ls, -2, "__is_input");
@@ -666,9 +670,13 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 if (lua_toboolean(ls, -1)) {
                     sp->is_input = TRUE;
                     lua_pop(ls, 1);
-                    lua_getfield(ls, idx, "prompt");
-                    const char *pr = lua_tostring(ls, -1);
-                    if (pr) strncpy(sp->prompt, pr, 255);
+                    lua_getfield(ls, idx, "name");
+                    const char *nm = lua_tostring(ls, -1);
+                    if (nm) strncpy(sp->prompt, nm, 255);
+                    lua_pop(ls, 1);
+                    lua_getfield(ls, idx, "placeholder");
+                    const char *ph = lua_tostring(ls, -1);
+                    if (ph) strncpy(sp->placeholder, ph, 255);
                     lua_pop(ls, 1);
                 } else {
                     lua_pop(ls, 1);
@@ -786,9 +794,13 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 if (lua_toboolean(ls, -1)) {
                     sp->is_input = TRUE;
                     lua_pop(ls, 1);
-                    lua_getfield(ls, -1, "prompt");
-                    const char *pr = lua_tostring(ls, -1);
-                    if (pr) strncpy(sp->prompt, pr, 255);
+                    lua_getfield(ls, -1, "name");
+                    const char *nm = lua_tostring(ls, -1);
+                    if (nm) strncpy(sp->prompt, nm, 255);
+                    lua_pop(ls, 1);
+                    lua_getfield(ls, -1, "placeholder");
+                    const char *ph = lua_tostring(ls, -1);
+                    if (ph) strncpy(sp->placeholder, ph, 255);
                     lua_pop(ls, 1);
                 } else {
                     lua_pop(ls, 1);
