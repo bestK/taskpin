@@ -168,11 +168,13 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         COLORREF bg = (bar->item_index >= 0 && bar->item_index < g_cfg.count
             && g_cfg.items[bar->item_index].bar_bg_color != 0xFFFFFFFF)
             ? g_cfg.items[bar->item_index].bar_bg_color : g_cfg.bg_color;
+        BOOL transparent = (bg == 0xFFFFFFFF);
+        if (transparent) bg = RGB(255, 0, 255);
         BOOL has_buttons = FALSE;
         for (int i = 0; i < bar->rich.count; i++) {
             if (bar->rich.spans[i].is_button) { has_buttons = TRUE; break; }
         }
-        if (bar->show_border && !has_buttons) bg = RGB(39, 39, 39);
+        if (bar->show_border && !has_buttons && !transparent) bg = RGB(39, 39, 39);
         HBRUSH hBrush = CreateSolidBrush(bg);
         FillRect(hdc, &rc, hBrush);
         DeleteObject(hBrush);
@@ -849,12 +851,20 @@ void bars_create_all(void) {
         bar->configured_width = w;
 
         bar->hwnd = CreateWindowExW(
-            WS_EX_TOOLWINDOW,
+            WS_EX_TOOLWINDOW | WS_EX_LAYERED,
             L"TaskPinBarClass", L"TaskPin",
             WS_POPUP,
             0, 0, w, 40,
             NULL, NULL, g_hinst, NULL);
         if (!bar->hwnd) continue;
+
+        /* Set transparency: if no bg color configured, use color key for true transparency */
+        COLORREF item_bg = g_cfg.items[i].bar_bg_color;
+        if (item_bg == 0xFFFFFFFF && g_cfg.bg_color == 0xFFFFFFFF) {
+            SetLayeredWindowAttributes(bar->hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
+        } else {
+            SetLayeredWindowAttributes(bar->hwnd, 0, 255, LWA_ALPHA);
+        }
 
         SetWindowLongPtrW(bar->hwnd, GWLP_USERDATA, (LONG_PTR)bar);
 

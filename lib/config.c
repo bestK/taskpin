@@ -27,7 +27,7 @@ void config_load(TaskPinConfig *cfg) {
     WCHAR color_buf[16];
     GetPrivateProfileStringW(kGlobal, L"font_color", L"FFFFFF", color_buf, 16, path);
     cfg->font_color = (COLORREF)wcstoul(color_buf, NULL, 16);
-    GetPrivateProfileStringW(kGlobal, L"bg_color", L"000000", color_buf, 16, path);
+    GetPrivateProfileStringW(kGlobal, L"bg_color", L"FFFFFFFF", color_buf, 16, path);
     cfg->bg_color = (COLORREF)wcstoul(color_buf, NULL, 16);
     cfg->scroll_enabled = GetPrivateProfileIntW(kGlobal, L"scroll_enabled", 1, path);
     cfg->log_level = GetPrivateProfileIntW(kGlobal, L"log_level", 0, path);
@@ -199,7 +199,7 @@ void config_save(const TaskPinConfig *cfg) {
     wsprintfW(tmp, L"%06X", cfg->font_color & 0xFFFFFF);
     WritePrivateProfileStringW(kGlobal, L"font_color", tmp, path);
 
-    wsprintfW(tmp, L"%06X", cfg->bg_color & 0xFFFFFF);
+    wsprintfW(tmp, L"%08X", (unsigned int)cfg->bg_color);
     WritePrivateProfileStringW(kGlobal, L"bg_color", tmp, path);
 
     wsprintfW(tmp, L"%d", cfg->scroll_enabled ? 1 : 0);
