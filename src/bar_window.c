@@ -432,6 +432,12 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
+        /* Hide input controls that weren't used this paint cycle */
+        for (int ii = bar->input_count; ii < MAX_BAR_INPUTS; ii++) {
+            if (bar->input_hwnds[ii])
+                ShowWindow(bar->input_hwnds[ii], SW_HIDE);
+        }
+
         EndPaint(hwnd, &ps);
 
         /* Auto-expand when buttons present */
