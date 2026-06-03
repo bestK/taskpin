@@ -850,20 +850,20 @@ void bars_create_all(void) {
         if (w <= 0) w = g_cfg.width;
         bar->configured_width = w;
 
+        /* Determine if this bar should be transparent */
+        COLORREF item_bg = g_cfg.items[i].bar_bg_color;
+        BOOL bar_transparent = (item_bg == 0xFFFFFFFF && g_cfg.bg_color == 0xFFFFFFFF);
+
         bar->hwnd = CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+            WS_EX_TOOLWINDOW | (bar_transparent ? WS_EX_LAYERED : 0),
             L"TaskPinBarClass", L"TaskPin",
             WS_POPUP,
             0, 0, w, 40,
             NULL, NULL, g_hinst, NULL);
         if (!bar->hwnd) continue;
 
-        /* Set transparency: if no bg color configured, use color key for true transparency */
-        COLORREF item_bg = g_cfg.items[i].bar_bg_color;
-        if (item_bg == 0xFFFFFFFF && g_cfg.bg_color == 0xFFFFFFFF) {
+        if (bar_transparent) {
             SetLayeredWindowAttributes(bar->hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
-        } else {
-            SetLayeredWindowAttributes(bar->hwnd, 0, 255, LWA_ALPHA);
         }
 
         SetWindowLongPtrW(bar->hwnd, GWLP_USERDATA, (LONG_PTR)bar);
