@@ -58,7 +58,7 @@
 typedef struct {
     RECT rect;
     char cmd[512];
-    char response[512];
+    char response[2048];
     COLORREF bg_color;
     COLORREF color;
     COLORREF hover_bg;

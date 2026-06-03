@@ -214,19 +214,8 @@ if status == "question" then
         for oi, opt in ipairs(q.options) do
             if oi > 1 then bar = bar .. font(" ", nil, 3) end
             local b = button(opt.label, nil, "#000000", "#1565C0", 7)
-            -- 构建 updatedInput 把选中答案注入
-            local answers = {}
-            answers[q.question] = opt.label
-            local updated_input = { questions = questions, answers = answers }
-            b.response = json.encode({
-                hookSpecificOutput = {
-                    hookEventName = "PermissionRequest",
-                    decision = {
-                        behavior = "allow",
-                        updatedInput = updated_input
-                    }
-                }
-            })
+            local resp = '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"answers":{"' .. q.question:gsub('"', '\\"') .. '":"' .. opt.label:gsub('"', '\\"') .. '"}}}}}'
+            b.response = resp
             bar = bar .. b
         end
     end
@@ -284,4 +273,4 @@ local info = dialog({
     content = dialog_content,
 })
 
-return bar, not is_permission, info
+return bar, (status ~= "permission" and status ~= "question"), (status ~= "question") and info or nil

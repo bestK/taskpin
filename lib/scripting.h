@@ -24,7 +24,7 @@ typedef struct {
     int src_x, src_y, src_w, src_h;  /* sprite sheet crop (0 = full) */
     BOOL is_button;      /* TRUE = clickable button with bg fill + border */
     char cmd[512];       /* shell command (when is_button) */
-    char response[512];  /* response content to write to event response_file */
+    char response[2048]; /* response content to write to event response_file */
     COLORREF bg_color;   /* button background color, 0xFFFFFFFF = default */
     COLORREF hover_bg;   /* button hover background, 0xFFFFFFFF = default */
     COLORREF hover_color;/* button hover text color, 0xFFFFFFFF = default */

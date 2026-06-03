@@ -608,7 +608,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_pop(ls, 1);
                 lua_getfield(ls, idx, "response");
                 const char *br = lua_tostring(ls, -1);
-                if (br) strncpy(sp->response, br, 511);
+                if (br) strncpy(sp->response, br, 2047);
                 lua_pop(ls, 1);
                 lua_getfield(ls, idx, "bg");
                 const char *bg = lua_tostring(ls, -1);
@@ -717,7 +717,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_pop(ls, 1);
                 lua_getfield(ls, -1, "response");
                 const char *br = lua_tostring(ls, -1);
-                if (br) strncpy(sp->response, br, 511);
+                if (br) strncpy(sp->response, br, 2047);
                 lua_pop(ls, 1);
                 lua_getfield(ls, -1, "bg");
                 const char *bg = lua_tostring(ls, -1);
