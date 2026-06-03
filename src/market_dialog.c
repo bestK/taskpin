@@ -416,3 +416,119 @@ void show_market_dialog(HWND parent) {
     DestroyWindow(hwnd);
     s_mkt = NULL;
 }
+
+void import_script_from_url(const WCHAR *url) {
+    char *content = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
+    if (!content) {
+        MessageBoxW(NULL, L"Failed to download script", L"TaskPin", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    /* Extract filename from URL */
+    const WCHAR *slash = wcsrchr(url, L'/');
+    WCHAR filename[256] = L"imported.lua";
+    if (slash) lstrcpynW(filename, slash + 1, 256);
+
+    /* Save to temp to parse metadata */
+    WCHAR tmp_path[MAX_PATH];
+    GetTempPathW(MAX_PATH, tmp_path);
+    lstrcatW(tmp_path, filename);
+    FILE *tf = _wfopen(tmp_path, L"wb");
+    if (tf) { fwrite(content, 1, strlen(content), tf); fclose(tf); }
+
+    /* Parse script info */
+    WCHAR parsed_name[CFG_MAX_NAME] = {0};
+    script_parse_name(tmp_path, parsed_name, CFG_MAX_NAME);
+    char version[32] = {0};
+    script_parse_version(tmp_path, version, sizeof(version));
+
+    /* Build confirm message */
+    WCHAR info[512];
+    wsprintfW(info, L"Name: %s\nFile: %s\nVersion: %S",
+        parsed_name[0] ? parsed_name : filename,
+        filename,
+        version[0] ? version : "unknown");
+
+    enum { BTN_INSTALL = 100, BTN_VIEW = 101, BTN_CANCEL = 102 };
+    TASKDIALOG_BUTTON buttons[] = {
+        { BTN_INSTALL, L"Install" },
+        { BTN_VIEW,    L"View Code" },
+        { BTN_CANCEL,  L"Cancel" },
+    };
+    TASKDIALOGCONFIG tdc = {0};
+    tdc.cbSize = sizeof(tdc);
+    tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
+    tdc.pszWindowTitle = L"TaskPin";
+    tdc.pszMainIcon = TD_INFORMATION_ICON;
+    tdc.pszMainInstruction = L"Install this script?";
+    tdc.pszContent = info;
+    tdc.cButtons = 3;
+    tdc.pButtons = buttons;
+    tdc.nDefaultButton = BTN_INSTALL;
+
+    int pressed = 0;
+    TaskDialogIndirect(&tdc, &pressed, NULL, NULL);
+
+    if (pressed == BTN_VIEW) {
+        ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+        DeleteFileW(tmp_path);
+        free(content);
+        return;
+    }
+    if (pressed != BTN_INSTALL) {
+        DeleteFileW(tmp_path);
+        free(content);
+        return;
+    }
+
+    /* Move to scripts/ directory */
+    WCHAR dir[MAX_PATH];
+    GetModuleFileNameW(NULL, dir, MAX_PATH);
+    WCHAR *ds = wcsrchr(dir, L'\\');
+    if (ds) *(ds + 1) = L'\0';
+    lstrcatW(dir, L"scripts");
+    CreateDirectoryW(dir, NULL);
+
+    WCHAR filepath[MAX_PATH];
+    wsprintfW(filepath, L"%s\\%s", dir, filename);
+
+    /* Check if file already exists */
+    if (GetFileAttributesW(filepath) != INVALID_FILE_ATTRIBUTES) {
+        WCHAR ow_msg[512];
+        wsprintfW(ow_msg, L"Script \"%s\" already exists. Overwrite?", filename);
+        int ow = MessageBoxW(NULL, ow_msg, L"TaskPin - Overwrite",
+            MB_YESNO | MB_ICONWARNING);
+        if (ow != IDYES) {
+            DeleteFileW(tmp_path);
+            free(content);
+            return;
+        }
+    }
+
+    MoveFileExW(tmp_path, filepath, MOVEFILE_REPLACE_EXISTING);
+
+    if (g_cfg.count < CFG_MAX_ITEMS) {
+        PinItem *it = &g_cfg.items[g_cfg.count];
+        memset(it, 0, sizeof(*it));
+        it->type = ITEM_TYPE_LUA;
+        lstrcpynW(it->lua_path, filepath, CFG_MAX_PATH);
+        if (parsed_name[0])
+            lstrcpynW(it->name, parsed_name, CFG_MAX_NAME);
+        else
+            lstrcpynW(it->name, filename, CFG_MAX_NAME);
+        int refresh = script_parse_refresh(filepath);
+        it->interval_ms = refresh > 0 ? (DWORD)refresh : 5000;
+        int bw = script_parse_bar_width(filepath);
+        if (bw > 0) it->bar_width = bw;
+        it->bar_x = -1;
+        it->bar_y = -1;
+        it->bar_bg_color = 0xFFFFFFFF;
+        it->pinned = TRUE;
+        g_cfg.count++;
+        config_save(&g_cfg);
+        bars_destroy_all();
+        bars_create_all();
+        listview_populate();
+    }
+    free(content);
+}

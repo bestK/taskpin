@@ -836,6 +836,34 @@ local home = sys.env("USERPROFILE")
 local path = sys.env("PATH")
 ```
 
+## sys.is_china()
+
+检测当前网络是否位于中国大陆（通过 ip.sb 接口判断）。结果在整个会话中缓存，只请求一次。
+
+**返回值**: boolean。
+
+```lua
+if sys.is_china() then
+    -- 使用代理地址
+end
+```
+
+## sys.gh_proxy(url)
+
+根据地区自动为 GitHub URL 添加代理前缀。如果不在中国则原样返回。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| url | string | GitHub 原始 URL |
+
+**返回值**: string，处理后的 URL。
+
+```lua
+local sprite = sys.gh_proxy("https://raw.githubusercontent.com/user/repo/master/img.png")
+-- 中国: "https://gh-proxy.com/https://raw.githubusercontent.com/..."
+-- 其他: "https://raw.githubusercontent.com/..."
+```
+
 ---
 
 ## 全局变量

@@ -574,6 +574,11 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             return TRUE;
         }
+        if (cds && cds->dwData == 0x5451) {
+            const WCHAR *url = (const WCHAR *)cds->lpData;
+            import_script_from_url(url);
+            return TRUE;
+        }
         break;
     }
 

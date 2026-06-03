@@ -127,5 +127,6 @@ void show_settings_dialog(HWND parent);
 
 /* market_dialog.c */
 void show_market_dialog(HWND parent);
+void import_script_from_url(const WCHAR *url);
 
 #endif

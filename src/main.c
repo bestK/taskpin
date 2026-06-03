@@ -19,9 +19,61 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     /* Logger: init early for --event mode, reinit after config_load */
     logger_init(LOG_OFF);
 
-    /* Handle --source/--event/--params: send to running instance and exit */
+    /* Register taskpin:// URL scheme */
+    {
+        WCHAR exe_path[MAX_PATH];
+        GetModuleFileNameW(NULL, exe_path, MAX_PATH);
+        WCHAR cmd_val[MAX_PATH + 16];
+        wsprintfW(cmd_val, L"\"%s\" \"%%1\"", exe_path);
+        HKEY hk;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\taskpin",
+                0, NULL, 0, KEY_WRITE, NULL, &hk, NULL) == ERROR_SUCCESS) {
+            const WCHAR *desc = L"URL:TaskPin Protocol";
+            RegSetValueExW(hk, NULL, 0, REG_SZ, (BYTE *)desc, (lstrlenW(desc) + 1) * sizeof(WCHAR));
+            RegSetValueExW(hk, L"URL Protocol", 0, REG_SZ, (BYTE *)L"", sizeof(WCHAR));
+            HKEY hk_cmd;
+            if (RegCreateKeyExW(hk, L"shell\\open\\command",
+                    0, NULL, 0, KEY_WRITE, NULL, &hk_cmd, NULL) == ERROR_SUCCESS) {
+                RegSetValueExW(hk_cmd, NULL, 0, REG_SZ, (BYTE *)cmd_val, (lstrlenW(cmd_val) + 1) * sizeof(WCHAR));
+                RegCloseKey(hk_cmd);
+            }
+            RegCloseKey(hk);
+        }
+    }
+
+    /* Handle taskpin:// URL invocation */
     int argc;
     LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    WCHAR import_url[1024] = {0};
+    if (argv) {
+        for (int i = 1; i < argc; i++) {
+            if (wcsncmp(argv[i], L"taskpin://install/", 18) == 0) {
+                lstrcpynW(import_url, argv[i] + 18, 1024);
+                break;
+            }
+        }
+    }
+
+    /* If we have an import URL and another instance is running, forward via IPC */
+    if (import_url[0]) {
+        HWND hTaskbar = FindWindowW(L"Shell_TrayWnd", NULL);
+        HWND target = NULL;
+        if (hTaskbar)
+            target = FindWindowExW(hTaskbar, NULL, L"TaskPinBarClass", NULL);
+        if (!target)
+            target = FindWindowW(L"TaskPinBarClass", NULL);
+        if (target) {
+            COPYDATASTRUCT cds;
+            cds.dwData = 0x5451; /* COPYDATA_IMPORT_ID */
+            cds.cbData = (DWORD)((lstrlenW(import_url) + 1) * sizeof(WCHAR));
+            cds.lpData = import_url;
+            SendMessageW(target, WM_COPYDATA, 0, (LPARAM)&cds);
+            if (argv) LocalFree(argv);
+            return 0;
+        }
+    }
+
+    /* Handle --source/--event/--params: send to running instance and exit */
     if (argv && argc >= 3) {
         const char *src = NULL, *evt = NULL, *params = NULL;
         char src_buf[EVENT_SOURCE_LEN] = {0};
@@ -176,6 +228,11 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     RegisterClassExW(&wc);
 
     bars_create_all();
+
+    /* Handle pending URL import (first-launch case) */
+    if (import_url[0]) {
+        import_script_from_url(import_url);
+    }
 
     HANDLE hUpd = CreateThread(NULL, 0, check_update_thread, NULL, 0, NULL);
     if (hUpd) CloseHandle(hUpd);

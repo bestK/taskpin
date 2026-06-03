@@ -932,6 +932,42 @@ static int l_sys_env(lua_State *ls) {
     return 1;
 }
 
+#include "httputil.h"
+
+static int s_china_checked = 0;
+static BOOL s_china_result = FALSE;
+
+static void ensure_china_check(void) {
+    if (s_china_checked) return;
+    char *resp = http_get_sync(L"https://api.ip.sb/geoip", NULL);
+    if (resp) {
+        s_china_result = (strstr(resp, "\"country_code\":\"CN\"") != NULL);
+        free(resp);
+    }
+    s_china_checked = 1;
+}
+
+static int l_sys_is_china(lua_State *ls) {
+    ensure_china_check();
+    lua_pushboolean(ls, s_china_result);
+    return 1;
+}
+
+static int l_sys_gh_proxy(lua_State *ls) {
+    const char *url = luaL_checkstring(ls, 1);
+    ensure_china_check();
+    if (s_china_result) {
+        size_t len = strlen(url) + 32;
+        char *buf = (char *)malloc(len);
+        snprintf(buf, len, "https://gh-proxy.com/%s", url);
+        lua_pushstring(ls, buf);
+        free(buf);
+    } else {
+        lua_pushstring(ls, url);
+    }
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -1026,5 +1062,9 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "monitor_rect");
     lua_pushcfunction(ls, l_sys_env);
     lua_setfield(ls, -2, "env");
+    lua_pushcfunction(ls, l_sys_is_china);
+    lua_setfield(ls, -2, "is_china");
+    lua_pushcfunction(ls, l_sys_gh_proxy);
+    lua_setfield(ls, -2, "gh_proxy");
     lua_setglobal(ls, "sys");
 }

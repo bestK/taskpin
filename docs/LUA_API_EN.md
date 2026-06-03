@@ -827,6 +827,34 @@ local home = sys.env("USERPROFILE")
 local path = sys.env("PATH")
 ```
 
+## sys.is_china()
+
+Detects whether the current network is located in mainland China (via ip.sb API). The result is cached for the entire session — only one request is made.
+
+**Returns**: boolean.
+
+```lua
+if sys.is_china() then
+    -- use proxy URL
+end
+```
+
+## sys.gh_proxy(url)
+
+Automatically prepends a proxy prefix to GitHub URLs when in China. Returns the URL unchanged otherwise.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| url | string | Original GitHub URL |
+
+**Returns**: string, the processed URL.
+
+```lua
+local sprite = sys.gh_proxy("https://raw.githubusercontent.com/user/repo/master/img.png")
+-- China: "https://gh-proxy.com/https://raw.githubusercontent.com/..."
+-- Other: "https://raw.githubusercontent.com/..."
+```
+
 ---
 
 ## Global Variables

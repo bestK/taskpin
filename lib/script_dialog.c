@@ -249,6 +249,8 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                     WS_CHILD | WS_VISIBLE | ES_READONLY | ES_AUTOHSCROLL,
                     text_x, y, ctrl_w, line_h,
                     hwnd, NULL, GetModuleHandle(NULL), NULL);
+                SetClassLongPtrW(hedit, GCLP_HCURSOR,
+                    (LONG_PTR)LoadCursor(NULL, IDC_ARROW));
                 if (ctrl_idx < DIALOG_MAX_ITEMS)
                     state->text_ctrls[ctrl_idx] = hedit;
             } else {
