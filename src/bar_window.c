@@ -290,6 +290,28 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         bb->hover_color = sp->hover_color;
                         bar->button_count++;
                     }
+                } else if (sp->is_input) {
+                    int ih = 22;
+                    int iy = (rc.bottom - ih) / 2;
+                    int iw = span_widths[i] > 0 ? span_widths[i] : 120;
+                    if (!bar->input_hwnd) {
+                        bar->input_hwnd = CreateWindowExW(0, L"EDIT", L"",
+                            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+                            draw_x, iy, iw, ih,
+                            hwnd, NULL, GetModuleHandle(NULL), NULL);
+                        HFONT hif = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+                        SendMessageW(bar->input_hwnd, WM_SETFONT, (WPARAM)hif, TRUE);
+                        if (sp->prompt[0]) {
+                            WCHAR wp[256];
+                            MultiByteToWideChar(CP_UTF8, 0, sp->prompt, -1, wp, 256);
+                            SendMessageW(bar->input_hwnd, EM_SETCUEBANNER, TRUE, (LPARAM)wp);
+                        }
+                    } else {
+                        MoveWindow(bar->input_hwnd, draw_x, iy, iw, ih, TRUE);
+                        ShowWindow(bar->input_hwnd, SW_SHOW);
+                    }
                 } else {
                     SetTextColor(hdc, clr);
                     TextOutW(hdc, draw_x, draw_y, sp->text, lstrlenW(sp->text));
@@ -477,8 +499,25 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         char resp_path[MAX_PATH];
                         event_get_response_file(resp_path, MAX_PATH);
                         if (resp_path[0]) {
-                            FILE *f = fopen(resp_path, "w");
-                            if (f) { fputs(bb->response, f); fclose(f); }
+                            /* Replace {input} with text from input control */
+                            char final_resp[4096];
+                            char *placeholder = strstr(bb->response, "{input}");
+                            if (placeholder && bar->input_hwnd) {
+                                WCHAR winput[512];
+                                GetWindowTextW(bar->input_hwnd, winput, 512);
+                                char input_utf8[1024];
+                                WideCharToMultiByte(CP_UTF8, 0, winput, -1, input_utf8, sizeof(input_utf8), NULL, NULL);
+                                int prefix_len = (int)(placeholder - bb->response);
+                                memcpy(final_resp, bb->response, prefix_len);
+                                int ilen = (int)strlen(input_utf8);
+                                memcpy(final_resp + prefix_len, input_utf8, ilen);
+                                strcpy(final_resp + prefix_len + ilen, placeholder + 7);
+                                FILE *f = fopen(resp_path, "w");
+                                if (f) { fputs(final_resp, f); fclose(f); }
+                            } else {
+                                FILE *f = fopen(resp_path, "w");
+                                if (f) { fputs(bb->response, f); fclose(f); }
+                            }
                         }
                     } else if (bb->cmd[0]) {
                         STARTUPINFOW si;
@@ -503,6 +542,10 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     bar->rich.count = 0;
                     bar->width_expanded = FALSE;
                     bar->script_result.clickable = FALSE;
+                    if (bar->input_hwnd) {
+                        DestroyWindow(bar->input_hwnd);
+                        bar->input_hwnd = NULL;
+                    }
                     /* Restore configured width and refresh immediately */
                     if (bar->configured_width > 0) {
                         int idx = bar->item_index;

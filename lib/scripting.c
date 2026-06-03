@@ -508,6 +508,29 @@ static int l_button(lua_State *ls) {
     return 1;
 }
 
+/* input(placeholder) -> span table with __is_input marker */
+static int l_input(lua_State *ls) {
+    const char *placeholder = "";
+    if (lua_gettop(ls) >= 1 && !lua_isnil(ls, 1))
+        placeholder = lua_tostring(ls, 1);
+
+    lua_newtable(ls);
+
+    lua_pushstring(ls, placeholder);
+    lua_setfield(ls, -2, "prompt");
+
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, -2, "__is_input");
+
+    lua_pushboolean(ls, 1);
+    lua_setfield(ls, -2, "__is_span");
+
+    luaL_getmetatable(ls, SPAN_MT);
+    lua_setmetatable(ls, -2);
+
+    return 1;
+}
+
 static void register_font_api(lua_State *ls) {
     /* Create span metatable */
     luaL_newmetatable(ls, SPAN_MT);
@@ -526,6 +549,10 @@ static void register_font_api(lua_State *ls) {
     /* Register global button() */
     lua_pushcfunction(ls, l_button);
     lua_setglobal(ls, "button");
+
+    /* Register global input() */
+    lua_pushcfunction(ls, l_input);
+    lua_setglobal(ls, "input");
 }
 
 static int parse_align_str(const char *s) {
@@ -635,6 +662,17 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);
+                lua_getfield(ls, idx, "__is_input");
+                if (lua_toboolean(ls, -1)) {
+                    sp->is_input = TRUE;
+                    lua_pop(ls, 1);
+                    lua_getfield(ls, idx, "prompt");
+                    const char *pr = lua_tostring(ls, -1);
+                    if (pr) strncpy(sp->prompt, pr, 255);
+                    lua_pop(ls, 1);
+                } else {
+                    lua_pop(ls, 1);
+                }
             }
             rich->count = 1;
         } else {
@@ -744,6 +782,17 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);
+                lua_getfield(ls, -1, "__is_input");
+                if (lua_toboolean(ls, -1)) {
+                    sp->is_input = TRUE;
+                    lua_pop(ls, 1);
+                    lua_getfield(ls, -1, "prompt");
+                    const char *pr = lua_tostring(ls, -1);
+                    if (pr) strncpy(sp->prompt, pr, 255);
+                    lua_pop(ls, 1);
+                } else {
+                    lua_pop(ls, 1);
+                }
             }
 
             rich->count++;

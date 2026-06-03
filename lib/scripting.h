@@ -23,8 +23,10 @@ typedef struct {
     int img_w, img_h;    /* requested display size */
     int src_x, src_y, src_w, src_h;  /* sprite sheet crop (0 = full) */
     BOOL is_button;      /* TRUE = clickable button with bg fill + border */
+    BOOL is_input;       /* TRUE = render as EDIT input field */
     char cmd[512];       /* shell command (when is_button) */
     char response[4096]; /* response content to write to event response_file */
+    char prompt[256];    /* placeholder text for input field */
     COLORREF bg_color;   /* button background color, 0xFFFFFFFF = default */
     COLORREF hover_bg;   /* button hover background, 0xFFFFFFFF = default */
     COLORREF hover_color;/* button hover text color, 0xFFFFFFFF = default */
