@@ -97,6 +97,9 @@ typedef struct {
     BOOL width_expanded;  /* TRUE while bar is auto-expanded for buttons */
     HWND input_hwnds[MAX_BAR_INPUTS];
     char input_names[MAX_BAR_INPUTS][256];
+    COLORREF input_bg[MAX_BAR_INPUTS];
+    COLORREF input_color[MAX_BAR_INPUTS];
+    COLORREF input_border[MAX_BAR_INPUTS];
     int input_count;
 } BarInstance;
 

@@ -28,7 +28,8 @@ typedef struct {
     char response[4096]; /* response content to write to event response_file */
     char prompt[256];    /* input name (used as {name} placeholder in response) */
     char placeholder[256]; /* input cue banner text */
-    COLORREF bg_color;   /* button background color, 0xFFFFFFFF = default */
+    int input_w, input_h; /* input field size (px), 0 = default */
+    COLORREF bg_color;   /* button/input background color, 0xFFFFFFFF = default */
     COLORREF hover_bg;   /* button hover background, 0xFFFFFFFF = default */
     COLORREF hover_color;/* button hover text color, 0xFFFFFFFF = default */
     COLORREF border_color;/* button border color, 0xFFFFFFFF = use text color */

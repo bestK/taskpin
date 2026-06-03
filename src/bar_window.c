@@ -292,15 +292,18 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         bar->button_count++;
                     }
                 } else if (sp->is_input) {
-                    int ih = 22;
+                    int ih = sp->input_h > 0 ? sp->input_h : 22;
                     int iy = (rc.bottom - ih) / 2;
-                    int iw = span_widths[i] > 0 ? span_widths[i] : 120;
+                    int iw = sp->input_w > 0 ? sp->input_w : (span_widths[i] > 0 ? span_widths[i] : 120);
                     int idx = bar->input_count;
                     if (idx < MAX_BAR_INPUTS) {
                         strncpy(bar->input_names[idx], sp->prompt, 255);
+                        bar->input_bg[idx] = (sp->bg_color != 0xFFFFFFFF) ? sp->bg_color : RGB(40, 40, 40);
+                        bar->input_color[idx] = (sp->color != 0xFFFFFFFF) ? sp->color : RGB(220, 220, 220);
+                        bar->input_border[idx] = (sp->border_color != 0xFFFFFFFF) ? sp->border_color : RGB(80, 80, 80);
                         if (!bar->input_hwnds[idx]) {
-                            bar->input_hwnds[idx] = CreateWindowExW(0, L"EDIT", L"",
-                                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+                            bar->input_hwnds[idx] = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                                WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                 draw_x, iy, iw, ih,
                                 hwnd, NULL, GetModuleHandle(NULL), NULL);
                             HFONT hif = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
@@ -716,6 +719,23 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
         return 0;
+
+    case WM_CTLCOLOREDIT: {
+        if (!bar) break;
+        HDC hdc_edit = (HDC)wp;
+        HWND hedit = (HWND)lp;
+        for (int ii = 0; ii < bar->input_count && ii < MAX_BAR_INPUTS; ii++) {
+            if (bar->input_hwnds[ii] == hedit) {
+                SetTextColor(hdc_edit, bar->input_color[ii]);
+                SetBkColor(hdc_edit, bar->input_bg[ii]);
+                static HBRUSH s_input_brushes[MAX_BAR_INPUTS] = {0};
+                if (s_input_brushes[ii]) DeleteObject(s_input_brushes[ii]);
+                s_input_brushes[ii] = CreateSolidBrush(bar->input_bg[ii]);
+                return (LRESULT)s_input_brushes[ii];
+            }
+        }
+        break;
+    }
 
     case WM_DESTROY:
         KillTimer(hwnd, IDT_REFRESH);
