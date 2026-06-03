@@ -100,15 +100,10 @@ else
 end
 
 local hud_w, hud_h = 320, 60
-local scr_w = sys.screen_width() or 1920
-local scr_h = sys.screen_height() or 1080
-local hud_x = math.floor((scr_w - hud_w) / 2)
-local hud_y = scr_h - hud_h - 80
 
 local hud = dialog({
     title = "Key Indicator",
     width = hud_w, height = hud_h,
-    x = hud_x, y = hud_y,
     refresh = 50,
     borderless = true,
     clickthrough = true,
