@@ -1129,7 +1129,7 @@ static int l_sys_gh_proxy(lua_State *ls) {
 /* ─── Keyboard state ─── */
 
 #define KEY_BUFFER_SIZE 256
-#define MAX_WATCH_KEYS 32
+#define MAX_WATCH_KEYS 64
 static volatile BYTE s_key_state[KEY_BUFFER_SIZE];
 static volatile BYTE s_key_triggered[KEY_BUFFER_SIZE];
 static int s_watch_keys[MAX_WATCH_KEYS];
