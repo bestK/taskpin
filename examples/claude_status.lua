@@ -251,8 +251,7 @@ if status == "question" then
                 bar = bar .. b
             end
             local other_btn = button(" Other ", nil, "#FFFFFF", "#555555", 7)
-            other_btn.keep_event = true
-            other_btn.set_var = "input_mode"
+            other_btn.state_set = '{"input_mode":"true"}'
             bar = bar .. other_btn
         end
     end

@@ -63,12 +63,13 @@ typedef struct {
     COLORREF color;
     COLORREF hover_bg;
     COLORREF hover_color;
-    BOOL keep_event;
-    char set_var[64];
+    char state_set[512];
 } BarButton;
 
 /* Bar instance (one per pinned item) */
 #define MAX_BARS 16
+#define MAX_BAR_STATE 8
+typedef struct { char key[64]; char value[256]; } BarStateEntry;
 
 typedef struct {
     HWND  hwnd;
@@ -77,7 +78,8 @@ typedef struct {
     int   param_count;
     ScriptResult result;
     BOOL  success;
-    char  active_var[64];
+    BarStateEntry state[MAX_BAR_STATE];
+    int state_count;
 } LuaContext;
 
 #define MAX_BAR_INPUTS 4
@@ -95,16 +97,17 @@ typedef struct {
     char last_response[FETCH_BUF_SIZE];
     BarButton buttons[MAX_BAR_BUTTONS];
     int button_count;
-    int hover_button;   /* index of hovered button, -1 = none */
-    int configured_width; /* original bar width from config */
-    BOOL width_expanded;  /* TRUE while bar is auto-expanded for buttons */
+    int hover_button;
+    int configured_width;
+    BOOL width_expanded;
     HWND input_hwnds[MAX_BAR_INPUTS];
     char input_names[MAX_BAR_INPUTS][256];
     COLORREF input_bg[MAX_BAR_INPUTS];
     COLORREF input_color[MAX_BAR_INPUTS];
     COLORREF input_border[MAX_BAR_INPUTS];
     int input_count;
-    char active_var[64];  /* variable name set by keep_event button click */
+    BarStateEntry state[MAX_BAR_STATE];
+    int state_count;
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];
