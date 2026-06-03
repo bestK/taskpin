@@ -113,7 +113,7 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | `"image"` | source, width, height, src_x, src_y, src_w, src_h | Standalone image block (supports sprite sheet cropping) |
 | `"hr"` | — | Horizontal separator |
 | `"table"` | columns, rows | Table (max 6 columns × 24 rows) |
-| `"button"` | value, cmd, url, color, bg, size | Clickable button |
+| `"button"` | value, cmd, url, color, bg_color, size | Clickable button |
 
 **Image + text example**:
 
@@ -135,9 +135,9 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 
 ```lua
 { type = "button", value = "Open Page", url = "https://example.com",
-  color = "#FFFFFF", bg = "#336699", size = 10 },
+  color = "#FFFFFF", bg_color = "#336699", size = 10 },
 { type = "button", value = "Run Command", cmd = "notepad.exe",
-  color = "#FFF", bg = "#444", size = 10 },
+  color = "#FFF", bg_color = "#444", size = 10 },
 ```
 
 ```lua
@@ -192,6 +192,34 @@ Creates a clickable button span for the taskbar or dialog. Clicking executes a c
 
 ```lua
 return font("Status: OK", "#0F0", 9) .. button("Open", "https://example.com", "#333", "#FFF", 9)
+```
+
+---
+
+## input(name, placeholder, width, height, bg_color, color, border_color)
+
+Creates a text input span for the taskbar. Works with buttons — use `{name}` in the button's response field to reference the input value.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| name | string | Input identifier (required), referenced as `{name}` in response |
+| placeholder | string\|nil | Placeholder hint text |
+| width | number\|nil | Width in px, default 120 |
+| height | number\|nil | Height in px, default 22 |
+| bg_color | string\|nil | Background color in `"#RRGGBB"` format |
+| color | string\|nil | Text color in `"#RRGGBB"` format |
+| border_color | string\|nil | Border color in `"#RRGGBB"` format |
+
+**Returns**: A span object. Use `..` to concatenate with other spans.
+
+In a button's response field, `{name}` is replaced with the input's text content (JSON-escaped) when clicked.
+
+```lua
+bar = font("Search: ", "#FFF", 9)
+    .. input("query", "Enter keyword...", 150, 22, "#222", "#FFF", "#555")
+    .. button(" Go ", nil, "#1565C0", "#FFF", 8)
+
+-- button's response field can reference {query}
 ```
 
 ---

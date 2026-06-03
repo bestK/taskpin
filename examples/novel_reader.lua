@@ -98,11 +98,11 @@ local info = dialog({
         { type = "text", value = text, color = "#EEEEEE", size = 11 },
         { type = "hr" },
         { type = "text", value = "进度: " .. percent .. "%", color = "#888888", size = 9 },
-        { type = "button", value = "<< 上一页", cmd = cmd_prev, bg = "#333333", color = "#4FC3F7" },
-        { type = "button", value = "跳到 25%", cmd = cmd_25, bg = "#333333", color = "#AAAAAA" },
-        { type = "button", value = "跳到 50%", cmd = cmd_50, bg = "#333333", color = "#AAAAAA" },
-        { type = "button", value = "跳到 75%", cmd = cmd_75, bg = "#333333", color = "#AAAAAA" },
-        { type = "button", value = "重置进度", cmd = cmd_reset, bg = "#333333", color = "#FF6666" },
+        { type = "button", value = "<< 上一页", cmd = cmd_prev, bg_color = "#333333", color = "#4FC3F7" },
+        { type = "button", value = "跳到 25%", cmd = cmd_25, bg_color = "#333333", color = "#AAAAAA" },
+        { type = "button", value = "跳到 50%", cmd = cmd_50, bg_color = "#333333", color = "#AAAAAA" },
+        { type = "button", value = "跳到 75%", cmd = cmd_75, bg_color = "#333333", color = "#AAAAAA" },
+        { type = "button", value = "重置进度", cmd = cmd_reset, bg_color = "#333333", color = "#FF6666" },
     }
 })
 

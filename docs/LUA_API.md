@@ -113,7 +113,7 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | `"image"` | source, width, height, src_x, src_y, src_w, src_h | 独立图片块（支持精灵表裁切） |
 | `"hr"` | — | 水平分隔线 |
 | `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
-| `"button"` | value, cmd, url, color, bg, size | 可点击按钮 |
+| `"button"` | value, cmd, url, color, bg_color, size | 可点击按钮 |
 
 **图文混排示例**：
 
@@ -135,9 +135,9 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 
 ```lua
 { type = "button", value = "打开网页", url = "https://example.com",
-  color = "#FFFFFF", bg = "#336699", size = 10 },
+  color = "#FFFFFF", bg_color = "#336699", size = 10 },
 { type = "button", value = "执行命令", cmd = "notepad.exe",
-  color = "#FFF", bg = "#444", size = 10 },
+  color = "#FFF", bg_color = "#444", size = 10 },
 ```
 
 ```lua
@@ -192,6 +192,34 @@ return font("Clock", "#FFF", 9), true, hud
 
 ```lua
 return font("Status: OK", "#0F0", 9) .. button("Open", "https://example.com", "#333", "#FFF", 9)
+```
+
+---
+
+## input(name, placeholder, width, height, bg_color, color, border_color)
+
+创建可输入文本框 span，用于任务栏中。配合 button 使用，按钮 response 中用 `{name}` 占位符引用输入框的值。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| name | string | 输入框标识名（必填），用于 response 中 `{name}` 绑定 |
+| placeholder | string\|nil | 占位提示文字 |
+| width | number\|nil | 宽度（px），默认 120 |
+| height | number\|nil | 高度（px），默认 22 |
+| bg_color | string\|nil | 背景色，格式 `"#RRGGBB"` |
+| color | string\|nil | 文字色，格式 `"#RRGGBB"` |
+| border_color | string\|nil | 边框色，格式 `"#RRGGBB"` |
+
+**返回值**: span 对象，支持 `..` 拼接。
+
+按钮的 response 字段中，`{name}` 会在点击时被替换为对应输入框的内容（自动 JSON 转义）。
+
+```lua
+bar = font("Search: ", "#FFF", 9)
+    .. input("query", "Enter keyword...", 150, 22, "#222", "#FFF", "#555")
+    .. button(" Go ", nil, "#1565C0", "#FFF", 8)
+
+-- button's response field can reference {query}
 ```
 
 ---

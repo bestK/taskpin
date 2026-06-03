@@ -282,13 +282,13 @@ if hook_installed then
     dialog_content[#dialog_content + 1] = {
         type = "button", value = "卸载 Hook",
         cmd = '"' .. exe_escaped .. '" --source claude-code --event uninstall-hook',
-        bg = "#333333", color = "#C62828", size = 10
+        bg_color = "#333333", color = "#C62828", size = 10
     }
 else
     dialog_content[#dialog_content + 1] = {
         type = "button", value = "安装 Hook",
         cmd = '"' .. exe_escaped .. '" --source claude-code --event install-hook',
-        bg = "#333333", color = "#2E7D32", size = 10
+        bg_color = "#333333", color = "#2E7D32", size = 10
     }
 end
 

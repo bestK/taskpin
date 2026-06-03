@@ -483,7 +483,7 @@ static int l_button(lua_State *ls) {
 
     if (bg_str) {
         lua_pushstring(ls, bg_str);
-        lua_setfield(ls, -2, "bg");
+        lua_setfield(ls, -2, "bg_color");
     }
 
     if (color_str) {
@@ -533,7 +533,7 @@ static int l_input(lua_State *ls) {
     }
     if (lua_gettop(ls) >= 5 && !lua_isnil(ls, 5)) {
         lua_pushstring(ls, lua_tostring(ls, 5));
-        lua_setfield(ls, -2, "bg");
+        lua_setfield(ls, -2, "bg_color");
     }
     if (lua_gettop(ls) >= 6 && !lua_isnil(ls, 6)) {
         lua_pushstring(ls, lua_tostring(ls, 6));
@@ -541,7 +541,7 @@ static int l_input(lua_State *ls) {
     }
     if (lua_gettop(ls) >= 7 && !lua_isnil(ls, 7)) {
         lua_pushstring(ls, lua_tostring(ls, 7));
-        lua_setfield(ls, -2, "border");
+        lua_setfield(ls, -2, "border_color");
     }
 
     lua_pushboolean(ls, 1);
@@ -662,7 +662,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 const char *br = lua_tostring(ls, -1);
                 if (br) strncpy(sp->response, br, 4095);
                 lua_pop(ls, 1);
-                lua_getfield(ls, idx, "bg");
+                lua_getfield(ls, idx, "bg_color");
                 const char *bg = lua_tostring(ls, -1);
                 if (bg) sp->bg_color = parse_color_str(bg);
                 else sp->bg_color = 0xFFFFFFFF;
@@ -705,7 +705,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                     lua_getfield(ls, idx, "height");
                     if (!lua_isnil(ls, -1)) sp->input_h = (int)lua_tointeger(ls, -1);
                     lua_pop(ls, 1);
-                    lua_getfield(ls, idx, "bg");
+                    lua_getfield(ls, idx, "bg_color");
                     const char *bg = lua_tostring(ls, -1);
                     if (bg) sp->bg_color = parse_color_str(bg);
                     lua_pop(ls, 1);
@@ -713,7 +713,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                     const char *clr = lua_tostring(ls, -1);
                     if (clr) sp->color = parse_color_str(clr);
                     lua_pop(ls, 1);
-                    lua_getfield(ls, idx, "border");
+                    lua_getfield(ls, idx, "border_color");
                     const char *bdr = lua_tostring(ls, -1);
                     if (bdr) sp->border_color = parse_color_str(bdr);
                     lua_pop(ls, 1);
@@ -804,7 +804,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 const char *br = lua_tostring(ls, -1);
                 if (br) strncpy(sp->response, br, 4095);
                 lua_pop(ls, 1);
-                lua_getfield(ls, -1, "bg");
+                lua_getfield(ls, -1, "bg_color");
                 const char *bg = lua_tostring(ls, -1);
                 if (bg) sp->bg_color = parse_color_str(bg);
                 else sp->bg_color = 0xFFFFFFFF;
@@ -847,7 +847,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                     lua_getfield(ls, -1, "height");
                     if (!lua_isnil(ls, -1)) sp->input_h = (int)lua_tointeger(ls, -1);
                     lua_pop(ls, 1);
-                    lua_getfield(ls, -1, "bg");
+                    lua_getfield(ls, -1, "bg_color");
                     const char *bg = lua_tostring(ls, -1);
                     if (bg) sp->bg_color = parse_color_str(bg);
                     lua_pop(ls, 1);
@@ -855,7 +855,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                     const char *clr = lua_tostring(ls, -1);
                     if (clr) sp->color = parse_color_str(clr);
                     lua_pop(ls, 1);
-                    lua_getfield(ls, -1, "border");
+                    lua_getfield(ls, -1, "border_color");
                     const char *bdr = lua_tostring(ls, -1);
                     if (bdr) sp->border_color = parse_color_str(bdr);
                     lua_pop(ls, 1);
@@ -1084,7 +1084,7 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             const char *c = lua_tostring(ls, -1);
             if (c) item->color = parse_color_str(c);
             lua_pop(ls, 1);
-            lua_getfield(ls, -1, "bg");
+            lua_getfield(ls, -1, "bg_color");
             const char *bg = lua_tostring(ls, -1);
             if (bg) item->bg_color = parse_color_str(bg);
             lua_pop(ls, 1);
