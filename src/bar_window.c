@@ -441,7 +441,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         EndPaint(hwnd, &ps);
 
         /* Auto-expand when buttons present */
-        if (bar->button_count > 0 && !bar->width_expanded) {
+        if ((bar->button_count > 0 || bar->input_count > 0) && !bar->width_expanded) {
             int needed = bar->text_width + 16;
             RECT wr;
             GetWindowRect(hwnd, &wr);
