@@ -301,7 +301,7 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
                 int text_cols = item->col_count;
                 int btn_w_px = 0;
-                if (item->row_urls[r][0] || item->row_cmds[r][0]) {
+                if (item->row_urls[r][0] || item->row_cmds[r][0] || item->row_luas[r][0]) {
                     btn_w_px = 50;
                     text_cols = item->col_count;
                 }
@@ -313,17 +313,23 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                 }
 
                 /* Row action button */
-                if ((item->row_urls[r][0] || item->row_cmds[r][0]) && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
+                if ((item->row_urls[r][0] || item->row_cmds[r][0] || item->row_luas[r][0]) && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
                     int btn_id = DLG_TBL_BTN_BASE_ID + state->tbl_button_count;
                     int bx = client_w - PADDING_X - btn_w_px;
+                    WCHAR btn_label[32];
+                    if (item->row_btn_text[r][0])
+                        lstrcpynW(btn_label, item->row_btn_text[r], 32);
+                    else
+                        btn_label[0] = L'\0';
                     HWND hbtn = state->tbl_buttons[state->tbl_button_count];
                     if (!hbtn) {
-                        hbtn = CreateWindowExW(WS_EX_TRANSPARENT, L"BUTTON", L"Open",
+                        hbtn = CreateWindowExW(WS_EX_TRANSPARENT, L"BUTTON", btn_label,
                             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                             bx, y, btn_w_px, row_h,
                             hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
                         state->tbl_buttons[state->tbl_button_count] = hbtn;
                     } else {
+                        SetWindowTextW(hbtn, btn_label);
                         MoveWindow(hbtn, bx, y, btn_w_px, row_h, TRUE);
                     }
                     state->tbl_button_count++;
@@ -495,10 +501,12 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             FillRect(dis->hDC, &dis->rcItem, hbr);
             DeleteObject(hbr);
             SetBkMode(dis->hDC, TRANSPARENT);
+            WCHAR btn_text[32];
+            GetWindowTextW(dis->hwndItem, btn_text, 32);
             SetTextColor(dis->hDC, RGB(100, 180, 255));
             HFONT hf = create_dialog_font(9, FALSE);
             HFONT old = (HFONT)SelectObject(dis->hDC, hf);
-            DrawTextW(dis->hDC, L"Open", -1, &dis->rcItem, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+            DrawTextW(dis->hDC, btn_text, -1, &dis->rcItem, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
             SelectObject(dis->hDC, old);
             DeleteObject(hf);
             return TRUE;
@@ -561,7 +569,14 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             for (int i = 0; i < state->spec.item_count; i++) {
                 if (state->spec.items[i].type == DI_BUTTON) {
                     if (btn_count == btn_idx) {
-                        if (state->spec.items[i].url[0]) {
+                        if (state->spec.items[i].lua_code[0]) {
+                            ScriptResult *sr = (ScriptResult *)HeapAlloc(
+                                GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
+                            if (sr) {
+                                script_exec(state->spec.items[i].lua_code, NULL, sr);
+                                HeapFree(GetProcessHeap(), 0, sr);
+                            }
+                        } else if (state->spec.items[i].url[0]) {
                             WCHAR wurl[512];
                             MultiByteToWideChar(CP_UTF8, 0, state->spec.items[i].url, -1, wurl, 512);
                             ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
@@ -591,9 +606,16 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 if (state->spec.items[i].type != DI_TABLE) continue;
                 DialogItem *tbl = &state->spec.items[i];
                 for (int r = 0; r < tbl->row_count; r++) {
-                    if (tbl->row_urls[r][0] || tbl->row_cmds[r][0]) {
+                    if (tbl->row_urls[r][0] || tbl->row_cmds[r][0] || tbl->row_luas[r][0]) {
                         if (tbl_count == tbl_idx) {
-                            if (tbl->row_urls[r][0]) {
+                            if (tbl->row_luas[r][0]) {
+                                ScriptResult *sr = (ScriptResult *)HeapAlloc(
+                                    GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
+                                if (sr) {
+                                    script_exec(tbl->row_luas[r], NULL, sr);
+                                    HeapFree(GetProcessHeap(), 0, sr);
+                                }
+                            } else if (tbl->row_urls[r][0]) {
                                 WCHAR wurl[256];
                                 MultiByteToWideChar(CP_UTF8, 0, tbl->row_urls[r], -1, wurl, 256);
                                 ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);

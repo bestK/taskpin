@@ -236,11 +236,160 @@ static int l_sys_net_speed(lua_State *ls) {
     return 1;
 }
 
+/* ─── Top processes by CPU / memory ─── */
+
+#include <psapi.h>
+
+#define TOP_PROC_MAX 128
+
+typedef struct {
+    DWORD pid;
+    ULONGLONG kernel_time;
+    ULONGLONG user_time;
+} TopProcSnap;
+
+static TopProcSnap s_tp_prev[TOP_PROC_MAX];
+static int s_tp_prev_count = 0;
+static DWORD s_tp_prev_tick = 0;
+
+static int l_sys_top_processes(lua_State *ls) {
+    const char *mode = luaL_optstring(ls, 1, "cpu");
+    int limit = (int)luaL_optinteger(ls, 2, 15);
+    if (limit < 1) limit = 1;
+    if (limit > TOP_PROC_MAX) limit = TOP_PROC_MAX;
+
+    int mode_mem = (strcmp(mode, "mem") == 0);
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) { lua_newtable(ls); return 1; }
+
+    DWORD now = GetTickCount();
+    DWORD dt = (s_tp_prev_tick > 0) ? (now - s_tp_prev_tick) : 0;
+
+    typedef struct {
+        DWORD pid;
+        char name[256];
+        char path[MAX_PATH];
+        double cpu_pct;
+        ULONGLONG mem_bytes;
+        ULONGLONG kernel_time;
+        ULONGLONG user_time;
+    } ProcInfo;
+
+    ProcInfo *infos = (ProcInfo *)calloc(TOP_PROC_MAX * 4, sizeof(ProcInfo));
+    if (!infos) { CloseHandle(snap); lua_newtable(ls); return 1; }
+    int count = 0;
+
+    PROCESSENTRY32W pe = { .dwSize = sizeof(pe) };
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (pe.th32ProcessID == 0) continue;
+            if (count >= TOP_PROC_MAX * 4) break;
+            HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, pe.th32ProcessID);
+            if (!hProc) continue;
+
+            PROCESS_MEMORY_COUNTERS pmc = {0};
+            pmc.cb = sizeof(pmc);
+            FILETIME ft_create = {0}, ft_exit = {0}, ft_kernel = {0}, ft_user = {0};
+            ULONGLONG kt = 0, ut = 0, mem_b = 0;
+
+            if (GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
+                mem_b = pmc.WorkingSetSize;
+            }
+            if (GetProcessTimes(hProc, &ft_create, &ft_exit, &ft_kernel, &ft_user)) {
+                kt = ft_to_u64(ft_kernel);
+                ut = ft_to_u64(ft_user);
+            }
+
+            /* Get full path */
+            WCHAR wfull[MAX_PATH];
+            DWORD path_size = MAX_PATH;
+            char path8[MAX_PATH] = "";
+            if (QueryFullProcessImageNameW(hProc, 0, wfull, &path_size)) {
+                WideCharToMultiByte(CP_UTF8, 0, wfull, -1, path8, MAX_PATH, NULL, NULL);
+            }
+
+            CloseHandle(hProc);
+
+            double cpu_pct = 0;
+            if (dt > 0) {
+                for (int j = 0; j < s_tp_prev_count; j++) {
+                    if (s_tp_prev[j].pid == pe.th32ProcessID) {
+                        ULONGLONG d_total = (kt - s_tp_prev[j].kernel_time) + (ut - s_tp_prev[j].user_time);
+                        cpu_pct = (double)d_total / ((double)dt * 10000.0);
+                        if (cpu_pct < 0) cpu_pct = 0;
+                        if (cpu_pct > 100) cpu_pct = 100;
+                        break;
+                    }
+                }
+            }
+
+            ProcInfo *pi = &infos[count];
+            pi->pid = pe.th32ProcessID;
+            WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1, pi->name, sizeof(pi->name), NULL, NULL);
+            pi->name[sizeof(pi->name) - 1] = '\0';
+            strncpy(pi->path, path8, MAX_PATH - 1);
+            pi->path[MAX_PATH - 1] = '\0';
+            pi->cpu_pct = cpu_pct;
+            pi->mem_bytes = mem_b;
+            pi->kernel_time = kt;
+            pi->user_time = ut;
+            count++;
+            if (count >= TOP_PROC_MAX * 4) break;
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+
+    /* Save snapshot for next delta */
+    s_tp_prev_count = 0;
+    for (int i = 0; i < count && s_tp_prev_count < TOP_PROC_MAX; i++) {
+        s_tp_prev[s_tp_prev_count].pid = infos[i].pid;
+        s_tp_prev[s_tp_prev_count].kernel_time = infos[i].kernel_time;
+        s_tp_prev[s_tp_prev_count].user_time = infos[i].user_time;
+        s_tp_prev_count++;
+    }
+    s_tp_prev_tick = now;
+
+    /* Sort */
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
+            int swap = 0;
+            if (mode_mem) {
+                if (infos[j].mem_bytes > infos[i].mem_bytes) swap = 1;
+            } else {
+                if (infos[j].cpu_pct > infos[i].cpu_pct) swap = 1;
+                else if (infos[j].cpu_pct == infos[i].cpu_pct && infos[j].mem_bytes > infos[i].mem_bytes) swap = 1;
+            }
+            if (swap) { ProcInfo tmp = infos[i]; infos[i] = infos[j]; infos[j] = tmp; }
+        }
+    }
+
+    /* Push top N to Lua */
+    lua_newtable(ls);
+    int n = (count < limit) ? count : limit;
+    for (int i = 0; i < n; i++) {
+        lua_newtable(ls);
+        lua_pushinteger(ls, (lua_Integer)infos[i].pid);
+        lua_setfield(ls, -2, "pid");
+        lua_pushstring(ls, infos[i].name);
+        lua_setfield(ls, -2, "name");
+        lua_pushstring(ls, infos[i].path);
+        lua_setfield(ls, -2, "path");
+        lua_pushnumber(ls, infos[i].cpu_pct);
+        lua_setfield(ls, -2, "cpu");
+        lua_pushinteger(ls, (lua_Integer)(infos[i].mem_bytes / (1024 * 1024)));
+        lua_setfield(ls, -2, "mem_mb");
+        lua_rawseti(ls, -2, i + 1);
+    }
+
+    free(infos);
+    return 1;
+}
+
 /* ─── Per-process network connections + IO speed ─── */
 
 #include <tcpmib.h>
 #include <winsock2.h>
-#include <psapi.h>
 
 #define NET_PROC_MAX 128
 
@@ -307,11 +456,13 @@ static int l_sys_net_processes(lua_State *ls) {
         HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
         if (!hProc) continue;
 
-        /* Get process name */
+        /* Get process name and full path */
         WCHAR wname[MAX_PATH];
         DWORD name_size = MAX_PATH;
         char name8[MAX_PATH];
+        char path8[MAX_PATH] = "";
         if (QueryFullProcessImageNameW(hProc, 0, wname, &name_size)) {
+            WideCharToMultiByte(CP_UTF8, 0, wname, -1, path8, MAX_PATH, NULL, NULL);
             WCHAR *slash = wcsrchr(wname, L'\\');
             WCHAR *base = slash ? slash + 1 : wname;
             WideCharToMultiByte(CP_UTF8, 0, base, -1, name8, MAX_PATH, NULL, NULL);
@@ -356,6 +507,8 @@ static int l_sys_net_processes(lua_State *ls) {
         lua_setfield(ls, -2, "pid");
         lua_pushstring(ls, name8);
         lua_setfield(ls, -2, "name");
+        lua_pushstring(ls, path8);
+        lua_setfield(ls, -2, "path");
         lua_pushinteger(ls, pids[i].conns);
         lua_setfield(ls, -2, "connections");
         lua_pushnumber(ls, read_speed);
@@ -703,11 +856,16 @@ static int l_sys_notify(lua_State *ls) {
     nid.cbSize = sizeof(nid);
     nid.hWnd = FindWindowW(L"TaskPinBarClass", NULL);
     nid.uID = 9999;
-    nid.uFlags = NIF_INFO;
+    nid.uFlags = NIF_INFO | NIF_ICON;
     nid.dwInfoFlags = NIIF_INFO;
+    nid.hIcon = LoadIcon(NULL, IDI_INFORMATION);
     MultiByteToWideChar(CP_UTF8, 0, title, -1, nid.szInfoTitle, 64);
     MultiByteToWideChar(CP_UTF8, 0, msg, -1, nid.szInfo, 256);
-    Shell_NotifyIconW(NIM_MODIFY, &nid);
+    if (!Shell_NotifyIconW(NIM_MODIFY, &nid)) {
+        nid.uFlags |= NIF_TIP;
+        lstrcpynW(nid.szTip, L"TaskPin", 64);
+        Shell_NotifyIconW(NIM_ADD, &nid);
+    }
     lua_pushboolean(ls, 1);
     return 1;
 }
@@ -992,6 +1150,8 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "net_speed");
     lua_pushcfunction(ls, l_sys_net_processes);
     lua_setfield(ls, -2, "net_processes");
+    lua_pushcfunction(ls, l_sys_top_processes);
+    lua_setfield(ls, -2, "top_processes");
     lua_pushcfunction(ls, l_sys_file_mtime);
     lua_setfield(ls, -2, "file_mtime");
     lua_pushcfunction(ls, l_sys_find_newest);

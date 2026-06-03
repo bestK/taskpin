@@ -7,7 +7,7 @@
 local file_path = args.FILE or ""
 local chars_per_page = tonumber(args.CHARS) or 20
 
-log("novel_reader: FILE=" .. file_path)
+log.info("novel_reader: FILE=" .. file_path)
 
 if file_path == "" then
     return font("[请配置小说路径]", "#FF3333", 9), false
@@ -34,7 +34,7 @@ end
 -- 读取小说内容
 local content = sys.read_file(file_path)
 if not content or #content == 0 then
-    log("novel_reader: 读取失败或为空", file_path)
+    log.error("novel_reader: 读取失败或为空", file_path)
     return font("[文件为空或不存在]", "#FF3333", 9), false
 end
 

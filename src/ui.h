@@ -24,6 +24,7 @@
 #define IDT_SCROLL         2
 #define IDT_BORDER         3
 #define IDT_ANIM           4
+#define IDT_RESTORE_WIDTH  5
 #define SCROLL_SPEED       2
 #define SCROLL_INTERVAL    50
 #define ANIM_INTERVAL      80
@@ -109,6 +110,8 @@ typedef struct {
     int input_count;
     BarStateEntry state[MAX_BAR_STATE];
     int state_count;
+    BOOL btn_click_consumed;
+    BOOL has_interactive;
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

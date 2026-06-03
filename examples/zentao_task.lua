@@ -21,20 +21,20 @@ end
 
 local function get_tasks()
     local r = http.get(BASE_URL .. "/my-task-assignedTo.json")
-    if not r then log("禅道: 请求失败"); return {} end
-    log("禅道: 原始响应长度", #r)
+    if not r then log.error("禅道: 请求失败"); return {} end
+    log.debug("禅道: 原始响应长度", #r)
     local outer = json.decode(r)
-    if not outer then log("禅道: JSON解析失败"); return {} end
-    if not outer.data then log("禅道: 无data字段"); return {} end
-    log("禅道: data内容", outer.data:sub(1, 500))
+    if not outer then log.error("禅道: JSON解析失败"); return {} end
+    if not outer.data then log.error("禅道: 无data字段"); return {} end
+    log.debug("禅道: data内容", outer.data:sub(1, 500))
     local data = json.decode(outer.data)
-    if not data then log("禅道: data解析失败"); return {} end
+    if not data then log.error("禅道: data解析失败"); return {} end
     if not data.tasks then
-        log("禅道: 无tasks字段, 可用字段:")
-        for k, _ in pairs(data) do log("  ", k) end
+        log.error("禅道: 无tasks字段, 可用字段:")
+        for k, _ in pairs(data) do log.debug("  ", k) end
         return {}
     end
-    log("禅道: tasks类型", type(data.tasks))
+    log.debug("禅道: tasks类型", type(data.tasks))
     return data.tasks
 end
 
@@ -43,16 +43,16 @@ if ACCOUNT == "" then
 end
 
 if not login() then
-    log("禅道: 登录失败", ACCOUNT)
+    log.error("禅道: 登录失败", ACCOUNT)
     return font("[登录失败]", "#FF3333", 9), false
 end
-log("禅道: 登录成功", ACCOUNT)
+log.info("禅道: 登录成功", ACCOUNT)
 
 local tasks = get_tasks()
 local active = {}
 for k, t in pairs(tasks) do
     if type(t) == "table" then
-        log("禅道: 任务", k, t.name or "?", "status=" .. (t.status or "nil"))
+        log.debug("禅道: 任务", k, t.name or "?", "status=" .. (t.status or "nil"))
         if t.status and not DONE[t.status] then
             active[#active + 1] = t
         end
@@ -60,9 +60,9 @@ for k, t in pairs(tasks) do
 end
 
 local count = #active
-log("禅道: 获取到 " .. count .. " 个待办任务")
+log.info("禅道: 获取到 " .. count .. " 个待办任务")
 for _, t in ipairs(active) do
-    log("  [P" .. (t.pri or "?") .. "] " .. (t.name or "未命名") .. " (" .. (t.status or "") .. ")")
+    log.debug("  [P" .. (t.pri or "?") .. "] " .. (t.name or "未命名") .. " (" .. (t.status or "") .. ")")
 end
 local color = count == 0 and "#33CC33" or "#FFAA00"
 local bar = font("禅道(" .. count .. ")", color, 9)
@@ -84,7 +84,7 @@ else
         if #name > 24 then name = name:sub(1, 24) .. ".." end
         local status = t.status or ""
         local task_url = BASE_URL .. "/task-view-" .. (t.id or "0") .. ".html"
-        rows[#rows + 1] = { pri, name, status, url = task_url }
+        rows[#rows + 1] = { pri, name, status, url = task_url, btn_text = "Open" }
     end
     content[#content + 1] = {
         type = "table",

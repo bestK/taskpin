@@ -68,13 +68,16 @@ typedef struct {
     COLORREF row_colors[DIALOG_MAX_ROWS];
     char row_urls[DIALOG_MAX_ROWS][256];
     char row_cmds[DIALOG_MAX_ROWS][256];
+    char row_luas[DIALOG_MAX_ROWS][256];
+    WCHAR row_btn_text[DIALOG_MAX_ROWS][32];
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int img_w, img_h;
     int src_x, src_y, src_w, src_h;  /* sprite sheet crop region (0 = use full image) */
-    /* button/link url or command */
+    /* button/link url or command or lua code */
     char url[512];
     char cmd[512];
+    char lua_code[512];
 } DialogItem;
 
 typedef struct {

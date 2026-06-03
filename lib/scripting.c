@@ -2,6 +2,7 @@
 #include "sysinfo.h"
 #include "image.h"
 #include "event.h"
+#include "logger.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -249,7 +250,7 @@ static int l_http_delete(lua_State *ls) { return http_request(ls, L"DELETE"); }
 
 /* ─── log() for Lua ─── */
 
-static int l_log(lua_State *ls) {
+static void lua_log_with_level(lua_State *ls, int level) {
     int n = lua_gettop(ls);
     luaL_Buffer buf;
     luaL_buffinit(ls, &buf);
@@ -261,10 +262,31 @@ static int l_log(lua_State *ls) {
     }
     luaL_pushresult(&buf);
     const char *msg = lua_tostring(ls, -1);
-    script_log_write(msg);
+
+    /* Get caller info from lua debug */
+    lua_Debug ar;
+    const char *src = "?";
+    int line = 0;
+    if (lua_getstack(ls, 1, &ar)) {
+        lua_getinfo(ls, "Sl", &ar);
+        if (ar.source && ar.source[0] == '@') src = ar.source + 1;
+        else if (ar.source) src = ar.source;
+        line = ar.currentline;
+    }
+    /* Extract basename */
+    const char *basename = src;
+    const char *p = src;
+    while (*p) { if (*p == '\\' || *p == '/') basename = p + 1; p++; }
+
+    logger_write_impl(level, basename, line, NULL, "%s", msg);
     lua_pop(ls, 1);
-    return 0;
 }
+
+static int l_log_info(lua_State *ls) { lua_log_with_level(ls, LOG_INFO); return 0; }
+static int l_log_debug(lua_State *ls) { lua_log_with_level(ls, LOG_DEBUG); return 0; }
+static int l_log_error(lua_State *ls) { lua_log_with_level(ls, LOG_ERROR); return 0; }
+
+static int l_log(lua_State *ls) { lua_remove(ls, 1); lua_log_with_level(ls, LOG_INFO); return 0; }
 
 /* ─── init / shutdown ─── */
 
@@ -1051,6 +1073,14 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
                         const char *rcmd = lua_tostring(ls, -1);
                         if (rcmd) strncpy(item->row_cmds[r-1], rcmd, 255);
                         lua_pop(ls, 1);
+                        lua_getfield(ls, -1, "lua");
+                        const char *rlua = lua_tostring(ls, -1);
+                        if (rlua) strncpy(item->row_luas[r-1], rlua, 255);
+                        lua_pop(ls, 1);
+                        lua_getfield(ls, -1, "btn_text");
+                        const char *rbt = lua_tostring(ls, -1);
+                        if (rbt) MultiByteToWideChar(CP_UTF8, 0, rbt, -1, item->row_btn_text[r-1], 32);
+                        lua_pop(ls, 1);
                     }
                     lua_pop(ls, 1);
                 }
@@ -1095,6 +1125,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "cmd");
             const char *cmd = lua_tostring(ls, -1);
             if (cmd) strncpy(item->cmd, cmd, 511);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "lua");
+            const char *lcode = lua_tostring(ls, -1);
+            if (lcode) strncpy(item->lua_code, lcode, 511);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "color");
             const char *c = lua_tostring(ls, -1);
@@ -1162,8 +1196,19 @@ void script_init(void) {
     lua_pushcfunction(L, l_dialog);
     lua_setglobal(L, "dialog");
 
-    /* Register log() */
+    /* Register log table: log.info(), log.debug(), log.error(), log() */
+    lua_newtable(L);
+    lua_pushcfunction(L, l_log_info);
+    lua_setfield(L, -2, "info");
+    lua_pushcfunction(L, l_log_debug);
+    lua_setfield(L, -2, "debug");
+    lua_pushcfunction(L, l_log_error);
+    lua_setfield(L, -2, "error");
+    /* Allow log(...) as shorthand for log.info(...) via __call */
+    lua_newtable(L);
     lua_pushcfunction(L, l_log);
+    lua_setfield(L, -2, "__call");
+    lua_setmetatable(L, -2);
     lua_setglobal(L, "log");
 
     /* Register sys.* system info API */

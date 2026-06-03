@@ -237,6 +237,12 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
 
             int margin = 8;
+            int has_interactive = 0;
+            for (int i = 0; i < bar->rich.count; i++) {
+                if (bar->rich.spans[i].is_input || bar->rich.spans[i].is_button) { has_interactive = 1; break; }
+            }
+            bar->has_interactive = has_interactive;
+            if (has_interactive) bar->scroll_offset = 0;
             int left_x[2] = { margin - bar->scroll_offset, margin };
             int right_x[2] = { rc.right - margin, rc.right - margin };
             cur_line = 0;
@@ -411,6 +417,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             bar->text_width = left_total[0];
         } else {
+            bar->has_interactive = FALSE;
             SetTextColor(hdc, g_cfg.font_color);
             SelectObject(hdc, g_font);
             SIZE sz;
@@ -465,7 +472,16 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (!bar) break;
         if (wp == IDT_REFRESH) start_fetch(bar);
         if (wp == IDT_ANIM) InvalidateRect(hwnd, NULL, FALSE);
-        if (wp == IDT_SCROLL && g_cfg.scroll_enabled) {
+        if (wp == IDT_RESTORE_WIDTH) {
+            KillTimer(hwnd, IDT_RESTORE_WIDTH);
+            if (bar->configured_width > 0 && !bar->width_expanded) {
+                int idx = bar->item_index;
+                int px = (idx >= 0) ? g_cfg.items[idx].bar_x : -1;
+                int py = (idx >= 0) ? g_cfg.items[idx].bar_y : -1;
+                appbar_embed(hwnd, bar->configured_width, px, py);
+            }
+        }
+        if (wp == IDT_SCROLL && g_cfg.scroll_enabled && !bar->has_interactive && !bar->width_expanded) {
             RECT rc;
             GetClientRect(hwnd, &rc);
             int avail = rc.right - rc.left - 12;
@@ -655,6 +671,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         if (bb->patch_global[0])
                             patch_state(bb->patch_global, g_global_state, &g_global_state_count, MAX_BAR_STATE);
                         start_fetch(bar);
+                        bar->btn_click_consumed = TRUE;
                         return 0;
                     }
                     event_clear();
@@ -673,14 +690,13 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         }
                         bar->input_count = 0;
                     }
-                    /* Restore configured width and refresh immediately */
+                    /* Delay width restore to prevent click-through */
                     if (bar->configured_width > 0) {
-                        int idx = bar->item_index;
-                        int px = (idx >= 0) ? g_cfg.items[idx].bar_x : -1;
-                        int py = (idx >= 0) ? g_cfg.items[idx].bar_y : -1;
-                        appbar_embed(hwnd, bar->configured_width, px, py);
+                        SetTimer(hwnd, IDT_RESTORE_WIDTH, 300, NULL);
                     }
+                    InvalidateRect(hwnd, NULL, TRUE);
                     start_fetch(bar);
+                    bar->btn_click_consumed = TRUE;
                     return 0;
                 }
             }
@@ -689,6 +705,10 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_LBUTTONUP:
         if (bar) {
+            if (bar->btn_click_consumed) {
+                bar->btn_click_consumed = FALSE;
+                return 0;
+            }
             /* Check if click is on a bar button first */
             POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
             for (int i = 0; i < bar->button_count; i++) {

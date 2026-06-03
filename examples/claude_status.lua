@@ -214,8 +214,9 @@ if status == "question" then
         log.debug("input_mode active, rendering input span")
         bar = icon(claude_icon, 16, 16)
             .. font(" ", nil, 4)
-            .. input("otherAnswer", "Type your answer...", 400, 28, "#222", "#FFF", "#555")
+            .. input("otherAnswer", "Type your answer...", 320, 28, "#222", "#FFF", "#555")
         local submit = button(" OK ", nil, "#000000", "#2E7D32", 7)
+        submit.margin = 6
         submit.response = json.encode({
             hookSpecificOutput = {
                 hookEventName = "PermissionRequest",
