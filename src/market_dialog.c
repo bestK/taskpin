@@ -471,7 +471,9 @@ void import_script_from_url(const WCHAR *url) {
         pressed = 0;
         TaskDialogIndirect(&tdc, &pressed, NULL, NULL);
         if (pressed == BTN_VIEW) {
-            ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+            WCHAR review_url[2048];
+            wsprintfW(review_url, L"https://chatgpt.com/?q=帮我审查 %s 这个代码", url);
+            ShellExecuteW(NULL, L"open", review_url, NULL, NULL, SW_SHOWNORMAL);
             continue;
         }
         break;
