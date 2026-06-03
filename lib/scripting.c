@@ -685,9 +685,13 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_getfield(ls, idx, "margin");
                 if (!lua_isnil(ls, -1)) sp->margin = (int)lua_tointeger(ls, -1);
                 lua_pop(ls, 1);
-                lua_getfield(ls, idx, "state_set");
-                const char *ss = lua_tostring(ls, -1);
-                if (ss) strncpy(sp->state_set, ss, 511);
+                lua_getfield(ls, idx, "patch_local");
+                const char *pl = lua_tostring(ls, -1);
+                if (pl) strncpy(sp->patch_local, pl, 511);
+                lua_pop(ls, 1);
+                lua_getfield(ls, idx, "patch_global");
+                const char *pg = lua_tostring(ls, -1);
+                if (pg) strncpy(sp->patch_global, pg, 511);
                 lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);
@@ -831,9 +835,13 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_getfield(ls, -1, "margin");
                 if (!lua_isnil(ls, -1)) sp->margin = (int)lua_tointeger(ls, -1);
                 lua_pop(ls, 1);
-                lua_getfield(ls, -1, "state_set");
-                const char *ss = lua_tostring(ls, -1);
-                if (ss) strncpy(sp->state_set, ss, 511);
+                lua_getfield(ls, -1, "patch_local");
+                const char *pl = lua_tostring(ls, -1);
+                if (pl) strncpy(sp->patch_local, pl, 511);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "patch_global");
+                const char *pg = lua_tostring(ls, -1);
+                if (pg) strncpy(sp->patch_global, pg, 511);
                 lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);

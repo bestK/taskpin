@@ -34,7 +34,8 @@ typedef struct {
     COLORREF hover_color;/* button hover text color, 0xFFFFFFFF = default */
     COLORREF border_color;/* button border color, 0xFFFFFFFF = use text color */
     int margin;          /* margin-right in pixels, default 0 */
-    char state_set[512]; /* JSON: keys to set in bar-local state on click */
+    char patch_local[512];  /* JSON: keys to patch into bar-local state */
+    char patch_global[512]; /* JSON: keys to patch into global state */
 } DisplaySpan;
 
 typedef struct {

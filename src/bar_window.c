@@ -4,6 +4,52 @@
 #include "logger.h"
 #include <stdio.h>
 
+BarStateEntry g_global_state[MAX_BAR_STATE];
+int g_global_state_count = 0;
+
+static void patch_state(const char *json, BarStateEntry *store, int *count, int max) {
+    char *p = (char *)json;
+    while (*p == '{' || *p == ' ') p++;
+    while (*p && *p != '}') {
+        if (*p == '"') {
+            p++;
+            char key[64] = {0};
+            int ki = 0;
+            while (*p && *p != '"' && ki < 63) key[ki++] = *p++;
+            if (*p == '"') p++;
+            while (*p == ':' || *p == ' ') p++;
+            char val[256] = {0};
+            if (*p == '"') {
+                p++;
+                int vi = 0;
+                while (*p && *p != '"' && vi < 255) val[vi++] = *p++;
+                if (*p == '"') p++;
+            } else if (*p == 't') {
+                strcpy(val, "true"); while (*p && *p != ',' && *p != '}') p++;
+            } else if (*p == 'f') {
+                strcpy(val, "false"); while (*p && *p != ',' && *p != '}') p++;
+            } else {
+                int vi = 0;
+                while (*p && *p != ',' && *p != '}' && vi < 255) val[vi++] = *p++;
+            }
+            if (key[0] && *count < max) {
+                int found = -1;
+                for (int i = 0; i < *count; i++) {
+                    if (strcmp(store[i].key, key) == 0) { found = i; break; }
+                }
+                if (found >= 0) strncpy(store[found].value, val, 255);
+                else {
+                    strncpy(store[*count].key, key, 63);
+                    strncpy(store[*count].value, val, 255);
+                    (*count)++;
+                }
+            }
+        }
+        if (*p == ',') p++;
+        while (*p == ' ') p++;
+    }
+}
+
 static void event_log_btn(const char *msg) {
     logger_write(LOG_INFO, "button clicked: %s", msg);
 }
@@ -18,6 +64,7 @@ static BarInstance *bar_from_hwnd(HWND hwnd) {
 
 static DWORD WINAPI lua_worker_thread(LPVOID param) {
     LuaContext *ctx = (LuaContext *)param;
+    /* Inject bar-local state */
     for (int i = 0; i < ctx->state_count; i++) {
         if (strcmp(ctx->state[i].value, "true") == 0)
             script_set_global_bool(ctx->state[i].key, TRUE);
@@ -25,6 +72,15 @@ static DWORD WINAPI lua_worker_thread(LPVOID param) {
             script_set_global_bool(ctx->state[i].key, FALSE);
         else
             script_set_global_string(ctx->state[i].key, ctx->state[i].value);
+    }
+    /* Inject global state */
+    for (int i = 0; i < g_global_state_count; i++) {
+        if (strcmp(g_global_state[i].value, "true") == 0)
+            script_set_global_bool(g_global_state[i].key, TRUE);
+        else if (strcmp(g_global_state[i].value, "false") == 0)
+            script_set_global_bool(g_global_state[i].key, FALSE);
+        else
+            script_set_global_string(g_global_state[i].key, g_global_state[i].value);
     }
     ctx->success = script_exec_file(ctx->lua_path, ctx->params, ctx->param_count, &ctx->result);
     PostMessageW(ctx->hwnd, WM_LUA_DONE, 0, (LPARAM)ctx);
@@ -299,8 +355,10 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         bb->color = clr;
                         bb->hover_bg = sp->hover_bg;
                         bb->hover_color = sp->hover_color;
-                        if (sp->state_set[0]) strncpy(bb->state_set, sp->state_set, 511);
-                        else bb->state_set[0] = '\0';
+                        if (sp->patch_local[0]) strncpy(bb->patch_local, sp->patch_local, 511);
+                        else bb->patch_local[0] = '\0';
+                        if (sp->patch_global[0]) strncpy(bb->patch_global, sp->patch_global, 511);
+                        else bb->patch_global[0] = '\0';
                         bar->button_count++;
                     }
                 } else if (sp->is_input) {
@@ -514,7 +572,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
             for (int i = 0; i < bar->button_count; i++) {
                 BarButton *bb = &bar->buttons[i];
-                if (PtInRect(&bb->rect, pt) && (bb->cmd[0] || bb->response[0] || bb->state_set[0])) {
+                if (PtInRect(&bb->rect, pt) && (bb->cmd[0] || bb->response[0] || bb->patch_local[0] || bb->patch_global[0])) {
                     event_log_btn(bb->response[0] ? bb->response : bb->cmd);
                     if (bb->response[0]) {
                         char resp_path[MAX_PATH];
@@ -571,49 +629,12 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                             CloseHandle(pi.hThread);
                         }
                     }
-                    /* state_set only: set bar-local state, don't clear event */
-                    if (bb->state_set[0] && !bb->response[0] && !bb->cmd[0]) {
-                        /* Parse simple JSON: {"key":"value", ...} and store in bar state */
-                        char *p = bb->state_set;
-                        while (*p == '{' || *p == ' ') p++;
-                        while (*p && *p != '}') {
-                            if (*p == '"') {
-                                p++;
-                                char key[64] = {0};
-                                int ki = 0;
-                                while (*p && *p != '"' && ki < 63) key[ki++] = *p++;
-                                if (*p == '"') p++;
-                                while (*p == ':' || *p == ' ') p++;
-                                char val[256] = {0};
-                                if (*p == '"') {
-                                    p++;
-                                    int vi = 0;
-                                    while (*p && *p != '"' && vi < 255) val[vi++] = *p++;
-                                    if (*p == '"') p++;
-                                } else if (*p == 't') {
-                                    strcpy(val, "true"); while (*p && *p != ',' && *p != '}') p++;
-                                } else if (*p == 'f') {
-                                    strcpy(val, "false"); while (*p && *p != ',' && *p != '}') p++;
-                                } else {
-                                    int vi = 0;
-                                    while (*p && *p != ',' && *p != '}' && vi < 255) val[vi++] = *p++;
-                                }
-                                if (key[0] && bar->state_count < MAX_BAR_STATE) {
-                                    int found = -1;
-                                    for (int si = 0; si < bar->state_count; si++) {
-                                        if (strcmp(bar->state[si].key, key) == 0) { found = si; break; }
-                                    }
-                                    if (found >= 0) strncpy(bar->state[found].value, val, 255);
-                                    else {
-                                        strncpy(bar->state[bar->state_count].key, key, 63);
-                                        strncpy(bar->state[bar->state_count].value, val, 255);
-                                        bar->state_count++;
-                                    }
-                                }
-                            }
-                            if (*p == ',') p++;
-                            while (*p == ' ') p++;
-                        }
+                    /* patch_local/patch_global only: don't clear event */
+                    if ((bb->patch_local[0] || bb->patch_global[0]) && !bb->response[0] && !bb->cmd[0]) {
+                        if (bb->patch_local[0])
+                            patch_state(bb->patch_local, bar->state, &bar->state_count, MAX_BAR_STATE);
+                        if (bb->patch_global[0])
+                            patch_state(bb->patch_global, g_global_state, &g_global_state_count, MAX_BAR_STATE);
                         start_fetch(bar);
                         return 0;
                     }

@@ -63,7 +63,8 @@ typedef struct {
     COLORREF color;
     COLORREF hover_bg;
     COLORREF hover_color;
-    char state_set[512];
+    char patch_local[512];
+    char patch_global[512];
 } BarButton;
 
 /* Bar instance (one per pinned item) */
@@ -112,6 +113,10 @@ typedef struct {
 
 extern BarInstance g_bars[MAX_BARS];
 extern int g_bar_count;
+
+/* Global state store (shared across all bars) */
+extern BarStateEntry g_global_state[MAX_BAR_STATE];
+extern int g_global_state_count;
 
 /* Shared global state */
 extern TaskPinConfig g_cfg;
