@@ -208,13 +208,10 @@ if status == "question" then
     local q = questions[1]
     bar = icon(claude_icon, 16, 16)
         .. font(" " .. (q and q.question or ""), "#FFFFFF", 8)
-        .. font("\n")
 
     if q and type(q.options) == "table" then
-        local questions_json = json.encode(questions)
         for oi, opt in ipairs(q.options) do
-            if oi > 1 then bar = bar .. font(" ", nil, 3) end
-            local b = button(opt.label, nil, "#000000", "#1565C0", 7)
+            local b = button(" " .. opt.label .. " ", nil, "#000000", "#1565C0", 7)
             local answers = {}
             answers[q.question] = opt.label
             b.response = json.encode({

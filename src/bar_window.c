@@ -502,6 +502,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     bar->hover_button = -1;
                     bar->rich.count = 0;
                     bar->width_expanded = FALSE;
+                    bar->script_result.clickable = FALSE;
                     /* Restore configured width and refresh immediately */
                     if (bar->configured_width > 0) {
                         int idx = bar->item_index;
@@ -510,7 +511,6 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         appbar_embed(hwnd, bar->configured_width, px, py);
                     }
                     start_fetch(bar);
-                    return 0;
                     return 0;
                 }
             }
