@@ -64,6 +64,7 @@ typedef struct {
     COLORREF hover_bg;
     COLORREF hover_color;
     BOOL keep_event;
+    char set_var[64];
 } BarButton;
 
 /* Bar instance (one per pinned item) */
@@ -76,7 +77,7 @@ typedef struct {
     int   param_count;
     ScriptResult result;
     BOOL  success;
-    BOOL  other_mode;
+    char  active_var[64];
 } LuaContext;
 
 #define MAX_BAR_INPUTS 4
@@ -103,7 +104,7 @@ typedef struct {
     COLORREF input_color[MAX_BAR_INPUTS];
     COLORREF input_border[MAX_BAR_INPUTS];
     int input_count;
-    BOOL other_mode;
+    char active_var[64];  /* variable name set by keep_event button click */
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

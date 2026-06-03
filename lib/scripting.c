@@ -688,6 +688,10 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_getfield(ls, idx, "keep_event");
                 sp->keep_event = lua_toboolean(ls, -1);
                 lua_pop(ls, 1);
+                lua_getfield(ls, idx, "set_var");
+                const char *sv = lua_tostring(ls, -1);
+                if (sv) strncpy(sp->set_var, sv, 63);
+                lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);
                 lua_getfield(ls, idx, "__is_input");
@@ -832,6 +836,10 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
                 lua_pop(ls, 1);
                 lua_getfield(ls, -1, "keep_event");
                 sp->keep_event = lua_toboolean(ls, -1);
+                lua_pop(ls, 1);
+                lua_getfield(ls, -1, "set_var");
+                const char *sv = lua_tostring(ls, -1);
+                if (sv) strncpy(sp->set_var, sv, 63);
                 lua_pop(ls, 1);
             } else {
                 lua_pop(ls, 1);

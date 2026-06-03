@@ -207,7 +207,7 @@ if status == "question" then
     local questions = ti.questions or {}
     local q = questions[1]
 
-    if _other_mode then
+    if input_mode then
         -- Other 模式: [icon] [input] [OK]
         bar = icon(claude_icon, 16, 16)
             .. font(" ", nil, 4)
@@ -252,6 +252,7 @@ if status == "question" then
             end
             local other_btn = button(" Other ", nil, "#FFFFFF", "#555555", 7)
             other_btn.keep_event = true
+            other_btn.set_var = "input_mode"
             bar = bar .. other_btn
         end
     end

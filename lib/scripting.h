@@ -35,6 +35,7 @@ typedef struct {
     COLORREF border_color;/* button border color, 0xFFFFFFFF = use text color */
     int margin;          /* margin-right in pixels, default 0 */
     BOOL keep_event;     /* if TRUE, button click won't clear event */
+    char set_var[64];    /* if set, clicking sets _G[set_var] = true */
 } DisplaySpan;
 
 typedef struct {

@@ -18,10 +18,8 @@ static BarInstance *bar_from_hwnd(HWND hwnd) {
 
 static DWORD WINAPI lua_worker_thread(LPVOID param) {
     LuaContext *ctx = (LuaContext *)param;
-    if (ctx->other_mode)
-        script_set_global_bool("_other_mode", TRUE);
-    else
-        script_set_global_bool("_other_mode", FALSE);
+    if (ctx->active_var[0])
+        script_set_global_bool(ctx->active_var, TRUE);
     ctx->success = script_exec_file(ctx->lua_path, ctx->params, ctx->param_count, &ctx->result);
     PostMessageW(ctx->hwnd, WM_LUA_DONE, 0, (LPARAM)ctx);
     return 0;
@@ -55,7 +53,7 @@ void start_fetch(BarInstance *bar) {
         lstrcpynW(lctx->lua_path, it->lua_path, MAX_PATH);
         memcpy(lctx->params, it->params, sizeof(it->params));
         lctx->param_count = it->param_count;
-        lctx->other_mode = bar->other_mode;
+        strncpy(lctx->active_var, bar->active_var, 63);
         HANDLE hThread = CreateThread(NULL, 0, lua_worker_thread, lctx, 0, NULL);
         if (hThread) CloseHandle(hThread);
         else { HeapFree(GetProcessHeap(), 0, lctx); bar->fetching = FALSE; }
@@ -295,6 +293,8 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         bb->hover_bg = sp->hover_bg;
                         bb->hover_color = sp->hover_color;
                         bb->keep_event = sp->keep_event;
+                        if (sp->set_var[0]) strncpy(bb->set_var, sp->set_var, 63);
+                        else bb->set_var[0] = '\0';
                         bar->button_count++;
                     }
                 } else if (sp->is_input) {
@@ -566,12 +566,13 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         }
                     }
                     if (bb->keep_event) {
-                        bar->other_mode = TRUE;
+                        if (bb->set_var[0])
+                            strncpy(bar->active_var, bb->set_var, 63);
                         start_fetch(bar);
                         return 0;
                     }
                     event_clear();
-                    bar->other_mode = FALSE;
+                    bar->active_var[0] = '\0';
                     bar->button_count = 0;
                     bar->hover_button = -1;
                     bar->rich.count = 0;
