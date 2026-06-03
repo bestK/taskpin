@@ -209,6 +209,7 @@ if status == "question" then
 
     if input_mode then
         -- Other 模式: [icon] [input] [OK]
+        log("input_mode active, rendering input span")
         bar = icon(claude_icon, 16, 16)
             .. font(" ", nil, 4)
             .. input("otherAnswer", "Type your answer...", 200, 22, "#222", "#FFF", "#555")

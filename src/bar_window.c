@@ -66,6 +66,7 @@ static DWORD WINAPI lua_worker_thread(LPVOID param) {
     LuaContext *ctx = (LuaContext *)param;
     /* Inject bar-local state */
     for (int i = 0; i < ctx->state_count; i++) {
+        logger_write(LOG_INFO, "inject state: %s = %s", ctx->state[i].key, ctx->state[i].value);
         if (strcmp(ctx->state[i].value, "true") == 0)
             script_set_global_bool(ctx->state[i].key, TRUE);
         else if (strcmp(ctx->state[i].value, "false") == 0)
@@ -203,6 +204,13 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     span_widths[i] = hbmp ? iw : 0;
                     span_heights[i] = hbmp ? ih : 0;
                     if (sp->align != SPAN_ALIGN_RIGHT) left_total[cur_line] += span_widths[i];
+                    continue;
+                }
+
+                if (sp->is_input) {
+                    span_widths[i] = sp->input_w > 0 ? sp->input_w : 120;
+                    span_heights[i] = sp->input_h > 0 ? sp->input_h : 22;
+                    left_total[cur_line] += span_widths[i];
                     continue;
                 }
 
@@ -631,8 +639,10 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     }
                     /* patch_local/patch_global only: don't clear event */
                     if ((bb->patch_local[0] || bb->patch_global[0]) && !bb->response[0] && !bb->cmd[0]) {
-                        if (bb->patch_local[0])
+                        if (bb->patch_local[0]) {
+                            logger_write(LOG_INFO, "patch_local: %s", bb->patch_local);
                             patch_state(bb->patch_local, bar->state, &bar->state_count, MAX_BAR_STATE);
+                        }
                         if (bb->patch_global[0])
                             patch_state(bb->patch_global, g_global_state, &g_global_state_count, MAX_BAR_STATE);
                         start_fetch(bar);
