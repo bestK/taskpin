@@ -43,8 +43,6 @@ typedef struct {
     int button_count;
     HWND tbl_buttons[DLG_MAX_TBL_BUTTONS];
     int tbl_button_count;
-    HWND text_ctrls[DIALOG_MAX_ITEMS];
-    int text_ctrl_count;
     int item_y[DIALOG_MAX_ITEMS];
     int item_h[DIALOG_MAX_ITEMS];
 } ScriptDialogState;
@@ -195,7 +193,6 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
     state->button_count = 0;
     state->tbl_button_count = 0;
-    state->text_ctrl_count = 0;
 
     COLORREF bg_color = state->spec.transparent_bg ? RGB(255, 0, 255) : DIALOG_BG;
     HBRUSH bg = CreateSolidBrush(bg_color);
@@ -216,7 +213,9 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
         case DI_TEXT: {
             int pt = item->font_size > 0 ? item->font_size : 10;
             HFONT hf = create_dialog_font(pt, item->bold);
-            SelectObject(hdc, hf);
+            HFONT old = (HFONT)SelectObject(hdc, hf);
+            COLORREF clr = (item->color != 0xFFFFFFFF) ? item->color : DIALOG_FG;
+            SetTextColor(hdc, clr);
             TEXTMETRICW tm;
             GetTextMetricsW(hdc, &tm);
             int text_x = PADDING_X;
@@ -240,27 +239,9 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                     if (dh > line_h) line_h = dh;
                 }
             }
-            /* Use EDIT control for selectable text */
-            int ctrl_idx = state->text_ctrl_count;
-            int ctrl_w = client_w - text_x - PADDING_X;
-            HWND hedit = (ctrl_idx < DIALOG_MAX_ITEMS) ? state->text_ctrls[ctrl_idx] : NULL;
-            if (!hedit) {
-                hedit = CreateWindowExW(0, L"EDIT", item->text,
-                    WS_CHILD | WS_VISIBLE | ES_READONLY | ES_AUTOHSCROLL,
-                    text_x, y, ctrl_w, line_h,
-                    hwnd, NULL, GetModuleHandle(NULL), NULL);
-                SetClassLongPtrW(hedit, GCLP_HCURSOR,
-                    (LONG_PTR)LoadCursor(NULL, IDC_ARROW));
-                if (ctrl_idx < DIALOG_MAX_ITEMS)
-                    state->text_ctrls[ctrl_idx] = hedit;
-            } else {
-                MoveWindow(hedit, text_x, y, ctrl_w, line_h, TRUE);
-                SetWindowTextW(hedit, item->text);
-                ShowWindow(hedit, SW_SHOW);
-            }
-            SendMessageW(hedit, WM_SETFONT, (WPARAM)hf, TRUE);
-            state->text_ctrl_count++;
+            TextOutW(hdc, text_x, y, item->text, lstrlenW(item->text));
             y += line_h + 4;
+            SelectObject(hdc, old);
             DeleteObject(hf);
             break;
         }
@@ -706,34 +687,60 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         }
         break;
 
-    case WM_CTLCOLOREDIT:
-    case WM_CTLCOLORSTATIC: {
+    case WM_RBUTTONUP: {
         if (!state) break;
-        HDC hdc_ctrl = (HDC)wp;
-        HWND hctrl = (HWND)lp;
-        /* Find which text item this edit belongs to */
-        for (int i = 0; i < state->text_ctrl_count; i++) {
-            if (state->text_ctrls[i] == hctrl) {
-                /* Find the ith DI_TEXT item */
-                int txt_idx = 0;
-                for (int j = 0; j < state->spec.item_count; j++) {
-                    if (state->spec.items[j].type == DI_TEXT) {
-                        if (txt_idx == i) {
-                            COLORREF clr = (state->spec.items[j].color != 0xFFFFFFFF)
-                                ? state->spec.items[j].color : DIALOG_FG;
-                            SetTextColor(hdc_ctrl, clr);
-                            break;
+        int click_y = (short)HIWORD(lp) + state->scroll_y;
+        WCHAR copy_buf[4096] = {0};
+        for (int i = 0; i < state->spec.item_count; i++) {
+            if (click_y >= state->item_y[i] && click_y < state->item_y[i] + state->item_h[i]) {
+                DialogItem *item = &state->spec.items[i];
+                if (item->type == DI_TEXT && item->text[0]) {
+                    lstrcpynW(copy_buf, item->text, 4096);
+                } else if (item->type == DI_TABLE) {
+                    int off = 0;
+                    for (int c = 0; c < item->col_count && off < 4000; c++) {
+                        if (c > 0) copy_buf[off++] = L'\t';
+                        int len = lstrlenW(item->columns[c]);
+                        lstrcpynW(copy_buf + off, item->columns[c], 4096 - off);
+                        off += len;
+                    }
+                    for (int r = 0; r < item->row_count && off < 4000; r++) {
+                        copy_buf[off++] = L'\r'; copy_buf[off++] = L'\n';
+                        for (int c = 0; c < item->col_count && off < 4000; c++) {
+                            if (c > 0) copy_buf[off++] = L'\t';
+                            int len = lstrlenW(item->cells[r][c]);
+                            lstrcpynW(copy_buf + off, item->cells[r][c], 4096 - off);
+                            off += len;
                         }
-                        txt_idx++;
                     }
                 }
                 break;
             }
         }
-        SetBkMode(hdc_ctrl, TRANSPARENT);
-        static HBRUSH s_edit_bg = NULL;
-        if (!s_edit_bg) s_edit_bg = CreateSolidBrush(DIALOG_BG);
-        return (LRESULT)s_edit_bg;
+        if (copy_buf[0]) {
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, 1, L"Copy");
+            POINT pt; GetCursorPos(&pt);
+            int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd, NULL);
+            DestroyMenu(menu);
+            if (cmd == 1) {
+                int wlen = lstrlenW(copy_buf) + 1;
+                HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, wlen * sizeof(WCHAR));
+                if (hg) {
+                    WCHAR *dst = (WCHAR *)GlobalLock(hg);
+                    lstrcpyW(dst, copy_buf);
+                    GlobalUnlock(hg);
+                    if (OpenClipboard(hwnd)) {
+                        EmptyClipboard();
+                        SetClipboardData(CF_UNICODETEXT, hg);
+                        CloseClipboard();
+                    } else {
+                        GlobalFree(hg);
+                    }
+                }
+            }
+        }
+        return 0;
     }
 
     case WM_DESTROY:
