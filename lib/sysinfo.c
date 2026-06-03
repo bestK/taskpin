@@ -1129,19 +1129,92 @@ static int l_sys_gh_proxy(lua_State *ls) {
 /* ─── Keyboard state ─── */
 
 #define KEY_BUFFER_SIZE 256
+#define MAX_WATCH_KEYS 32
 static volatile BYTE s_key_state[KEY_BUFFER_SIZE];
 static volatile BYTE s_key_triggered[KEY_BUFFER_SIZE];
+static int s_watch_keys[MAX_WATCH_KEYS];
+static int s_watch_key_count = 0;
+
+typedef struct { const char *name; int vk; } KeyMap;
+static const KeyMap s_key_map[] = {
+    {"space", 0x20}, {"enter", 0x0D}, {"esc", 0x1B}, {"tab", 0x09},
+    {"up", 0x26}, {"down", 0x28}, {"left", 0x25}, {"right", 0x27},
+    {"lclick", 0x01}, {"rclick", 0x02}, {"mclick", 0x04},
+    {"shift", 0x10}, {"ctrl", 0x11}, {"alt", 0x12},
+    {"backspace", 0x08}, {"delete", 0x2E}, {"insert", 0x2D},
+    {"home", 0x24}, {"end", 0x23}, {"pageup", 0x21}, {"pagedown", 0x22},
+    {"f1", 0x70}, {"f2", 0x71}, {"f3", 0x72}, {"f4", 0x73},
+    {"f5", 0x74}, {"f6", 0x75}, {"f7", 0x76}, {"f8", 0x77},
+    {"f9", 0x78}, {"f10", 0x79}, {"f11", 0x7A}, {"f12", 0x7B},
+    {"0", 0x30}, {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34},
+    {"5", 0x35}, {"6", 0x36}, {"7", 0x37}, {"8", 0x38}, {"9", 0x39},
+    {"a", 0x41}, {"b", 0x42}, {"c", 0x43}, {"d", 0x44}, {"e", 0x45},
+    {"f", 0x46}, {"g", 0x47}, {"h", 0x48}, {"i", 0x49}, {"j", 0x4A},
+    {"k", 0x4B}, {"l", 0x4C}, {"m", 0x4D}, {"n", 0x4E}, {"o", 0x4F},
+    {"p", 0x50}, {"q", 0x51}, {"r", 0x52}, {"s", 0x53}, {"t", 0x54},
+    {"u", 0x55}, {"v", 0x56}, {"w", 0x57}, {"x", 0x58}, {"y", 0x59},
+    {"z", 0x5A},
+    {NULL, 0}
+};
+
+static int resolve_key_name(const char *name) {
+    if (!name || !name[0]) return -1;
+    for (int i = 0; s_key_map[i].name; i++) {
+        if (lstrcmpiA(name, s_key_map[i].name) == 0) return s_key_map[i].vk;
+    }
+    return -1;
+}
+
+static int resolve_key_arg(lua_State *ls, int idx) {
+    if (lua_isstring(ls, idx)) {
+        return resolve_key_name(lua_tostring(ls, idx));
+    }
+    return (int)lua_tointeger(ls, idx);
+}
+
+static int l_sys_key_combo(lua_State *ls) {
+    const char *expr = luaL_checkstring(ls, 1);
+    char buf[256];
+    strncpy(buf, expr, 255);
+    buf[255] = '\0';
+
+    int keys[8];
+    int key_count = 0;
+    char *token = strtok(buf, "+");
+    while (token && key_count < 8) {
+        while (*token == ' ') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && *end == ' ') *end-- = '\0';
+        int vk = resolve_key_name(token);
+        if (vk >= 0) keys[key_count++] = vk;
+        token = strtok(NULL, "+");
+    }
+
+    if (key_count == 0) { lua_pushboolean(ls, 0); return 1; }
+
+    int last = keys[key_count - 1];
+    if (last < 0 || last >= KEY_BUFFER_SIZE || !s_key_triggered[last]) {
+        lua_pushboolean(ls, 0);
+        return 1;
+    }
+
+    for (int i = 0; i < key_count - 1; i++) {
+        int vk = keys[i];
+        if (vk < 0 || vk >= KEY_BUFFER_SIZE || !s_key_state[vk]) {
+            lua_pushboolean(ls, 0);
+            return 1;
+        }
+    }
+
+    s_key_triggered[last] = 0;
+    lua_pushboolean(ls, 1);
+    return 1;
+}
 
 void sysinfo_poll_keys(void) {
-    static const int poll_keys[] = {
-        0x20, 0x25, 0x26, 0x27, 0x28,
-        0x0D, 0x1B, 0x09,
-        'W', 'A', 'S', 'D',
-        '1', '2', '3', '4', '5',
-        0
-    };
-    for (int k = 0; poll_keys[k]; k++) {
-        int i = poll_keys[k];
+    for (int k = 0; k < s_watch_key_count; k++) {
+        int i = s_watch_keys[k];
+        if (i < 0 || i >= KEY_BUFFER_SIZE) continue;
         SHORT state = GetAsyncKeyState(i);
         BYTE pressed = (state & 0x8000) ? 1 : 0;
         if (pressed && !s_key_state[i]) {
@@ -1151,15 +1224,41 @@ void sysinfo_poll_keys(void) {
     }
 }
 
+static int l_sys_watch_keys(lua_State *ls) {
+    int n = lua_gettop(ls);
+    s_watch_key_count = 0;
+    for (int i = 1; i <= n && s_watch_key_count < MAX_WATCH_KEYS; i++) {
+        if (lua_istable(ls, i)) {
+            int len = (int)lua_rawlen(ls, i);
+            for (int j = 1; j <= len && s_watch_key_count < MAX_WATCH_KEYS; j++) {
+                lua_rawgeti(ls, i, j);
+                if (lua_isstring(ls, -1)) {
+                    int vk = resolve_key_name(lua_tostring(ls, -1));
+                    if (vk >= 0) s_watch_keys[s_watch_key_count++] = vk;
+                } else {
+                    s_watch_keys[s_watch_key_count++] = (int)lua_tointeger(ls, -1);
+                }
+                lua_pop(ls, 1);
+            }
+        } else if (lua_isstring(ls, i)) {
+            int vk = resolve_key_name(lua_tostring(ls, i));
+            if (vk >= 0) s_watch_keys[s_watch_key_count++] = vk;
+        } else {
+            s_watch_keys[s_watch_key_count++] = (int)lua_tointeger(ls, i);
+        }
+    }
+    return 0;
+}
+
 static int l_sys_key_pressed(lua_State *ls) {
-    int vk = (int)luaL_checkinteger(ls, 1);
+    int vk = resolve_key_arg(ls, 1);
     if (vk < 0 || vk >= KEY_BUFFER_SIZE) { lua_pushboolean(ls, 0); return 1; }
     lua_pushboolean(ls, s_key_state[vk]);
     return 1;
 }
 
 static int l_sys_key_triggered(lua_State *ls) {
-    int vk = (int)luaL_checkinteger(ls, 1);
+    int vk = resolve_key_arg(ls, 1);
     if (vk < 0 || vk >= KEY_BUFFER_SIZE) { lua_pushboolean(ls, 0); return 1; }
     BYTE val = s_key_triggered[vk];
     s_key_triggered[vk] = 0;
@@ -1271,5 +1370,9 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "key_pressed");
     lua_pushcfunction(ls, l_sys_key_triggered);
     lua_setfield(ls, -2, "key_triggered");
+    lua_pushcfunction(ls, l_sys_key_combo);
+    lua_setfield(ls, -2, "key_combo");
+    lua_pushcfunction(ls, l_sys_watch_keys);
+    lua_setfield(ls, -2, "watch_keys");
     lua_setglobal(ls, "sys");
 }

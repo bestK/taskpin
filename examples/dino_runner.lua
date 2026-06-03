@@ -2,8 +2,7 @@
 -- @realtime
 -- @bar_width 360
 
-local VK_SPACE = 0x20
-local VK_UP    = 0x26
+sys.watch_keys("space", "up", "lclick")
 
 local GROUND = "▁"
 local WIDTH = 40
@@ -37,11 +36,9 @@ if dt > 0.2 then dt = 0.05 end
 -- Input
 local jump_pressed = false
 if sys.key_triggered then
-    local sp = sys.key_triggered(VK_SPACE)
-    local up = sys.key_triggered(VK_UP)
-    jump_pressed = sp or up
+    jump_pressed = sys.key_triggered("space") or sys.key_triggered("up") or sys.key_triggered("lclick")
 elseif sys.key_pressed then
-    jump_pressed = sys.key_pressed(VK_SPACE) or sys.key_pressed(VK_UP)
+    jump_pressed = sys.key_pressed("space") or sys.key_pressed("up")
 end
 -- Debug: show key state in score area
 local dbg = jump_pressed and "J" or "."

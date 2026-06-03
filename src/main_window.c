@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "update.h"
 
 void listview_populate(void) {
     if (!g_listview) return;
@@ -112,9 +113,11 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDB_ADD:
             show_edit_dialog(hwnd, -1);
             break;
-        case 4099:
-            ShellExecuteW(NULL, L"open", L"https://github.com/bestK/taskpin", NULL, NULL, SW_SHOWNORMAL);
+        case 4099: {
+            HANDLE h = CreateThread(NULL, 0, check_update_thread, hwnd, 0, NULL);
+            if (h) CloseHandle(h);
             break;
+        }
         case IDB_SETTINGS:
             show_settings_dialog(hwnd);
             break;
@@ -160,6 +163,15 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_listview)
             MoveWindow(g_listview, 0, 0, cw, ch - 36, TRUE);
         return 0;
+    }
+
+    case WM_CONTEXTMENU: {
+        HWND hCtrl = (HWND)wp;
+        if (GetDlgCtrlID(hCtrl) == 4099) {
+            ShellExecuteW(NULL, L"open", L"https://github.com/bestK/taskpin", NULL, NULL, SW_SHOWNORMAL);
+            return 0;
+        }
+        break;
     }
 
     case WM_CLOSE:

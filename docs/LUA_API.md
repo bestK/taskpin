@@ -113,7 +113,7 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | `"image"` | source, width, height, src_x, src_y, src_w, src_h | 独立图片块（支持精灵表裁切） |
 | `"hr"` | — | 水平分隔线 |
 | `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
-| `"button"` | value, cmd, url, color, bg_color, size | 可点击按钮 |
+| `"button"` | value, cmd, url, lua, color, bg_color, size | 可点击按钮 |
 
 **图文混排示例**：
 
@@ -138,6 +138,21 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
   color = "#FFFFFF", bg_color = "#336699", size = 10 },
 { type = "button", value = "执行命令", cmd = "notepad.exe",
   color = "#FFF", bg_color = "#444", size = 10 },
+{ type = "button", value = "执行Lua", lua = "sys.notify('hi', 'hello')",
+  color = "#FFF", bg_color = "#C62828", size = 10 },
+```
+
+**表格行按钮**：
+
+table 的 rows 中每行可添加 `lua`/`cmd`/`url` + `btn_text` 字段，行尾自动显示操作按钮：
+
+```lua
+{ type = "table", columns = {"进程", "CPU"},
+  rows = {
+    { "chrome.exe", "12%", lua = "sys.kill(1234)", btn_text = "Kill" },
+    { "README.md", "", url = "https://...", btn_text = "Open" },
+  }
+}
 ```
 
 ```lua
@@ -226,12 +241,25 @@ bar = font("Search: ", "#FFF", 9)
 
 ## log(...)
 
-写入脚本日志。接受任意数量参数，用制表符分隔输出。
+写入脚本日志（等同 `log.info(...)`）。接受任意数量参数，用制表符分隔输出。
+
+## log.info(...) / log.debug(...) / log.error(...)
+
+按级别写入日志，自动附带调用文件名和行号。
+
+| 函数 | 级别 | 说明 |
+|------|------|------|
+| `log.info(...)` | INF | 一般信息 |
+| `log.debug(...)` | DBG | 调试信息（需开启 debug 日志级别） |
+| `log.error(...)` | ERR | 错误信息 |
+
+日志输出格式：`[时间][级别][文件名:行号] 内容`
 
 ```lua
-log("请求开始", url)
-local data = json.decode(http.get(url))
-log("结果:", data.status, data.message)
+log.info("请求开始", url)
+log.debug("响应内容", data)
+log.error("连接失败", err)
+log("简写等同 info")
 ```
 
 ---
@@ -402,6 +430,7 @@ local net = sys.net_speed()
 |------|------|------|
 | pid | number | 进程 ID |
 | name | string | 进程名（如 `"chrome.exe"`） |
+| path | string | 进程完整路径 |
 | connections | number | 活跃连接数 |
 | download | number | 读取速率 (bytes/sec) |
 | upload | number | 写入速率 (bytes/sec) |
@@ -411,6 +440,80 @@ local procs = sys.net_processes()
 for _, p in ipairs(procs) do
     print(p.name, p.connections, p.download, p.upload)
 end
+```
+
+## sys.top_processes(mode, limit)
+
+返回按 CPU 或内存排序的进程列表。需要两次调用间隔才能计算 CPU 使用率。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| mode | string | `"cpu"` 按 CPU 排序，`"mem"` 按内存排序（默认 `"cpu"`） |
+| limit | number | 返回数量上限（默认 15，最大 128） |
+
+**返回值**: 数组 table，每项包含：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| pid | number | 进程 ID |
+| name | string | 进程名 |
+| path | string | 进程完整路径 |
+| cpu | number | CPU 使用率百分比 (0-100) |
+| mem_mb | number | 内存占用 (MB) |
+
+```lua
+local top_cpu = sys.top_processes("cpu", 10)
+local top_mem = sys.top_processes("mem", 5)
+```
+
+## sys.watch_keys(...)
+
+注册需要监听的按键。只有注册过的键才会被 `key_pressed` / `key_triggered` / `key_combo` 检测到。
+
+支持传入字符串名称或数字虚拟键码，可传多个参数或 table。
+
+**可用键名**（大小写不敏感）：
+
+| 分类 | 键名 |
+|------|------|
+| 鼠标 | `lclick`, `rclick`, `mclick` |
+| 方向 | `up`, `down`, `left`, `right` |
+| 功能 | `space`, `enter`, `esc`, `tab`, `backspace`, `delete`, `insert` |
+| 修饰 | `shift`, `ctrl`, `alt` |
+| 导航 | `home`, `end`, `pageup`, `pagedown` |
+| F键 | `f1` - `f12` |
+| 字母 | `a` - `z` |
+| 数字 | `0` - `9` |
+
+```lua
+sys.watch_keys("space", "up", "lclick")
+sys.watch_keys("ctrl", "shift", "s")
+```
+
+## sys.key_pressed(key)
+
+检测按键当前是否被按住。参数为键名字符串或数字虚拟键码。
+
+```lua
+if sys.key_pressed("shift") then ... end
+```
+
+## sys.key_triggered(key)
+
+检测按键是否刚被按下（边沿触发）。读取后自动清除，不会重复触发。适合游戏跳跃、菜单确认等一次性动作。
+
+```lua
+if sys.key_triggered("space") then jump() end
+```
+
+## sys.key_combo(expr)
+
+检测组合键表达式。用 `+` 连接多个键，前面的键检测"按住"，最后一个键检测"刚按下"。
+
+```lua
+if sys.key_combo("ctrl+s") then save() end
+if sys.key_combo("ctrl+shift+a") then select_all() end
+if sys.key_combo("shift+lclick") then special_click() end
 ```
 
 ## sys.file_mtime(path)
@@ -486,7 +589,7 @@ local path = sys.exe_path()
 返回 TaskPin 版本号字符串。
 
 ```lua
-local ver = sys.version()  -- "1.4.1"
+local ver = sys.version()  -- "1.4.2"
 ```
 
 ## sys.screen_width()
@@ -940,6 +1043,7 @@ end
 | `@param key type desc` | — | 声明脚本参数，自动生成输入框 |
 | `@name text` | string | 脚本显示名称（覆盖自动命名） |
 | `@refresh ms` | number | 刷新间隔（毫秒），覆盖默认值 |
+| `@realtime` | — | 实时模式，脚本在 GUI 线程同步执行（50ms 刷新），适用于游戏/动画 |
 | `@bar_width px` | number | 任务栏显示宽度（像素） |
 | `@version ver` | string | 脚本版本号 |
 | `@require ver` | string | 最低 TaskPin 版本要求（不满足时显示提示） |

@@ -477,7 +477,7 @@ local path = sys.exe_path()
 Returns the TaskPin version string.
 
 ```lua
-local ver = sys.version()  -- "1.4.1"
+local ver = sys.version()  -- "1.4.2"
 ```
 
 ## sys.screen_width()
