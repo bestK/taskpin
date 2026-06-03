@@ -43,6 +43,8 @@ typedef struct {
     int button_count;
     HWND tbl_buttons[DLG_MAX_TBL_BUTTONS];
     int tbl_button_count;
+    int item_y[DIALOG_MAX_ITEMS];
+    int item_h[DIALOG_MAX_ITEMS];
 } ScriptDialogState;
 
 static HWND s_dialog_hwnd = NULL;
@@ -204,6 +206,8 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
     for (int i = 0; i < state->spec.item_count; i++) {
         DialogItem *item = &state->spec.items[i];
+        state->item_y[i] = y;
+        int y_before = y;
 
         switch (item->type) {
         case DI_TEXT: {
@@ -393,6 +397,7 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             break;
         }
         }
+        state->item_h[i] = y - y_before;
         y += 4;
     }
 
@@ -681,6 +686,64 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             return 0;
         }
         break;
+
+    case WM_RBUTTONUP: {
+        if (!state) break;
+        int click_y = (short)HIWORD(lp) + state->scroll_y;
+        /* Find which text/table item was clicked */
+        WCHAR copy_buf[4096] = {0};
+        for (int i = 0; i < state->spec.item_count; i++) {
+            if (click_y >= state->item_y[i] && click_y < state->item_y[i] + state->item_h[i]) {
+                DialogItem *item = &state->spec.items[i];
+                if (item->type == DI_TEXT && item->text[0]) {
+                    lstrcpynW(copy_buf, item->text, 4096);
+                } else if (item->type == DI_TABLE) {
+                    /* Copy all table content */
+                    int off = 0;
+                    for (int c = 0; c < item->col_count && off < 4000; c++) {
+                        if (c > 0) copy_buf[off++] = L'\t';
+                        int len = lstrlenW(item->columns[c]);
+                        lstrcpynW(copy_buf + off, item->columns[c], 4096 - off);
+                        off += len;
+                    }
+                    for (int r = 0; r < item->row_count && off < 4000; r++) {
+                        copy_buf[off++] = L'\r'; copy_buf[off++] = L'\n';
+                        for (int c = 0; c < item->col_count && off < 4000; c++) {
+                            if (c > 0) copy_buf[off++] = L'\t';
+                            int len = lstrlenW(item->cells[r][c]);
+                            lstrcpynW(copy_buf + off, item->cells[r][c], 4096 - off);
+                            off += len;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        if (copy_buf[0]) {
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, 1, L"\x590D\x5236");  /* 复制 */
+            POINT pt; GetCursorPos(&pt);
+            int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd, NULL);
+            DestroyMenu(menu);
+            if (cmd == 1) {
+                int wlen = lstrlenW(copy_buf) + 1;
+                HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, wlen * sizeof(WCHAR));
+                if (hg) {
+                    WCHAR *dst = (WCHAR *)GlobalLock(hg);
+                    lstrcpyW(dst, copy_buf);
+                    GlobalUnlock(hg);
+                    if (OpenClipboard(hwnd)) {
+                        EmptyClipboard();
+                        SetClipboardData(CF_UNICODETEXT, hg);
+                        CloseClipboard();
+                    } else {
+                        GlobalFree(hg);
+                    }
+                }
+            }
+        }
+        return 0;
+    }
 
     case WM_DESTROY:
         KillTimer(hwnd, IDT_DIALOG_REFRESH);
