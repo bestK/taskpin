@@ -158,6 +158,10 @@ local is_permission = (event and event.source == "claude-code" and event.name ==
 local permission_cmd = ""
 local permission_desc = ""
 
+if event then
+    log("event:", event.source, event.name, json.encode(event))
+end
+
 if event and event.source == "claude-code" and event.name == "install-hook" then
     install_hook()
     event.clear()
@@ -168,15 +172,27 @@ elseif is_permission then
     status = "permission"
     local ti = event.tool_input or {}
     local tname = event.tool_name or ""
-    permission_cmd = ti.command or ti.file_path or ti.query or tname
-    permission_desc = ti.description or ""
-    detail = "等待确认"
+
+    if tname == "AskUserQuestion" and type(ti.questions) == "table" and #ti.questions > 0 then
+        status = "question"
+        detail = "等待回答"
+        local q = ti.questions[1]
+        if q then
+            permission_cmd = q.question or ""
+            permission_desc = q.header or ""
+        end
+    else
+        permission_cmd = ti.command or ti.file_path or ti.query or tname
+        permission_desc = ti.description or ""
+        detail = "等待确认"
+    end
 end
 
 -- 状态颜色
 local colors = {
     working    = "#4FC3F7",
     permission = "#FF6600",
+    question   = "#FFD700",
     idle       = "#888888",
     offline    = "#FF3333",
 }
@@ -186,7 +202,23 @@ local color = colors[status] or "#888888"
 local bar
 local title_text = ai_title or detail
 
-if is_permission then
+if status == "question" then
+    local ti = event.tool_input or {}
+    local questions = ti.questions or {}
+    local q = questions[1]
+    bar = icon(claude_icon, 16, 16)
+        .. font(" " .. (q and q.question or ""), "#FFFFFF", 8)
+        .. font("\n")
+
+    if q and type(q.options) == "table" then
+        for oi, opt in ipairs(q.options) do
+            if oi > 1 then bar = bar .. font(" ", nil, 3) end
+            local b = button(opt.label, nil, "#000000", "#1565C0", 7)
+            b.response = hook_response("allow")
+            bar = bar .. b
+        end
+    end
+elseif is_permission then
     bar = icon(claude_icon, 16, 16)
         .. font(" " .. permission_cmd, "#FFFFFF", 8)
         .. btn_allow()
