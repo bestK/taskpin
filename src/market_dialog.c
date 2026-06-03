@@ -418,6 +418,7 @@ void show_market_dialog(HWND parent) {
 }
 
 void import_script_from_url(const WCHAR *url) {
+    mkt_check_geo();
     char *content = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
     if (!content) {
         MessageBoxW(NULL, L"Failed to download script", L"TaskPin", MB_OK | MB_ICONERROR);
@@ -472,7 +473,10 @@ void import_script_from_url(const WCHAR *url) {
         TaskDialogIndirect(&tdc, &pressed, NULL, NULL);
         if (pressed == BTN_VIEW) {
             WCHAR review_url[2048];
-            wsprintfW(review_url, L"https://chatgpt.com/?q=帮我审查 %s 这个代码", url);
+            if (s_is_china)
+                wsprintfW(review_url, L"https://chatgpt.com/?q=帮我审查 %s 这个代码", url);
+            else
+                wsprintfW(review_url, L"https://chatgpt.com/?q=Review this code for me: %s", url);
             ShellExecuteW(NULL, L"open", review_url, NULL, NULL, SW_SHOWNORMAL);
             continue;
         }
