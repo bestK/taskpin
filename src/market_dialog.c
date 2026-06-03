@@ -474,9 +474,9 @@ void import_script_from_url(const WCHAR *url) {
         if (pressed == BTN_VIEW) {
             WCHAR review_url[2048];
             if (s_is_china)
-                wsprintfW(review_url, L"https://chatgpt.com/?q=帮我审查 %s 这个代码", url);
+                wsprintfW(review_url, L"https://chatgpt.com/?q=帮我审查 %s 这个代码的安全性，重点检查是否存在：破坏计算机、盗取隐私信息、窃取私钥、盗取钱包等恶意行为", url);
             else
-                wsprintfW(review_url, L"https://chatgpt.com/?q=Review this code for me: %s", url);
+                wsprintfW(review_url, L"https://chatgpt.com/?q=Review this code for security risks: %s - Check for: system damage, data theft, private key stealing, wallet stealing, or other malicious behavior", url);
             ShellExecuteW(NULL, L"open", review_url, NULL, NULL, SW_SHOWNORMAL);
             continue;
         }
