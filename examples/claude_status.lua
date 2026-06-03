@@ -211,11 +211,24 @@ if status == "question" then
         .. font("\n")
 
     if q and type(q.options) == "table" then
+        local questions_json = json.encode(questions)
         for oi, opt in ipairs(q.options) do
             if oi > 1 then bar = bar .. font(" ", nil, 3) end
             local b = button(opt.label, nil, "#000000", "#1565C0", 7)
-            local resp = '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"answers":{"' .. q.question:gsub('"', '\\"') .. '":"' .. opt.label:gsub('"', '\\"') .. '"}}}}}'
-            b.response = resp
+            local answers = {}
+            answers[q.question] = opt.label
+            b.response = json.encode({
+                hookSpecificOutput = {
+                    hookEventName = "PermissionRequest",
+                    decision = {
+                        behavior = "allow",
+                        updatedInput = {
+                            questions = questions,
+                            answers = answers
+                        }
+                    }
+                }
+            })
             bar = bar .. b
         end
     end

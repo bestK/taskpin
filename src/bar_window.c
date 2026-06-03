@@ -282,7 +282,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         bb->rect = br;
                         if (sp->cmd[0]) strncpy(bb->cmd, sp->cmd, 511);
                         else bb->cmd[0] = '\0';
-                        if (sp->response[0]) strncpy(bb->response, sp->response, 2047);
+                        if (sp->response[0]) strncpy(bb->response, sp->response, 4095);
                         else bb->response[0] = '\0';
                         bb->bg_color = (sp->bg_color != 0xFFFFFFFF) ? sp->bg_color : RGB(64,64,64);
                         bb->color = clr;
