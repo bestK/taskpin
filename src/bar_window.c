@@ -691,25 +691,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
             for (int i = 0; i < bar->button_count; i++) {
                 BarButton *bb = &bar->buttons[i];
-                if (PtInRect(&bb->rect, pt) && bb->cmd[0]) {
-                    /* Execute button command async */
-                    STARTUPINFOW si;
-                    memset(&si, 0, sizeof(si));
-                    si.cb = sizeof(si);
-                    si.dwFlags = STARTF_USESHOWWINDOW;
-                    si.wShowWindow = SW_HIDE;
-                    PROCESS_INFORMATION pi;
-                    WCHAR wcmd[600];
-                    MultiByteToWideChar(CP_UTF8, 0, bb->cmd, -1, wcmd, 600);
-                    WCHAR cmdline[700];
-                    wsprintfW(cmdline, L"cmd /c %s", wcmd);
-                    if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-                            CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                        CloseHandle(pi.hProcess);
-                        CloseHandle(pi.hThread);
-                    }
-                    bar->button_count = 0;
-                    InvalidateRect(hwnd, NULL, TRUE);
+                if (PtInRect(&bb->rect, pt) && (bb->cmd[0] || bb->response[0] || bb->patch_local[0] || bb->patch_global[0])) {
                     return 0;
                 }
             }
