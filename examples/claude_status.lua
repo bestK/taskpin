@@ -159,7 +159,7 @@ local permission_cmd = ""
 local permission_desc = ""
 
 if event then
-    log("event:", event.source, event.name, json.encode(event))
+    log.debug("event:", event.source, event.name, json.encode(event))
 end
 
 if event and event.source == "claude-code" and event.name == "install-hook" then
@@ -201,18 +201,20 @@ local color = colors[status] or "#888888"
 -- 构建 bar
 local bar
 local title_text = ai_title or detail
+local in_input_mode = (input_mode == true)
+input_mode = nil
 
 if status == "question" then
     local ti = event.tool_input or {}
     local questions = ti.questions or {}
     local q = questions[1]
 
-    if input_mode then
+    if in_input_mode then
         -- Other 模式: [icon] [input] [OK]
-        log("input_mode active, rendering input span")
+        log.debug("input_mode active, rendering input span")
         bar = icon(claude_icon, 16, 16)
             .. font(" ", nil, 4)
-            .. input("otherAnswer", "Type your answer...", 200, 22, "#222", "#FFF", "#555")
+            .. input("otherAnswer", "Type your answer...", 400, 28, "#222", "#FFF", "#555")
         local submit = button(" OK ", nil, "#000000", "#2E7D32", 7)
         submit.response = json.encode({
             hookSpecificOutput = {

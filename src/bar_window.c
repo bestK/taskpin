@@ -64,7 +64,7 @@ static BarInstance *bar_from_hwnd(HWND hwnd) {
 
 static DWORD WINAPI lua_worker_thread(LPVOID param) {
     LuaContext *ctx = (LuaContext *)param;
-    /* Inject bar-local state */
+    /* Inject bar-local state (set values, clear stale ones) */
     for (int i = 0; i < ctx->state_count; i++) {
         logger_write(LOG_INFO, "inject state: %s = %s", ctx->state[i].key, ctx->state[i].value);
         if (strcmp(ctx->state[i].value, "true") == 0)
