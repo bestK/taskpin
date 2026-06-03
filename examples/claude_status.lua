@@ -254,7 +254,7 @@ if status == "question" then
                 })
                 bar = bar .. b
             end
-            local other_btn = button(" Other ", nil, "#FFFFFF", "#555555", 7)
+            local other_btn = button(" Other ", nil, "#000000", "#555555", 7)
             other_btn.patch_local = '{"input_mode":"true"}'
             bar = bar .. other_btn
         end

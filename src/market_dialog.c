@@ -237,6 +237,7 @@ static void mkt_download_script(void) {
             }
             int refresh = script_parse_refresh(filepath);
             it->interval_ms = refresh > 0 ? (DWORD)refresh : 5000;
+            it->realtime = script_parse_realtime(filepath);
             int bw = script_parse_bar_width(filepath);
             if (bw > 0) it->bar_width = bw;
             it->bar_x = -1;

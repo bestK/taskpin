@@ -2,6 +2,7 @@
 #include "image.h"
 #include "json.h"
 #include "logger.h"
+#include "sysinfo.h"
 #include <stdio.h>
 
 BarStateEntry g_global_state[MAX_BAR_STATE];
@@ -108,6 +109,22 @@ void start_fetch(BarInstance *bar) {
             InvalidateRect(bar->hwnd, NULL, TRUE);
             return;
         }
+
+        if (it->realtime) {
+            sysinfo_poll_keys();
+            ScriptResult *result = (ScriptResult *)HeapAlloc(
+                GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
+            if (!result) return;
+            if (script_exec_file(it->lua_path, it->params, it->param_count, result)) {
+                bar->script_result = *result;
+                lstrcpynW(bar->display, result->display, FETCH_BUF_SIZE);
+                bar->rich = result->rich;
+            }
+            HeapFree(GetProcessHeap(), 0, result);
+            InvalidateRect(bar->hwnd, NULL, TRUE);
+            return;
+        }
+
         bar->fetching = TRUE;
         LuaContext *lctx = (LuaContext *)HeapAlloc(
             GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(LuaContext));
@@ -472,6 +489,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (!bar) break;
         if (wp == IDT_REFRESH) start_fetch(bar);
         if (wp == IDT_ANIM) InvalidateRect(hwnd, NULL, FALSE);
+        if (wp == IDT_SCROLL) sysinfo_poll_keys();
         if (wp == IDT_RESTORE_WIDTH) {
             KillTimer(hwnd, IDT_RESTORE_WIDTH);
             if (bar->configured_width > 0 && !bar->width_expanded) {
@@ -896,7 +914,8 @@ void bars_create_all(void) {
         ShowWindow(bar->hwnd, SW_SHOWNOACTIVATE);
         UpdateWindow(bar->hwnd);
 
-        SetTimer(bar->hwnd, IDT_REFRESH, g_cfg.items[i].interval_ms, NULL);
+        DWORD refresh_interval = g_cfg.items[i].realtime ? 50 : g_cfg.items[i].interval_ms;
+        SetTimer(bar->hwnd, IDT_REFRESH, refresh_interval, NULL);
         start_fetch(bar);
 
         offset_x += w + 2;

@@ -684,9 +684,10 @@ void show_edit_dialog(HWND parent, int item_idx) {
             /* Apply @refresh if declared in script */
             int refresh_ms = script_parse_refresh(it->lua_path);
             if (refresh_ms > 0) {
-                if (refresh_ms < 1000) refresh_ms = 1000;
+                if (!it->realtime && refresh_ms < 1000) refresh_ms = 1000;
                 it->interval_ms = (DWORD)refresh_ms;
             }
+            it->realtime = script_parse_realtime(it->lua_path);
             /* Save bar config */
             WCHAR bv[32];
             GetWindowTextW(st->hBarWidth, bv, 32);

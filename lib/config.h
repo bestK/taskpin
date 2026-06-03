@@ -44,6 +44,7 @@ typedef struct {
     COLORREF bar_bg_color;           /* 0xFFFFFFFF = use global default */
     int   dlg_x;                     /* dialog position, -1 = center */
     int   dlg_y;
+    BOOL  realtime;                  /* TRUE = execute synchronously in GUI thread */
 } PinItem;
 
 typedef struct {

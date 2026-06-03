@@ -1126,6 +1126,47 @@ static int l_sys_gh_proxy(lua_State *ls) {
     return 1;
 }
 
+/* ─── Keyboard state ─── */
+
+#define KEY_BUFFER_SIZE 256
+static volatile BYTE s_key_state[KEY_BUFFER_SIZE];
+static volatile BYTE s_key_triggered[KEY_BUFFER_SIZE];
+
+void sysinfo_poll_keys(void) {
+    static const int poll_keys[] = {
+        0x20, 0x25, 0x26, 0x27, 0x28,
+        0x0D, 0x1B, 0x09,
+        'W', 'A', 'S', 'D',
+        '1', '2', '3', '4', '5',
+        0
+    };
+    for (int k = 0; poll_keys[k]; k++) {
+        int i = poll_keys[k];
+        SHORT state = GetAsyncKeyState(i);
+        BYTE pressed = (state & 0x8000) ? 1 : 0;
+        if (pressed && !s_key_state[i]) {
+            s_key_triggered[i] = 1;
+        }
+        s_key_state[i] = pressed;
+    }
+}
+
+static int l_sys_key_pressed(lua_State *ls) {
+    int vk = (int)luaL_checkinteger(ls, 1);
+    if (vk < 0 || vk >= KEY_BUFFER_SIZE) { lua_pushboolean(ls, 0); return 1; }
+    lua_pushboolean(ls, s_key_state[vk]);
+    return 1;
+}
+
+static int l_sys_key_triggered(lua_State *ls) {
+    int vk = (int)luaL_checkinteger(ls, 1);
+    if (vk < 0 || vk >= KEY_BUFFER_SIZE) { lua_pushboolean(ls, 0); return 1; }
+    BYTE val = s_key_triggered[vk];
+    s_key_triggered[vk] = 0;
+    lua_pushboolean(ls, val);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -1226,5 +1267,9 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "is_china");
     lua_pushcfunction(ls, l_sys_gh_proxy);
     lua_setfield(ls, -2, "gh_proxy");
+    lua_pushcfunction(ls, l_sys_key_pressed);
+    lua_setfield(ls, -2, "key_pressed");
+    lua_pushcfunction(ls, l_sys_key_triggered);
+    lua_setfield(ls, -2, "key_triggered");
     lua_setglobal(ls, "sys");
 }

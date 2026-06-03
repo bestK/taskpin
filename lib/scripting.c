@@ -1484,6 +1484,31 @@ int script_parse_refresh(const WCHAR *lua_path) {
     return result;
 }
 
+/* ─── parse @realtime declaration ─── */
+
+BOOL script_parse_realtime(const WCHAR *lua_path) {
+    if (!lua_path || !lua_path[0]) return FALSE;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return FALSE;
+
+    char line[512];
+    BOOL result = FALSE;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@realtime", 9) == 0) { result = TRUE; break; }
+    }
+    fclose(f);
+    return result;
+}
+
 /* ─── parse @bar_width declaration ─── */
 
 int script_parse_bar_width(const WCHAR *lua_path) {

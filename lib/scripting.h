@@ -130,6 +130,9 @@ int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_d
    Returns milliseconds (0 if not declared). */
 int script_parse_refresh(const WCHAR *lua_path);
 
+/* Parse @realtime declaration from script header. */
+BOOL script_parse_realtime(const WCHAR *lua_path);
+
 /* Parse @bar_width declaration from a Lua file header.
    Returns pixels (0 if not declared). */
 int script_parse_bar_width(const WCHAR *lua_path);
