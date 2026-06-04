@@ -47,11 +47,38 @@ typedef struct {
     int item_h[DIALOG_MAX_ITEMS];
 } ScriptDialogState;
 
-static HWND s_dialog_hwnd = NULL;
+#define MAX_SCRIPT_DIALOGS 16
+static HWND s_dialog_hwnds[MAX_SCRIPT_DIALOGS];
+static int s_dialog_count = 0;
 static BOOL s_class_registered = FALSE;
+
+static HWND find_dialog_by_path(const WCHAR *lua_path) {
+    for (int i = 0; i < s_dialog_count; i++) {
+        if (!s_dialog_hwnds[i]) continue;
+        ScriptDialogState *st = (ScriptDialogState *)GetWindowLongPtr(s_dialog_hwnds[i], GWLP_USERDATA);
+        if (st && lstrcmpiW(st->lua_path, lua_path) == 0)
+            return s_dialog_hwnds[i];
+    }
+    return NULL;
+}
+
+static void register_dialog(HWND hwnd) {
+    for (int i = 0; i < s_dialog_count; i++) {
+        if (!s_dialog_hwnds[i]) { s_dialog_hwnds[i] = hwnd; return; }
+    }
+    if (s_dialog_count < MAX_SCRIPT_DIALOGS)
+        s_dialog_hwnds[s_dialog_count++] = hwnd;
+}
+
+static void unregister_dialog(HWND hwnd) {
+    for (int i = 0; i < s_dialog_count; i++) {
+        if (s_dialog_hwnds[i] == hwnd) { s_dialog_hwnds[i] = NULL; return; }
+    }
+}
 
 static int calc_content_height(HDC hdc, DialogSpec *spec);
 static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state);
+static void ulw_render(HWND hwnd, ScriptDialogState *state);
 static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
 void script_dialog_init(HINSTANCE hinst) {
@@ -69,8 +96,9 @@ void script_dialog_init(HINSTANCE hinst) {
 
 void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                         const DialogSpec *spec) {
-    if (s_dialog_hwnd) {
-        SetForegroundWindow(s_dialog_hwnd);
+    HWND existing = find_dialog_by_path(lua_path);
+    if (existing) {
+        SetForegroundWindow(existing);
         return;
     }
 
@@ -117,20 +145,20 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
         }
     }
 
-    s_dialog_hwnd = CreateWindowExW(exstyle, DIALOG_CLASS, spec->title,
+    HWND dlg_hwnd = CreateWindowExW(exstyle, DIALOG_CLASS, spec->title,
         style,
         x, y, win_w, win_h,
         NULL, NULL, GetModuleHandle(NULL), state);
+    register_dialog(dlg_hwnd);
 
     if (spec->transparent_bg) {
-        SetLayeredWindowAttributes(s_dialog_hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
+        SetLayeredWindowAttributes(dlg_hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
     } else if (spec->opacity < 255 || spec->clickthrough) {
-        SetLayeredWindowAttributes(s_dialog_hwnd, 0,
+        SetLayeredWindowAttributes(dlg_hwnd, 0,
             (BYTE)(spec->opacity < 255 ? spec->opacity : 255), LWA_ALPHA);
     }
-
-    ShowWindow(s_dialog_hwnd, SW_SHOW);
-    UpdateWindow(s_dialog_hwnd);
+    ShowWindow(dlg_hwnd, SW_SHOW);
+    UpdateWindow(dlg_hwnd);
 }
 
 static HFONT create_dialog_font(int pt, BOOL bold) {
@@ -417,15 +445,57 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
     if (script_exec_file(state->lua_path, state->params, state->param_count, result)) {
         if (result->click_action == CLICK_DIALOG && result->dialog.item_count > 0) {
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
-            InvalidateRect(hwnd, NULL, TRUE);
-            /* Move window if x/y specified */
             if (state->spec.x >= 0 && state->spec.y >= 0) {
                 SetWindowPos(hwnd, NULL, state->spec.x, state->spec.y, 0, 0,
                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
+            InvalidateRect(hwnd, NULL, TRUE);
         }
     }
     HeapFree(GetProcessHeap(), 0, result);
+}
+
+static void ulw_render(HWND hwnd, ScriptDialogState *state) {
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    int cw = rc.right - rc.left;
+    int ch = rc.bottom - rc.top;
+    if (cw <= 0 || ch <= 0) return;
+
+    BITMAPINFO bmi = {0};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = cw;
+    bmi.bmiHeader.biHeight = -ch;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    void *bits = NULL;
+    HDC memdc = CreateCompatibleDC(NULL);
+    HBITMAP dib = CreateDIBSection(memdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    if (!dib || !bits) { DeleteDC(memdc); return; }
+    HBITMAP old_dib = (HBITMAP)SelectObject(memdc, dib);
+
+    memset(bits, 0, (size_t)cw * ch * 4);
+    paint_dialog(hwnd, memdc, state);
+
+    POINT pt_src = {0, 0};
+    SIZE sz = {cw, ch};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    POINT pt_wnd;
+    if (state->spec.x >= 0 && state->spec.y >= 0) {
+        pt_wnd.x = state->spec.x;
+        pt_wnd.y = state->spec.y;
+    } else {
+        RECT wr;
+        GetWindowRect(hwnd, &wr);
+        pt_wnd.x = wr.left;
+        pt_wnd.y = wr.top;
+    }
+    UpdateLayeredWindow(hwnd, NULL, &pt_wnd, &sz, memdc, &pt_src, 0, &blend, ULW_ALPHA);
+
+    SelectObject(memdc, old_dib);
+    DeleteObject(dib);
+    DeleteDC(memdc);
 }
 
 static void update_scrollbar(HWND hwnd, ScriptDialogState *state) {
@@ -779,7 +849,7 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             }
         }
         if (state) HeapFree(GetProcessHeap(), 0, state);
-        s_dialog_hwnd = NULL;
+        unregister_dialog(hwnd);
         return 0;
     }
 
