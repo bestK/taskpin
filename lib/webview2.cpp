@@ -249,11 +249,7 @@ public:
                 ctrl->put_Bounds(m_wv->desired_bounds);
                 ctrl->put_IsVisible(TRUE);
                 m_wv->ready = TRUE;
-                if (m_wv->pending_url[0]) {
-                    m_wv->webview->Navigate(m_wv->pending_url);
-                    m_wv->pending_url[0] = L'\0';
-                }
-                /* Inject taskpin JS bridge — deep Proxy for taskpin.xxx.yyy() → Lua call */
+                /* Inject taskpin JS bridge BEFORE navigating */
                 m_wv->webview->AddScriptToExecuteOnDocumentCreated(
                     L"(function(){"
                     L"var _cbs={},_id=0;"
@@ -383,6 +379,11 @@ public:
                     };
                     EventRegistrationToken token;
                     m_wv->webview->add_WebMessageReceived(new MsgHandler(m_wv), &token);
+                }
+                /* Navigate after all setup is complete */
+                if (m_wv->pending_url[0]) {
+                    m_wv->webview->Navigate(m_wv->pending_url);
+                    m_wv->pending_url[0] = L'\0';
                 }
                 return S_OK;
             }

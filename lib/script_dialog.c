@@ -3,7 +3,9 @@
 #include "config.h"
 #include "image.h"
 #include "webview2.h"
+#include "i18n.h"
 #include <shellapi.h>
+#include <shlwapi.h>
 #include <stdlib.h>
 #include <string.h>
 
