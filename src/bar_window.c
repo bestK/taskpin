@@ -1,6 +1,6 @@
 #include "ui.h"
 #include "image.h"
-#include "json.h"
+#include "cJSON.h"
 #include "logger.h"
 #include "sysinfo.h"
 #include <stdio.h>

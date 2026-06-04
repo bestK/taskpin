@@ -15,7 +15,7 @@ SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/expression.c $(SRC_DIR)/edit_dialog.c \
        $(SRC_DIR)/settings_dialog.c $(SRC_DIR)/main_window.c $(SRC_DIR)/bar_window.c \
        $(SRC_DIR)/market_dialog.c
 LIB_SRCS = $(LIB_DIR)/appbar.c $(LIB_DIR)/fetcher.c $(LIB_DIR)/config.c \
-           $(LIB_DIR)/json.c $(LIB_DIR)/scripting.c $(LIB_DIR)/base64.c \
+           $(LIB_DIR)/cJSON.c $(LIB_DIR)/cjson_utils.c $(LIB_DIR)/scripting.c $(LIB_DIR)/base64.c \
            $(LIB_DIR)/update.c $(LIB_DIR)/httputil.c $(LIB_DIR)/sysinfo.c \
            $(LIB_DIR)/script_dialog.c $(LIB_DIR)/image.c $(LIB_DIR)/event.c \
            $(LIB_DIR)/logger.c

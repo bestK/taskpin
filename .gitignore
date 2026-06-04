@@ -1,6 +1,7 @@
 *.o
 *.exe
 config.ini
+config.json
 icon_gen.png
 zentao_task.py
 zentao_task.lua

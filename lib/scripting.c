@@ -6,7 +6,7 @@
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
-#include "json.h"
+#include "cJSON.h"
 #include <winhttp.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,172 +42,114 @@ static void script_log_write(const char *msg) {
 
 /* ─── built-in json.decode for Lua ─── */
 
-static void push_json_node(lua_State *ls, JsonNode *node);
+static void push_cjson_node(lua_State *ls, cJSON *item);
 
-static void push_json_node(lua_State *ls, JsonNode *node) {
-    if (!node) { lua_pushnil(ls); return; }
-    switch (node->type) {
-    case JSON_NULL:   lua_pushnil(ls); break;
-    case JSON_BOOL:   lua_pushboolean(ls, node->bool_val); break;
-    case JSON_NUMBER: lua_pushnumber(ls, node->num_val); break;
-    case JSON_STRING: lua_pushstring(ls, node->str_val ? node->str_val : ""); break;
-    case JSON_OBJECT: {
+static void push_cjson_node(lua_State *ls, cJSON *item) {
+    if (!item) { lua_pushnil(ls); return; }
+    if (cJSON_IsNull(item)) {
+        lua_pushnil(ls);
+    } else if (cJSON_IsBool(item)) {
+        lua_pushboolean(ls, item->valueint);
+    } else if (cJSON_IsNumber(item)) {
+        lua_pushnumber(ls, item->valuedouble);
+    } else if (cJSON_IsString(item)) {
+        lua_pushstring(ls, item->valuestring ? item->valuestring : "");
+    } else if (cJSON_IsObject(item)) {
         lua_newtable(ls);
-        for (JsonNode *c = node->children; c; c = c->next) {
-            if (c->key) {
-                lua_pushstring(ls, c->key);
-                push_json_node(ls, c);
+        cJSON *child = NULL;
+        cJSON_ArrayForEach(child, item) {
+            if (child->string) {
+                lua_pushstring(ls, child->string);
+                push_cjson_node(ls, child);
                 lua_settable(ls, -3);
             }
         }
-        break;
-    }
-    case JSON_ARRAY: {
+    } else if (cJSON_IsArray(item)) {
         lua_newtable(ls);
         int idx = 1;
-        for (JsonNode *c = node->children; c; c = c->next, idx++) {
+        cJSON *child = NULL;
+        cJSON_ArrayForEach(child, item) {
             lua_pushinteger(ls, idx);
-            push_json_node(ls, c);
+            push_cjson_node(ls, child);
             lua_settable(ls, -3);
+            idx++;
         }
-        break;
-    }
+    } else {
+        lua_pushnil(ls);
     }
 }
 
 static int l_json_decode(lua_State *ls) {
     const char *str = luaL_checkstring(ls, 1);
-    JsonNode *root = json_parse(str);
+    cJSON *root = cJSON_Parse(str);
     if (!root) { lua_pushnil(ls); return 1; }
-    push_json_node(ls, root);
-    json_free(root);
+    push_cjson_node(ls, root);
+    cJSON_Delete(root);
     return 1;
 }
 
-static void json_encode_value(lua_State *ls, int idx, luaL_Buffer *b);
-
 /* ─── json.encode: Lua table → JSON string ─── */
 
-typedef struct {
-    char *buf;
-    int len;
-    int cap;
-} JsonBuf;
-
-static void jb_init(JsonBuf *jb) { jb->buf = NULL; jb->len = 0; jb->cap = 0; }
-static void jb_ensure(JsonBuf *jb, int need) {
-    if (jb->len + need >= jb->cap) {
-        int newcap = (jb->cap == 0) ? 1024 : jb->cap * 2;
-        while (newcap < jb->len + need + 1) newcap *= 2;
-        jb->buf = (char *)realloc(jb->buf, newcap);
-        jb->cap = newcap;
-    }
-}
-static void jb_addchar(JsonBuf *jb, char c) { jb_ensure(jb, 1); jb->buf[jb->len++] = c; }
-static void jb_addstr(JsonBuf *jb, const char *s) {
-    int n = (int)strlen(s); jb_ensure(jb, n); memcpy(jb->buf + jb->len, s, n); jb->len += n;
-}
-
-static void jb_encode_string(JsonBuf *jb, const char *s) {
-    jb_addchar(jb, '"');
-    if (!s) { jb_addchar(jb, '"'); return; }
-    for (; *s; s++) {
-        switch (*s) {
-            case '"':  jb_addstr(jb, "\\\""); break;
-            case '\\': jb_addstr(jb, "\\\\"); break;
-            case '\n': jb_addstr(jb, "\\n"); break;
-            case '\r': jb_addstr(jb, "\\r"); break;
-            case '\t': jb_addstr(jb, "\\t"); break;
-            default:
-                if ((unsigned char)*s < 0x20) {
-                    char esc[8]; snprintf(esc, sizeof(esc), "\\u%04x", (unsigned char)*s);
-                    jb_addstr(jb, esc);
-                } else {
-                    jb_addchar(jb, *s);
-                }
-                break;
-        }
-    }
-    jb_addchar(jb, '"');
-}
-
-static void jb_indent(JsonBuf *jb, int depth) {
-    jb_addchar(jb, '\n');
-    for (int i = 0; i < depth; i++) jb_addstr(jb, "  ");
-}
-
-static void jb_encode_value(lua_State *ls, int idx, JsonBuf *jb, int depth) {
+static cJSON *lua_to_cjson(lua_State *ls, int idx) {
     idx = lua_absindex(ls, idx);
     int t = lua_type(ls, idx);
     switch (t) {
     case LUA_TNIL:
-        jb_addstr(jb, "null");
-        break;
+        return cJSON_CreateNull();
     case LUA_TBOOLEAN:
-        jb_addstr(jb, lua_toboolean(ls, idx) ? "true" : "false");
-        break;
-    case LUA_TNUMBER: {
-        char num[64];
+        return cJSON_CreateBool(lua_toboolean(ls, idx));
+    case LUA_TNUMBER:
         if (lua_isinteger(ls, idx))
-            snprintf(num, sizeof(num), "%lld", (long long)lua_tointeger(ls, idx));
+            return cJSON_CreateNumber((double)lua_tointeger(ls, idx));
         else
-            snprintf(num, sizeof(num), "%.17g", lua_tonumber(ls, idx));
-        jb_addstr(jb, num);
-        break;
-    }
+            return cJSON_CreateNumber(lua_tonumber(ls, idx));
     case LUA_TSTRING:
-        jb_encode_string(jb, lua_tostring(ls, idx));
-        break;
+        return cJSON_CreateString(lua_tostring(ls, idx));
     case LUA_TTABLE: {
+        /* Detect array vs object: if key 1 exists, treat as array */
         lua_rawgeti(ls, idx, 1);
         BOOL is_array = !lua_isnil(ls, -1);
         lua_pop(ls, 1);
         if (is_array) {
-            jb_addchar(jb, '[');
+            cJSON *arr = cJSON_CreateArray();
             int len = (int)lua_rawlen(ls, idx);
             for (int i = 1; i <= len; i++) {
-                if (i > 1) jb_addchar(jb, ',');
-                if (depth >= 0) jb_indent(jb, depth + 1);
                 lua_rawgeti(ls, idx, i);
-                jb_encode_value(ls, -1, jb, depth >= 0 ? depth + 1 : -1);
+                cJSON *item = lua_to_cjson(ls, -1);
                 lua_pop(ls, 1);
+                if (item) cJSON_AddItemToArray(arr, item);
             }
-            if (depth >= 0 && len > 0) jb_indent(jb, depth);
-            jb_addchar(jb, ']');
+            return arr;
         } else {
-            jb_addchar(jb, '{');
-            int first = 1;
+            cJSON *obj = cJSON_CreateObject();
             lua_pushnil(ls);
             while (lua_next(ls, idx) != 0) {
                 if (lua_type(ls, -2) == LUA_TSTRING) {
-                    if (!first) jb_addchar(jb, ',');
-                    first = 0;
-                    if (depth >= 0) jb_indent(jb, depth + 1);
-                    jb_encode_string(jb, lua_tostring(ls, -2));
-                    jb_addstr(jb, depth >= 0 ? ": " : ":");
-                    jb_encode_value(ls, -1, jb, depth >= 0 ? depth + 1 : -1);
+                    const char *key = lua_tostring(ls, -2);
+                    cJSON *val = lua_to_cjson(ls, -1);
+                    if (val) cJSON_AddItemToObject(obj, key, val);
                 }
                 lua_pop(ls, 1);
             }
-            if (depth >= 0 && !first) jb_indent(jb, depth);
-            jb_addchar(jb, '}');
+            return obj;
         }
-        break;
     }
     default:
-        jb_addstr(jb, "null");
-        break;
+        return cJSON_CreateNull();
     }
 }
 
 static int l_json_encode(lua_State *ls) {
     BOOL pretty = lua_toboolean(ls, 2);
-    JsonBuf jb;
-    jb_init(&jb);
-    jb_encode_value(ls, 1, &jb, pretty ? 0 : -1);
-    jb_addchar(&jb, '\0');
-    lua_pushstring(ls, jb.buf ? jb.buf : "null");
-    free(jb.buf);
+    cJSON *root = lua_to_cjson(ls, 1);
+    if (!root) {
+        lua_pushstring(ls, "null");
+        return 1;
+    }
+    char *str = pretty ? cJSON_Print(root) : cJSON_PrintUnformatted(root);
+    lua_pushstring(ls, str ? str : "null");
+    if (str) cJSON_free(str);
+    cJSON_Delete(root);
     return 1;
 }
 

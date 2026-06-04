@@ -1,5 +1,6 @@
 #include "event.h"
-#include "json.h"
+#include "cJSON.h"
+#include "cjson_utils.h"
 #include "logger.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
@@ -39,36 +40,35 @@ static int l_event_clear(lua_State *ls) {
     return 0;
 }
 
-static void json_node_to_lua(lua_State *ls, JsonNode *node) {
-    if (!node) { lua_pushnil(ls); return; }
-    switch (node->type) {
-        case JSON_STRING: lua_pushstring(ls, node->str_val); break;
-        case JSON_NUMBER: lua_pushnumber(ls, node->num_val); break;
-        case JSON_BOOL:   lua_pushboolean(ls, node->bool_val); break;
-        case JSON_NULL:   lua_pushnil(ls); break;
-        case JSON_OBJECT: {
-            lua_newtable(ls);
-            JsonNode *c = node->children;
-            while (c) {
-                if (c->key) {
-                    json_node_to_lua(ls, c);
-                    lua_setfield(ls, -2, c->key);
-                }
-                c = c->next;
-            }
-            break;
-        }
-        case JSON_ARRAY: {
-            lua_newtable(ls);
-            JsonNode *c = node->children;
-            int idx = 1;
-            while (c) {
+static void json_node_to_lua(lua_State *ls, cJSON *item) {
+    if (!item) { lua_pushnil(ls); return; }
+    if (cJSON_IsString(item)) {
+        lua_pushstring(ls, item->valuestring);
+    } else if (cJSON_IsNumber(item)) {
+        lua_pushnumber(ls, item->valuedouble);
+    } else if (cJSON_IsBool(item)) {
+        lua_pushboolean(ls, item->valueint);
+    } else if (cJSON_IsNull(item)) {
+        lua_pushnil(ls);
+    } else if (cJSON_IsObject(item)) {
+        lua_newtable(ls);
+        cJSON *c = NULL;
+        cJSON_ArrayForEach(c, item) {
+            if (c->string) {
                 json_node_to_lua(ls, c);
-                lua_rawseti(ls, -2, idx++);
-                c = c->next;
+                lua_setfield(ls, -2, c->string);
             }
-            break;
         }
+    } else if (cJSON_IsArray(item)) {
+        lua_newtable(ls);
+        cJSON *c = NULL;
+        int idx = 1;
+        cJSON_ArrayForEach(c, item) {
+            json_node_to_lua(ls, c);
+            lua_rawseti(ls, -2, idx++);
+        }
+    } else {
+        lua_pushnil(ls);
     }
 }
 
@@ -90,18 +90,17 @@ void event_push_lua(void *L) {
 
     /* Parse params_json and merge fields into the event table */
     if (g_event.params_json[0]) {
-        JsonNode *root = json_parse(g_event.params_json);
-        if (root && root->type == JSON_OBJECT) {
-            JsonNode *child = root->children;
-            while (child) {
-                if (child->key) {
+        cJSON *root = cJSON_Parse(g_event.params_json);
+        if (root && cJSON_IsObject(root)) {
+            cJSON *child = NULL;
+            cJSON_ArrayForEach(child, root) {
+                if (child->string) {
                     json_node_to_lua(ls, child);
-                    lua_setfield(ls, -2, child->key);
+                    lua_setfield(ls, -2, child->string);
                 }
-                child = child->next;
             }
         }
-        if (root) json_free(root);
+        if (root) cJSON_Delete(root);
     }
     LeaveCriticalSection(&s_event_cs);
     lua_pushcfunction(ls, l_event_clear);
@@ -113,12 +112,12 @@ void event_get_response_file(char *out, int out_size) {
     out[0] = '\0';
     EnterCriticalSection(&s_event_cs);
     if (g_event.active && g_event.params_json[0]) {
-        JsonNode *root = json_parse(g_event.params_json);
+        cJSON *root = cJSON_Parse(g_event.params_json);
         if (root) {
-            JsonNode *rf = json_path_query(root, "$.response_file");
-            if (rf && rf->type == JSON_STRING)
-                strncpy(out, rf->str_val, out_size - 1);
-            json_free(root);
+            cJSON *rf = cjson_path_query(root, "$.response_file");
+            if (rf && cJSON_IsString(rf))
+                strncpy(out, rf->valuestring, out_size - 1);
+            cJSON_Delete(root);
         }
     }
     LeaveCriticalSection(&s_event_cs);

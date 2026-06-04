@@ -13,7 +13,7 @@
 #include "config.h"
 #include "appbar.h"
 #include "fetcher.h"
-#include "json.h"
+#include "cJSON.h"
 #include "scripting.h"
 #include "event.h"
 #include "script_dialog.h"

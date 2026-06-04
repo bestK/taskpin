@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "cjson_utils.h"
 
 void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size) {
     out[0] = L'\0';
@@ -10,7 +11,7 @@ void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size
     char expr8[CFG_MAX_EXPR];
     WideCharToMultiByte(CP_UTF8, 0, expr, -1, expr8, CFG_MAX_EXPR, NULL, NULL);
 
-    JsonNode *root = json_parse(raw);
+    cJSON *root = cJSON_Parse(raw);
 
     char result[FETCH_BUF_SIZE] = {0};
     int rpos = 0;
@@ -29,9 +30,9 @@ void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size
             path[pathlen] = '\0';
 
             if (root) {
-                JsonNode *node = json_path_query(root, path);
+                cJSON *node = cjson_path_query(root, path);
                 if (node) {
-                    rpos += json_node_to_string(node, result + rpos, FETCH_BUF_SIZE - rpos);
+                    rpos += cjson_node_to_string(node, result + rpos, FETCH_BUF_SIZE - rpos);
                 } else {
                     int copylen = pathlen;
                     if (rpos + copylen >= FETCH_BUF_SIZE) copylen = FETCH_BUF_SIZE - rpos - 1;
@@ -49,7 +50,7 @@ void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size
         }
     }
     result[rpos] = '\0';
-    if (root) json_free(root);
+    if (root) cJSON_Delete(root);
 
     MultiByteToWideChar(CP_UTF8, 0, result, -1, out, out_size);
 }

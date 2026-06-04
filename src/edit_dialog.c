@@ -22,7 +22,7 @@ typedef struct {
     int  param_decl_count;
     int  item_index;
     char cached_response[FETCH_BUF_SIZE];
-    JsonNode *json_root;
+    cJSON *json_root;
 } EditDlgState;
 
 static EditDlgState *g_edit = NULL;
@@ -310,25 +310,48 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     return CallWindowProcW(g_orig_dlg_proc, hwnd, msg, wp, lp);
 }
 
-static void tree_add_json(HWND hTree, HTREEITEM parent, JsonNode *node, char *path_buf, int path_len) {
+static void cjson_node_to_string(cJSON *node, char *buf, int buf_size) {
+    if (!node || buf_size <= 0) { buf[0] = '\0'; return; }
+    if (cJSON_IsString(node)) {
+        snprintf(buf, buf_size, "\"%s\"", node->valuestring ? node->valuestring : "");
+    } else if (cJSON_IsNumber(node)) {
+        if (node->valuedouble == (double)(int)node->valuedouble)
+            snprintf(buf, buf_size, "%d", node->valueint);
+        else
+            snprintf(buf, buf_size, "%g", node->valuedouble);
+    } else if (cJSON_IsBool(node)) {
+        snprintf(buf, buf_size, "%s", cJSON_IsTrue(node) ? "true" : "false");
+    } else if (cJSON_IsNull(node)) {
+        snprintf(buf, buf_size, "null");
+    } else if (cJSON_IsObject(node)) {
+        snprintf(buf, buf_size, "{...}");
+    } else if (cJSON_IsArray(node)) {
+        snprintf(buf, buf_size, "[...]");
+    } else {
+        buf[0] = '\0';
+    }
+}
+
+static void tree_add_json(HWND hTree, HTREEITEM parent, cJSON *node, char *path_buf, int path_len) {
     (void)path_len;
     if (!node) return;
-    for (JsonNode *c = (node->type == JSON_OBJECT || node->type == JSON_ARRAY) ? node->children : NULL;
-         c; c = c->next) {
+    if (!cJSON_IsObject(node) && !cJSON_IsArray(node)) return;
+
+    int idx = 0;
+    cJSON *c = NULL;
+    cJSON_ArrayForEach(c, node) {
         char label[256];
         char child_path[512];
 
-        if (node->type == JSON_OBJECT && c->key) {
-            snprintf(child_path, 512, "%s.%s", path_buf, c->key);
+        if (cJSON_IsObject(node) && c->string) {
+            snprintf(child_path, 512, "%s.%s", path_buf, c->string);
             char val_str[128];
-            json_node_to_string(c, val_str, 128);
-            snprintf(label, 256, "%s: %s", c->key, val_str);
+            cjson_node_to_string(c, val_str, 128);
+            snprintf(label, 256, "%s: %s", c->string, val_str);
         } else {
-            int idx = 0;
-            for (JsonNode *t = node->children; t && t != c; t = t->next) idx++;
             snprintf(child_path, 512, "%s[%d]", path_buf, idx);
             char val_str[128];
-            json_node_to_string(c, val_str, 128);
+            cjson_node_to_string(c, val_str, 128);
             snprintf(label, 256, "[%d]: %s", idx, val_str);
         }
 
@@ -345,9 +368,10 @@ static void tree_add_json(HWND hTree, HTREEITEM parent, JsonNode *node, char *pa
 
         HTREEITEM hItem = TreeView_InsertItem(hTree, &tvis);
 
-        if (c->type == JSON_OBJECT || c->type == JSON_ARRAY) {
+        if (cJSON_IsObject(c) || cJSON_IsArray(c)) {
             tree_add_json(hTree, hItem, c, child_path, (int)strlen(child_path));
         }
+        idx++;
     }
 }
 
@@ -367,8 +391,8 @@ static void edit_load_response(EditDlgState *st) {
         strcpy(st->cached_response, "[fetch error]");
     }
 
-    if (st->json_root) { json_free(st->json_root); st->json_root = NULL; }
-    st->json_root = json_parse(st->cached_response);
+    if (st->json_root) { cJSON_Delete(st->json_root); st->json_root = NULL; }
+    st->json_root = cJSON_Parse(st->cached_response);
 
     TreeView_DeleteAllItems(st->hTree);
     if (st->json_root) {
@@ -715,7 +739,7 @@ void show_edit_dialog(HWND parent, int item_idx) {
         tree_free_params(st->hTree, root_item);
         root_item = TreeView_GetNextSibling(st->hTree, root_item);
     }
-    if (st->json_root) json_free(st->json_root);
+    if (st->json_root) cJSON_Delete(st->json_root);
     DestroyWindow(st->hDlg);
     free(st);
     g_edit = NULL;

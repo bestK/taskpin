@@ -20,16 +20,13 @@ static void mkt_check_geo(void) {
     s_geo_checked = TRUE;
     char *resp = http_request_sync(L"https://api.ip.sb/geoip", L"GET", NULL, NULL, NULL, 0);
     if (!resp) return;
-    JsonNode *root = json_parse(resp);
+    cJSON *root = cJSON_Parse(resp);
     if (root) {
-        for (JsonNode *c = root->children; c; c = c->next) {
-            if (c->key && strcmp(c->key, "country_code") == 0 &&
-                c->str_val && strcmp(c->str_val, "CN") == 0) {
-                s_is_china = TRUE;
-                break;
-            }
+        cJSON *cc = cJSON_GetObjectItem(root, "country_code");
+        if (cc && cJSON_IsString(cc) && strcmp(cc->valuestring, "CN") == 0) {
+            s_is_china = TRUE;
         }
-        json_free(root);
+        cJSON_Delete(root);
     }
     free(resp);
 }
@@ -90,34 +87,32 @@ static void mkt_fetch_scripts(const WCHAR *repo) {
     char *resp = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
 
     if (resp) {
-        JsonNode *root = json_parse(resp);
+        cJSON *root = cJSON_Parse(resp);
         if (root) {
-            JsonNode *scripts = NULL;
-            for (JsonNode *c = root->children; c; c = c->next) {
-                if (c->key && strcmp(c->key, "scripts") == 0 && c->type == JSON_ARRAY) {
-                    scripts = c;
-                    break;
-                }
-            }
-            if (scripts) {
-                for (JsonNode *s = scripts->children; s && s_mkt->script_count < MKT_MAX_SCRIPTS; s = s->next) {
+            cJSON *scripts = cJSON_GetObjectItem(root, "scripts");
+            if (scripts && cJSON_IsArray(scripts)) {
+                cJSON *s = NULL;
+                cJSON_ArrayForEach(s, scripts) {
+                    if (s_mkt->script_count >= MKT_MAX_SCRIPTS) break;
                     MarketScript *ms = &s_mkt->scripts[s_mkt->script_count];
                     memset(ms, 0, sizeof(*ms));
-                    for (JsonNode *f = s->children; f; f = f->next) {
-                        if (!f->key || !f->str_val) continue;
-                        if (strcmp(f->key, "name") == 0) strncpy(ms->name, f->str_val, 127);
-                        else if (strcmp(f->key, "file") == 0) strncpy(ms->file, f->str_val, 255);
-                        else if (strcmp(f->key, "description") == 0) strncpy(ms->description, f->str_val, 255);
-                        else if (strcmp(f->key, "author") == 0) strncpy(ms->author, f->str_val, 63);
-                        else if (strcmp(f->key, "version") == 0) strncpy(ms->version, f->str_val, 31);
-                    }
+                    cJSON *f_name = cJSON_GetObjectItem(s, "name");
+                    cJSON *f_file = cJSON_GetObjectItem(s, "file");
+                    cJSON *f_desc = cJSON_GetObjectItem(s, "description");
+                    cJSON *f_author = cJSON_GetObjectItem(s, "author");
+                    cJSON *f_version = cJSON_GetObjectItem(s, "version");
+                    if (f_name && cJSON_IsString(f_name)) strncpy(ms->name, f_name->valuestring, 127);
+                    if (f_file && cJSON_IsString(f_file)) strncpy(ms->file, f_file->valuestring, 255);
+                    if (f_desc && cJSON_IsString(f_desc)) strncpy(ms->description, f_desc->valuestring, 255);
+                    if (f_author && cJSON_IsString(f_author)) strncpy(ms->author, f_author->valuestring, 63);
+                    if (f_version && cJSON_IsString(f_version)) strncpy(ms->version, f_version->valuestring, 31);
                     if (ms->file[0]) s_mkt->script_count++;
                 }
-                json_free(root);
+                cJSON_Delete(root);
                 free(resp);
                 goto populate;
             }
-            json_free(root);
+            cJSON_Delete(root);
         }
         free(resp);
     }
@@ -127,15 +122,14 @@ static void mkt_fetch_scripts(const WCHAR *repo) {
     resp = http_request_sync(url, L"GET", NULL,
         L"User-Agent: TaskPin\r\nAccept: application/vnd.github.v3+json\r\n", NULL, 0);
     if (resp) {
-        JsonNode *root = json_parse(resp);
-        if (root && root->type == JSON_ARRAY) {
-            for (JsonNode *item = root->children; item && s_mkt->script_count < MKT_MAX_SCRIPTS; item = item->next) {
-                char *name = NULL;
-                for (JsonNode *f = item->children; f; f = f->next) {
-                    if (f->key && strcmp(f->key, "name") == 0 && f->str_val)
-                        name = f->str_val;
-                }
-                if (!name) continue;
+        cJSON *root = cJSON_Parse(resp);
+        if (root && cJSON_IsArray(root)) {
+            cJSON *item = NULL;
+            cJSON_ArrayForEach(item, root) {
+                if (s_mkt->script_count >= MKT_MAX_SCRIPTS) break;
+                cJSON *f_name = cJSON_GetObjectItem(item, "name");
+                if (!f_name || !cJSON_IsString(f_name)) continue;
+                char *name = f_name->valuestring;
                 int len = (int)strlen(name);
                 if (len < 5 || strcmp(name + len - 4, ".lua") != 0) continue;
 
@@ -146,7 +140,7 @@ static void mkt_fetch_scripts(const WCHAR *repo) {
                 strcpy(ms->author, repo8);
                 s_mkt->script_count++;
             }
-            json_free(root);
+            cJSON_Delete(root);
         }
         free(resp);
     }
