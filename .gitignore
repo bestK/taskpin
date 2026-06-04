@@ -12,3 +12,5 @@ crash.log
 .ace-tool/
 .claude/
 scripts/
+WebView2Loader.dll
+webview2_data/
