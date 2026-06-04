@@ -382,7 +382,58 @@ public:
                 }
                 /* Navigate after all setup is complete */
                 if (m_wv->pending_url[0]) {
-                    m_wv->webview->Navigate(m_wv->pending_url);
+                    WCHAR nav_url[2048];
+                    lstrcpynW(nav_url, m_wv->pending_url, 2048);
+
+                    /* For remote URLs: cache locally as HTML file */
+                    if (wcsncmp(nav_url, L"http://", 7) == 0 || wcsncmp(nav_url, L"https://", 8) == 0) {
+                        /* Generate cache filename from URL hash */
+                        unsigned int hash = 5381;
+                        for (const WCHAR *p = nav_url; *p; p++) hash = hash * 33 + *p;
+
+                        WCHAR cache_dir[MAX_PATH];
+                        SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, cache_dir);
+                        PathAppendW(cache_dir, L"TaskPin\\webview_cache");
+                        CreateDirectoryW(cache_dir, NULL);
+
+                        WCHAR cache_file[MAX_PATH];
+                        wsprintfW(cache_file, L"%s\\%08x.html", cache_dir, hash);
+
+                        /* Check if cache exists and is fresh (< 5 min) */
+                        BOOL use_cache = FALSE;
+                        WIN32_FILE_ATTRIBUTE_DATA fad;
+                        if (GetFileAttributesExW(cache_file, GetFileExInfoStandard, &fad)) {
+                            FILETIME now_ft; GetSystemTimeAsFileTime(&now_ft);
+                            ULARGE_INTEGER now_u = { now_ft.dwLowDateTime, now_ft.dwHighDateTime };
+                            ULARGE_INTEGER file_u = { fad.ftLastWriteTime.dwLowDateTime, fad.ftLastWriteTime.dwHighDateTime };
+                            ULONGLONG age_sec = (now_u.QuadPart - file_u.QuadPart) / 10000000ULL;
+                            if (age_sec < 300) use_cache = TRUE;
+                        }
+
+                        if (!use_cache) {
+                            int out_len = 0;
+                            char *data = http_get_sync(nav_url, &out_len);
+                            if (data && out_len > 0) {
+                                BOOL is_html = FALSE;
+                                for (int k = 0; k < out_len && k < 256; k++) {
+                                    if (data[k] == '<') { is_html = TRUE; break; }
+                                    if (data[k] != ' ' && data[k] != '\t' && data[k] != '\r' && data[k] != '\n') break;
+                                }
+                                if (is_html) {
+                                    FILE *f = _wfopen(cache_file, L"wb");
+                                    if (f) { fwrite(data, 1, out_len, f); fclose(f); use_cache = TRUE; }
+                                }
+                                free(data);
+                            }
+                        }
+
+                        if (use_cache) {
+                            wsprintfW(nav_url, L"file:///%s", cache_file);
+                            for (WCHAR *p = nav_url; *p; p++) if (*p == L'\\') *p = L'/';
+                        }
+                    }
+
+                    m_wv->webview->Navigate(nav_url);
                     m_wv->pending_url[0] = L'\0';
                 }
                 return S_OK;
