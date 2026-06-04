@@ -76,7 +76,7 @@ static void mkt_populate_combo(void) {
 static void mkt_fetch_scripts(const WCHAR *repo) {
     s_mkt->script_count = 0;
     ListView_DeleteAllItems(s_mkt->hList);
-    mkt_set_status(L"正在获取...");
+    mkt_set_status(tr("market.fetching"));
 
     char repo8[256];
     WideCharToMultiByte(CP_UTF8, 0, repo, -1, repo8, 256, NULL, NULL);
@@ -166,14 +166,14 @@ populate:
     }
 
     WCHAR status[64];
-    wsprintfW(status, L"共 %d 个脚本", s_mkt->script_count);
+    wsprintfW(status, tr("market.script_count"), s_mkt->script_count);
     mkt_set_status(status);
 }
 
 static void mkt_download_script(void) {
     int sel = ListView_GetNextItem(s_mkt->hList, -1, LVNI_SELECTED);
     if (sel < 0 || sel >= s_mkt->script_count) {
-        MessageBoxW(s_mkt->hDlg, L"请先选择一个脚本", L"TaskPin", MB_OK);
+        MessageBoxW(s_mkt->hDlg, tr("market.select_script_first"), L"TaskPin", MB_OK);
         return;
     }
 
@@ -190,10 +190,10 @@ static void mkt_download_script(void) {
     WCHAR url[512];
     mkt_build_raw_url(url, 512, repo, ms->file);
 
-    mkt_set_status(L"正在下载...");
+    mkt_set_status(tr("market.downloading"));
     char *content = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
     if (!content) {
-        mkt_set_status(L"下载失败");
+        mkt_set_status(tr("market.download_failed"));
         return;
     }
 
@@ -244,9 +244,9 @@ static void mkt_download_script(void) {
             bars_create_all();
             listview_populate();
         }
-        mkt_set_status(L"下载并添加成功!");
+        mkt_set_status(tr("market.download_success"));
     } else {
-        mkt_set_status(L"保存失败");
+        mkt_set_status(tr("market.save_failed"));
     }
     free(content);
 }
@@ -273,13 +273,13 @@ static LRESULT CALLBACK mkt_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             WCHAR input[CFG_MAX_NAME] = {0};
             /* Simple input via edit control text - prompt user */
             if (g_cfg.source_count >= CFG_MAX_SOURCES) {
-                MessageBoxW(hwnd, L"最多支持 8 个源", L"TaskPin", MB_OK);
+                MessageBoxW(hwnd, tr("market.max_sources"), L"TaskPin", MB_OK);
                 break;
             }
             /* Use a simple input box approach: get text from combo edit */
             GetWindowTextW(s_mkt->hCombo, input, CFG_MAX_NAME);
             if (input[0] == L'\0') {
-                MessageBoxW(hwnd, L"请在下拉框中输入仓库地址\n格式: user/repo", L"TaskPin", MB_OK);
+                MessageBoxW(hwnd, tr("market.enter_repo"), L"TaskPin", MB_OK);
                 break;
             }
             /* Check if already exists */
@@ -307,7 +307,7 @@ static LRESULT CALLBACK mkt_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             mkt_populate_combo();
             ListView_DeleteAllItems(s_mkt->hList);
             s_mkt->script_count = 0;
-            mkt_set_status(L"已删除源");
+            mkt_set_status(tr("market.source_deleted"));
             break;
         }
         case IDCANCEL:
@@ -342,7 +342,7 @@ void show_market_dialog(HWND parent) {
 
     HWND hwnd = CreateWindowExW(
         WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
-        L"#32770", L"Plugin Market",
+        L"#32770", tr("market.title"),
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU,
         200, 120, 580, 420,
         parent, NULL, g_hinst, NULL);
@@ -355,11 +355,11 @@ void show_market_dialog(HWND parent) {
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | CBS_AUTOHSCROLL,
         10, 10, 340, 200, hwnd, (HMENU)MKT_ID_COMBO, g_hinst, NULL);
 
-    CreateWindowExW(0, L"BUTTON", L"Add",
+    CreateWindowExW(0, L"BUTTON", tr("market.add"),
         WS_CHILD | WS_VISIBLE, 358, 10, 50, 24, hwnd, (HMENU)MKT_ID_ADDSRC, g_hinst, NULL);
-    CreateWindowExW(0, L"BUTTON", L"Del",
+    CreateWindowExW(0, L"BUTTON", tr("market.del"),
         WS_CHILD | WS_VISIBLE, 414, 10, 50, 24, hwnd, (HMENU)MKT_ID_DELSRC, g_hinst, NULL);
-    CreateWindowExW(0, L"BUTTON", L"Refresh",
+    CreateWindowExW(0, L"BUTTON", tr("market.refresh"),
         WS_CHILD | WS_VISIBLE, 470, 10, 60, 24, hwnd, (HMENU)MKT_ID_REFRESH, g_hinst, NULL);
 
     /* Script list */
@@ -370,19 +370,19 @@ void show_market_dialog(HWND parent) {
 
     LVCOLUMNW col = {0};
     col.mask = LVCF_TEXT | LVCF_WIDTH;
-    col.pszText = L"Name"; col.cx = 120;
+    col.pszText = (LPWSTR)tr("market.col_name"); col.cx = 120;
     ListView_InsertColumn(mkt.hList, 0, &col);
-    col.pszText = L"Description"; col.cx = 240;
+    col.pszText = (LPWSTR)tr("market.col_description"); col.cx = 240;
     ListView_InsertColumn(mkt.hList, 1, &col);
-    col.pszText = L"Author"; col.cx = 100;
+    col.pszText = (LPWSTR)tr("market.col_author"); col.cx = 100;
     ListView_InsertColumn(mkt.hList, 2, &col);
-    col.pszText = L"Version"; col.cx = 60;
+    col.pszText = (LPWSTR)tr("market.col_version"); col.cx = 60;
     ListView_InsertColumn(mkt.hList, 3, &col);
 
     /* Bottom bar */
-    CreateWindowExW(0, L"BUTTON", L"Download",
+    CreateWindowExW(0, L"BUTTON", tr("market.download"),
         WS_CHILD | WS_VISIBLE, 10, 340, 80, 28, hwnd, (HMENU)MKT_ID_DOWNLOAD, g_hinst, NULL);
-    mkt.hStatus = CreateWindowExW(0, L"STATIC", L"选择源后点击 Refresh",
+    mkt.hStatus = CreateWindowExW(0, L"STATIC", tr("market.initial_status"),
         WS_CHILD | WS_VISIBLE | SS_LEFT,
         100, 346, 300, 20, hwnd, (HMENU)MKT_ID_STATUS, g_hinst, NULL);
 
@@ -416,7 +416,7 @@ void import_script_from_url(const WCHAR *url) {
     mkt_check_geo();
     char *content = http_request_sync(url, L"GET", NULL, NULL, NULL, 0);
     if (!content) {
-        MessageBoxW(NULL, L"Failed to download script", L"TaskPin", MB_OK | MB_ICONERROR);
+        MessageBoxW(NULL, tr("market.download_script_failed"), L"TaskPin", MB_OK | MB_ICONERROR);
         return;
     }
 
@@ -447,16 +447,16 @@ void import_script_from_url(const WCHAR *url) {
 
     enum { BTN_INSTALL = 100, BTN_VIEW = 101, BTN_CANCEL = 102 };
     TASKDIALOG_BUTTON buttons[] = {
-        { BTN_INSTALL, L"Install" },
-        { BTN_VIEW,    L"View Code" },
-        { BTN_CANCEL,  L"Cancel" },
+        { BTN_INSTALL, tr("market.install") },
+        { BTN_VIEW,    tr("market.view_code") },
+        { BTN_CANCEL,  tr("market.cancel") },
     };
     TASKDIALOGCONFIG tdc = {0};
     tdc.cbSize = sizeof(tdc);
     tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
     tdc.pszWindowTitle = L"TaskPin";
     tdc.pszMainIcon = TD_INFORMATION_ICON;
-    tdc.pszMainInstruction = L"Install this script?";
+    tdc.pszMainInstruction = tr("market.install_prompt");
     tdc.pszContent = info;
     tdc.cButtons = 3;
     tdc.pButtons = buttons;
@@ -497,8 +497,8 @@ void import_script_from_url(const WCHAR *url) {
     /* Check if file already exists */
     if (GetFileAttributesW(filepath) != INVALID_FILE_ATTRIBUTES) {
         WCHAR ow_msg[512];
-        wsprintfW(ow_msg, L"Script \"%s\" already exists. Overwrite?", filename);
-        int ow = MessageBoxW(NULL, ow_msg, L"TaskPin - Overwrite",
+        wsprintfW(ow_msg, tr("market.overwrite_confirm"), filename);
+        int ow = MessageBoxW(NULL, ow_msg, tr("market.overwrite_title"),
             MB_YESNO | MB_ICONWARNING);
         if (ow != IDYES) {
             DeleteFileW(tmp_path);

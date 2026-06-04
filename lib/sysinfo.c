@@ -1111,6 +1111,18 @@ static int l_sys_is_china(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_language(lua_State *ls) {
+    WCHAR lang[LOCALE_NAME_MAX_LENGTH];
+    if (GetUserDefaultLocaleName(lang, LOCALE_NAME_MAX_LENGTH) > 0) {
+        char utf8[64];
+        WideCharToMultiByte(CP_UTF8, 0, lang, -1, utf8, 64, NULL, NULL);
+        lua_pushstring(ls, utf8);
+    } else {
+        lua_pushstring(ls, "en");
+    }
+    return 1;
+}
+
 static int l_sys_gh_proxy(lua_State *ls) {
     const char *url = luaL_checkstring(ls, 1);
     ensure_china_check();
@@ -1364,6 +1376,8 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "env");
     lua_pushcfunction(ls, l_sys_is_china);
     lua_setfield(ls, -2, "is_china");
+    lua_pushcfunction(ls, l_sys_language);
+    lua_setfield(ls, -2, "language");
     lua_pushcfunction(ls, l_sys_gh_proxy);
     lua_setfield(ls, -2, "gh_proxy");
     lua_pushcfunction(ls, l_sys_key_pressed);

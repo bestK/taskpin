@@ -49,34 +49,34 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         LVCOLUMNW col = {0};
         col.mask = LVCF_TEXT | LVCF_WIDTH;
-        col.pszText = L"Name"; col.cx = 100;
+        col.pszText = (LPWSTR)tr("main.col_name"); col.cx = 100;
         ListView_InsertColumn(g_listview, 0, &col);
-        col.pszText = L"Type"; col.cx = 50;
+        col.pszText = (LPWSTR)tr("main.col_type"); col.cx = 50;
         ListView_InsertColumn(g_listview, 1, &col);
-        col.pszText = L"Source"; col.cx = 250;
+        col.pszText = (LPWSTR)tr("main.col_source"); col.cx = 250;
         ListView_InsertColumn(g_listview, 2, &col);
-        col.pszText = L"Interval"; col.cx = 60;
+        col.pszText = (LPWSTR)tr("main.col_interval"); col.cx = 60;
         ListView_InsertColumn(g_listview, 3, &col);
-        col.pszText = L"Pin"; col.cx = 30;
+        col.pszText = (LPWSTR)tr("main.col_pin"); col.cx = 30;
         ListView_InsertColumn(g_listview, 4, &col);
-        col.pszText = L"X,Y"; col.cx = 60;
+        col.pszText = (LPWSTR)tr("main.col_xy"); col.cx = 60;
         ListView_InsertColumn(g_listview, 5, &col);
-        col.pszText = L"W"; col.cx = 35;
+        col.pszText = (LPWSTR)tr("main.col_width"); col.cx = 35;
         ListView_InsertColumn(g_listview, 6, &col);
-        col.pszText = L"BG"; col.cx = 65;
+        col.pszText = (LPWSTR)tr("main.col_bg"); col.cx = 65;
         ListView_InsertColumn(g_listview, 7, &col);
 
         SendMessageW(g_listview, WM_SETFONT, (WPARAM)g_font, TRUE);
 
-        CreateWindowExW(0, L"BUTTON", L"Add",
+        CreateWindowExW(0, L"BUTTON", tr("main.add"),
             WS_CHILD | WS_VISIBLE, 10, 268, 70, 28, hwnd, (HMENU)IDB_ADD, g_hinst, NULL);
-        CreateWindowExW(0, L"BUTTON", L"Delete",
+        CreateWindowExW(0, L"BUTTON", tr("main.delete"),
             WS_CHILD | WS_VISIBLE, 90, 268, 70, 28, hwnd, (HMENU)IDB_DEL, g_hinst, NULL);
-        CreateWindowExW(0, L"BUTTON", L"Pin",
+        CreateWindowExW(0, L"BUTTON", tr("main.pin"),
             WS_CHILD | WS_VISIBLE, 170, 268, 90, 28, hwnd, (HMENU)IDB_SELECT, g_hinst, NULL);
-        CreateWindowExW(0, L"BUTTON", L"Settings",
+        CreateWindowExW(0, L"BUTTON", tr("main.settings"),
             WS_CHILD | WS_VISIBLE, 270, 268, 80, 28, hwnd, (HMENU)IDB_SETTINGS, g_hinst, NULL);
-        CreateWindowExW(0, L"BUTTON", L"Market",
+        CreateWindowExW(0, L"BUTTON", tr("main.market"),
             WS_CHILD | WS_VISIBLE, 360, 268, 70, 28, hwnd, (HMENU)IDB_MARKET, g_hinst, NULL);
 
         CreateWindowExW(0, L"STATIC", L"v" TASKPIN_VERSION,
@@ -100,9 +100,9 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             HWND hBtn = GetDlgItem(hwnd, IDB_SELECT);
             if (hBtn) {
                 if (sel >= 0 && sel < g_cfg.count && g_cfg.items[sel].pinned)
-                    SetWindowTextW(hBtn, L"Unpin");
+                    SetWindowTextW(hBtn, tr("main.unpin"));
                 else
-                    SetWindowTextW(hBtn, L"Pin");
+                    SetWindowTextW(hBtn, tr("main.pin"));
             }
         }
         return 0;
@@ -149,7 +149,7 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 bars_destroy_all();
                 bars_create_all();
             } else {
-                MessageBoxW(hwnd, L"Please select an item first.", L"TaskPin", MB_OK | MB_ICONINFORMATION);
+                MessageBoxW(hwnd, tr("main.select_item_first"), L"TaskPin", MB_OK | MB_ICONINFORMATION);
             }
             break;
         }
@@ -193,7 +193,7 @@ void show_main_window(void) {
         listview_populate();
         return;
     }
-    g_main_hwnd = CreateWindowExW(0, L"TaskPinMainClass", L"TaskPin - Items",
+    g_main_hwnd = CreateWindowExW(0, L"TaskPinMainClass", tr("main.window_title"),
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 640, 340,
         NULL, NULL, g_hinst, NULL);

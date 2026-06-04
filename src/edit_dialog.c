@@ -479,7 +479,7 @@ void show_edit_dialog(HWND parent, int item_idx) {
     st->item_index = item_idx;
     g_edit = st;
 
-    const WCHAR *title = (item_idx >= 0) ? L"Edit Item" : L"Add Item";
+    const WCHAR *title = (item_idx >= 0) ? tr("edit.title_edit") : tr("edit.title_add");
     st->hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", title,
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
@@ -487,40 +487,40 @@ void show_edit_dialog(HWND parent, int item_idx) {
     if (!st->hDlg) { free(st); g_edit = NULL; return; }
 
     int y = 10;
-    st->hTypeLabel = CreateWindowExW(0, L"STATIC", L"Type:", WS_CHILD | WS_VISIBLE,
+    st->hTypeLabel = CreateWindowExW(0, L"STATIC", tr("edit.type"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 40, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hType = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
         55, y, 120, 100, st->hDlg, (HMENU)5050, g_hinst, NULL);
-    SendMessageW(st->hType, CB_ADDSTRING, 0, (LPARAM)L"URL");
-    SendMessageW(st->hType, CB_ADDSTRING, 0, (LPARAM)L"Lua File");
+    SendMessageW(st->hType, CB_ADDSTRING, 0, (LPARAM)tr("edit.type_url"));
+    SendMessageW(st->hType, CB_ADDSTRING, 0, (LPARAM)tr("edit.type_lua"));
     SendMessageW(st->hType, CB_SETCURSEL, 0, 0);
     SendMessageW(st->hType, WM_SETFONT, (WPARAM)g_font, TRUE);
 
-    st->hNameLabel = CreateWindowExW(0, L"STATIC", L"Name:", WS_CHILD | WS_VISIBLE,
+    st->hNameLabel = CreateWindowExW(0, L"STATIC", tr("edit.name"), WS_CHILD | WS_VISIBLE,
         200, y + 2, 40, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hName = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         245, y, 365, 22, st->hDlg, (HMENU)IDE_NAME, g_hinst, NULL);
 
     y += 30;
-    st->hUrlLabel = CreateWindowExW(0, L"STATIC", L"URL:", WS_CHILD | WS_VISIBLE,
+    st->hUrlLabel = CreateWindowExW(0, L"STATIC", tr("edit.url"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 50, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"http://localhost:8080/status",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         70, y, 440, 22, st->hDlg, (HMENU)IDE_URL, g_hinst, NULL);
-    st->hLoadBtn = CreateWindowExW(0, L"BUTTON", L"Load",
+    st->hLoadBtn = CreateWindowExW(0, L"BUTTON", tr("edit.load"),
         WS_CHILD | WS_VISIBLE, 520, y, 60, 22, st->hDlg, (HMENU)IDB_LOAD, g_hinst, NULL);
 
     y += 28;
-    st->hHeadersLabel = CreateWindowExW(0, L"STATIC", L"Headers:", WS_CHILD | WS_VISIBLE,
+    st->hHeadersLabel = CreateWindowExW(0, L"STATIC", tr("edit.headers"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hHeaders = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
         70, y, 540, 48, st->hDlg, NULL, g_hinst, NULL);
     SendMessageW(st->hHeaders, WM_SETFONT, (WPARAM)g_font, TRUE);
 
-    st->hLuaLabel = CreateWindowExW(0, L"STATIC", L"Lua File:", WS_CHILD,
+    st->hLuaLabel = CreateWindowExW(0, L"STATIC", tr("edit.lua_file"), WS_CHILD,
         10, y + 2, 60, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hLuaPath = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | ES_AUTOHSCROLL,
@@ -530,7 +530,7 @@ void show_edit_dialog(HWND parent, int item_idx) {
         WS_CHILD, 550, y, 30, 22, st->hDlg, (HMENU)5052, g_hinst, NULL);
 
     y += 56;
-    st->hIntLabel = CreateWindowExW(0, L"STATIC", L"Interval:", WS_CHILD | WS_VISIBLE,
+    st->hIntLabel = CreateWindowExW(0, L"STATIC", tr("edit.interval"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 20, st->hDlg, NULL, g_hinst, NULL);
     st->hInt = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"5000",
         WS_CHILD | WS_VISIBLE | ES_NUMBER,
@@ -551,7 +551,7 @@ void show_edit_dialog(HWND parent, int item_idx) {
     st->param_decl_count = 0;
 
     y += 30;
-    st->hRespLabel = CreateWindowExW(0, L"STATIC", L"Response structure (click to insert):",
+    st->hRespLabel = CreateWindowExW(0, L"STATIC", tr("edit.response_structure"),
         WS_CHILD | WS_VISIBLE, 10, y, 350, 18, st->hDlg, NULL, g_hinst, NULL);
 
     y += 20;
@@ -560,7 +560,7 @@ void show_edit_dialog(HWND parent, int item_idx) {
         10, y, 600, 180, st->hDlg, (HMENU)IDC_TREE, g_hinst, NULL);
 
     y += 188;
-    st->hTemplateLabel = CreateWindowExW(0, L"STATIC", L"Template:", WS_CHILD | WS_VISIBLE,
+    st->hTemplateLabel = CreateWindowExW(0, L"STATIC", tr("edit.template"), WS_CHILD | WS_VISIBLE,
         10, y, 60, 18, st->hDlg, NULL, g_hinst, NULL);
 
     y += 20;
@@ -569,38 +569,38 @@ void show_edit_dialog(HWND parent, int item_idx) {
         10, y, 600, 60, st->hDlg, (HMENU)IDE_EXPR, g_hinst, NULL);
 
     y += 68;
-    st->hPreviewLabel = CreateWindowExW(0, L"STATIC", L"Preview:", WS_CHILD | WS_VISIBLE,
+    st->hPreviewLabel = CreateWindowExW(0, L"STATIC", tr("edit.preview"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 55, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hPreview = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_READONLY,
         70, y, 540, 22, st->hDlg, (HMENU)IDC_PREVIEW, g_hinst, NULL);
 
     y += 30;
-    st->hClickCheck = CreateWindowExW(0, L"BUTTON", L"Enable click to open URL",
+    st->hClickCheck = CreateWindowExW(0, L"BUTTON", tr("edit.enable_click_url"),
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         10, y, 200, 20, st->hDlg, NULL, g_hinst, NULL);
 
     y += 24;
-    st->hClickUrlLabel = CreateWindowExW(0, L"STATIC", L"Click URL:", WS_CHILD | WS_VISIBLE,
+    st->hClickUrlLabel = CreateWindowExW(0, L"STATIC", tr("edit.click_url"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 70, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hClickUrl = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         85, y, 525, 22, st->hDlg, NULL, g_hinst, NULL);
 
     y += 30;
-    st->hBarWidthLabel = CreateWindowExW(0, L"STATIC", L"Bar W:", WS_CHILD | WS_VISIBLE,
+    st->hBarWidthLabel = CreateWindowExW(0, L"STATIC", tr("edit.bar_w"), WS_CHILD | WS_VISIBLE,
         10, y + 2, 40, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hBarWidth = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"0",
         WS_CHILD | WS_VISIBLE | ES_NUMBER, 52, y, 50, 22, st->hDlg, NULL, g_hinst, NULL);
-    st->hBarXLabel = CreateWindowExW(0, L"STATIC", L"X:", WS_CHILD | WS_VISIBLE,
+    st->hBarXLabel = CreateWindowExW(0, L"STATIC", tr("edit.bar_x"), WS_CHILD | WS_VISIBLE,
         115, y + 2, 15, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hBarX = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"-1",
         WS_CHILD | WS_VISIBLE, 132, y, 50, 22, st->hDlg, NULL, g_hinst, NULL);
-    st->hBarYLabel = CreateWindowExW(0, L"STATIC", L"Y:", WS_CHILD | WS_VISIBLE,
+    st->hBarYLabel = CreateWindowExW(0, L"STATIC", tr("edit.bar_y"), WS_CHILD | WS_VISIBLE,
         195, y + 2, 15, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hBarY = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"-1",
         WS_CHILD | WS_VISIBLE, 212, y, 50, 22, st->hDlg, NULL, g_hinst, NULL);
-    st->hBarBgLabel = CreateWindowExW(0, L"STATIC", L"BG:", WS_CHILD | WS_VISIBLE,
+    st->hBarBgLabel = CreateWindowExW(0, L"STATIC", tr("edit.bar_bg"), WS_CHILD | WS_VISIBLE,
         275, y + 2, 25, 18, st->hDlg, NULL, g_hinst, NULL);
     st->hBarBg = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"FFFFFFFF",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 302, y, 70, 22, st->hDlg, NULL, g_hinst, NULL);
@@ -610,10 +610,10 @@ void show_edit_dialog(HWND parent, int item_idx) {
     SendMessageW(st->hBarBg, WM_SETFONT, (WPARAM)g_font, TRUE);
 
     y += 30;
-    CreateWindowExW(0, L"BUTTON", L"OK",
+    CreateWindowExW(0, L"BUTTON", tr("edit.ok"),
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         230, y, 80, 28, st->hDlg, (HMENU)IDB_OK, g_hinst, NULL);
-    CreateWindowExW(0, L"BUTTON", L"Cancel",
+    CreateWindowExW(0, L"BUTTON", tr("edit.cancel"),
         WS_CHILD | WS_VISIBLE,
         320, y, 80, 28, st->hDlg, (HMENU)IDB_CANCEL, g_hinst, NULL);
 

@@ -813,10 +813,10 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         GetCursorPos(&pt);
         HMENU hMenu = CreatePopupMenu();
         if (bar && bar->item_index >= 0)
-            AppendMenuW(hMenu, MF_STRING, IDM_UNPIN, L"Unpin");
-        AppendMenuW(hMenu, MF_STRING, IDM_SHOW, L"Manage Items...");
+            AppendMenuW(hMenu, MF_STRING, IDM_UNPIN, tr("bar.unpin"));
+        AppendMenuW(hMenu, MF_STRING, IDM_SHOW, tr("bar.manage_items"));
         AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-        AppendMenuW(hMenu, MF_STRING, IDM_EXIT, L"Exit");
+        AppendMenuW(hMenu, MF_STRING, IDM_EXIT, tr("bar.exit"));
         SetForegroundWindow(hwnd);
         TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
         DestroyMenu(hMenu);

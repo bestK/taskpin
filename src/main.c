@@ -203,6 +203,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     InitCommonControlsEx(&icc);
 
     config_load(&g_cfg);
+    i18n_init();
     logger_init(g_cfg.log_level);
     event_init();
     script_init();

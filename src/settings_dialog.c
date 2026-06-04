@@ -26,48 +26,48 @@ static LRESULT CALLBACK settings_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
 
 void show_settings_dialog(HWND parent) {
     HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
-        L"#32770", L"Settings",
+        L"#32770", tr("settings.title"),
         WS_VISIBLE | WS_POPUP | WS_CAPTION | WS_SYSMENU,
         200, 200, 360, 370, parent, NULL, g_hinst, NULL);
     if (!hDlg) return;
 
     int y = 10;
-    CreateWindowExW(0, L"STATIC", L"Font Size (pt):", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"STATIC", tr("settings.font_size"), WS_CHILD | WS_VISIBLE,
         10, y+2, 100, 20, hDlg, NULL, g_hinst, NULL);
     s_eFontSize = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_NUMBER, 120, y, 50, 22, hDlg, NULL, g_hinst, NULL);
 
     y += 30;
-    CreateWindowExW(0, L"STATIC", L"Font Color (hex):", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"STATIC", tr("settings.font_color"), WS_CHILD | WS_VISIBLE,
         10, y+2, 110, 20, hDlg, NULL, g_hinst, NULL);
     s_eFontColor = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 120, y, 80, 22, hDlg, NULL, g_hinst, NULL);
 
     y += 30;
-    CreateWindowExW(0, L"STATIC", L"BG Color (hex):", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"STATIC", tr("settings.bg_color"), WS_CHILD | WS_VISIBLE,
         10, y+2, 100, 20, hDlg, NULL, g_hinst, NULL);
     s_eBgColor = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 120, y, 80, 22, hDlg, NULL, g_hinst, NULL);
 
     y += 30;
-    CreateWindowExW(0, L"STATIC", L"Width (px):", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"STATIC", tr("settings.width"), WS_CHILD | WS_VISIBLE,
         10, y+2, 80, 20, hDlg, NULL, g_hinst, NULL);
     s_eWidth = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_NUMBER, 120, y, 60, 22, hDlg, NULL, g_hinst, NULL);
 
     y += 30;
-    CreateWindowExW(0, L"STATIC", L"Pos X (-1=auto):", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"STATIC", tr("settings.pos_x"), WS_CHILD | WS_VISIBLE,
         10, y+2, 105, 20, hDlg, NULL, g_hinst, NULL);
     s_ePosX = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE, 120, y, 60, 22, hDlg, NULL, g_hinst, NULL);
 
-    CreateWindowExW(0, L"STATIC", L"Y:", WS_CHILD | WS_VISIBLE,
+    CreateWindowExW(0, L"STATIC", tr("settings.pos_y"), WS_CHILD | WS_VISIBLE,
         195, y+2, 20, 20, hDlg, NULL, g_hinst, NULL);
     s_ePosY = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE, 218, y, 60, 22, hDlg, NULL, g_hinst, NULL);
 
     y += 30;
-    HWND s_eAutoStart = CreateWindowExW(0, L"BUTTON", L"Start with Windows",
+    HWND s_eAutoStart = CreateWindowExW(0, L"BUTTON", tr("settings.auto_start"),
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         10, y, 180, 20, hDlg, (HMENU)5060, g_hinst, NULL);
     SendMessageW(s_eAutoStart, WM_SETFONT, (WPARAM)g_font, TRUE);
@@ -83,30 +83,30 @@ void show_settings_dialog(HWND parent) {
     }
 
     y += 24;
-    HWND s_eScroll = CreateWindowExW(0, L"BUTTON", L"Auto-scroll long text",
+    HWND s_eScroll = CreateWindowExW(0, L"BUTTON", tr("settings.auto_scroll"),
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         10, y, 200, 20, hDlg, (HMENU)5061, g_hinst, NULL);
     SendMessageW(s_eScroll, WM_SETFONT, (WPARAM)g_font, TRUE);
     SendMessageW(s_eScroll, BM_SETCHECK, g_cfg.scroll_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
 
     y += 28;
-    CreateWindowExW(0, L"STATIC", L"Log level:",
+    CreateWindowExW(0, L"STATIC", tr("settings.log_level"),
         WS_CHILD | WS_VISIBLE, 10, y + 2, 70, 20, hDlg, NULL, g_hinst, NULL);
     HWND s_eLogLevel = CreateWindowExW(0, L"COMBOBOX", NULL,
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
         80, y, 100, 120, hDlg, (HMENU)5062, g_hinst, NULL);
     SendMessageW(s_eLogLevel, WM_SETFONT, (WPARAM)g_font, TRUE);
-    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Off");
-    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Error");
-    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Info");
-    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)L"Debug");
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)tr("settings.log_off"));
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)tr("settings.log_error"));
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)tr("settings.log_info"));
+    SendMessageW(s_eLogLevel, CB_ADDSTRING, 0, (LPARAM)tr("settings.log_debug"));
     SendMessageW(s_eLogLevel, CB_SETCURSEL, g_cfg.log_level, 0);
 
     y += 30;
-    CreateWindowExW(0, L"BUTTON", L"OK",
+    CreateWindowExW(0, L"BUTTON", tr("settings.ok"),
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         90, y, 70, 28, hDlg, (HMENU)IDOK, g_hinst, NULL);
-    CreateWindowExW(0, L"BUTTON", L"Cancel",
+    CreateWindowExW(0, L"BUTTON", tr("settings.cancel"),
         WS_CHILD | WS_VISIBLE,
         170, y, 70, 28, hDlg, (HMENU)IDCANCEL, g_hinst, NULL);
 

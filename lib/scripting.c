@@ -3,6 +3,7 @@
 #include "image.h"
 #include "event.h"
 #include "logger.h"
+#include "i18n.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -1270,7 +1271,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
         WCHAR msg[256];
         WCHAR wreq[32];
         MultiByteToWideChar(CP_UTF8, 0, required_ver, -1, wreq, 32);
-        wsprintfW(msg, L"需要 TaskPin v%s+ (当前 v" L"" TASKPIN_VERSION L")", wreq);
+        wsprintfW(msg, tr("scripting.version_required"), wreq, L"" TASKPIN_VERSION);
         lstrcpynW(result->display, msg, 2048);
         result->clickable = FALSE;
         result->rich.count = 0;
