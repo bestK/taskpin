@@ -10,7 +10,7 @@ local info = dialog({
     transparent_bg = true,
     refresh = 1000,
     content = {
-        { type = "webview", url = "file:///examples/webview_demo.html", width = 580, height = 460 }
+        { type = "webview", url = "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/webview_demo.html", width = 580, height = 460 }
     }
 })
 
