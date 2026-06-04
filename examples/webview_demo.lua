@@ -3,6 +3,11 @@
 
 local bar = font("WebView", "#4FC3F7", 9)
 
+local url = "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/webview_demo.html"
+if sys.is_china() then
+    url = sys.gh_proxy(url)
+end
+
 local info = dialog({
     title = "WebView Demo",
     width = 580, height = 460,
@@ -10,7 +15,7 @@ local info = dialog({
     transparent_bg = true,
     refresh = 1000,
     content = {
-        { type = "webview", url = "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/webview_demo.html", width = 580, height = 460 }
+        { type = "webview", url = url, width = 580, height = 460 }
     }
 })
 

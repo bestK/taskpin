@@ -90,11 +90,10 @@
         </div>
 
         <div class="card">
-            <h3>System Info</h3>
-            <p>
-                This page is rendered by Microsoft Edge WebView2, embedded directly in a TaskPin dialog window. No
-                external browser, no extra DLL.
-            </p>
+            <h3>System Resources</h3>
+            <p>CPU: <span id="cpu">--</span>%</p>
+            <p>Memory: <span id="mem">--</span></p>
+            <p>Network: ↓ <span id="net_down">--</span> ↑ <span id="net_up">--</span></p>
             <p id="winsize"></p>
         </div>
 
@@ -119,6 +118,33 @@
             }
             updateSize();
             window.addEventListener('resize', updateSize);
+
+            async function updateResources() {
+                try {
+                    let cpu = await taskpin.sys.cpu();
+                    document.getElementById('cpu').textContent = cpu || '--';
+
+                    let mem = await taskpin.sys.memory();
+                    if (mem && typeof mem === 'object') {
+                        document.getElementById('mem').textContent =
+                            mem.percent + '% (' + mem.used_mb + '/' + mem.total_mb + ' MB)';
+                    }
+
+                    let net = await taskpin.sys.net_speed();
+                    if (net && typeof net === 'object') {
+                        let fmtSpeed = (b) => {
+                            if (!b) return '0 B/s';
+                            if (b > 1048576) return (b/1048576).toFixed(1) + ' MB/s';
+                            if (b > 1024) return (b/1024).toFixed(1) + ' KB/s';
+                            return b + ' B/s';
+                        };
+                        document.getElementById('net_down').textContent = fmtSpeed(net.download);
+                        document.getElementById('net_up').textContent = fmtSpeed(net.upload);
+                    }
+                } catch(e) {}
+            }
+            updateResources();
+            setInterval(updateResources, 2000);
         </script>
     </body>
 </html>
