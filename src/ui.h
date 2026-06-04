@@ -26,6 +26,7 @@
 #define IDT_BORDER         3
 #define IDT_ANIM           4
 #define IDT_RESTORE_WIDTH  5
+#define IDT_CLICK_DELAY    6
 #define SCROLL_SPEED       2
 #define SCROLL_INTERVAL    50
 #define ANIM_INTERVAL      80

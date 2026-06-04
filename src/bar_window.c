@@ -490,6 +490,16 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == IDT_REFRESH) start_fetch(bar);
         if (wp == IDT_ANIM) InvalidateRect(hwnd, NULL, FALSE);
         if (wp == IDT_SCROLL) sysinfo_poll_keys();
+        if (wp == IDT_CLICK_DELAY) {
+            KillTimer(hwnd, IDT_CLICK_DELAY);
+            if (bar->script_result.click_action == CLICK_DIALOG && bar->item_index >= 0) {
+                PinItem *it = &g_cfg.items[bar->item_index];
+                show_script_dialog(it->lua_path, it->params, it->param_count,
+                    &bar->script_result.dialog);
+            } else if (bar->script_result.click_url[0]) {
+                ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
+            }
+        }
         if (wp == IDT_RESTORE_WIDTH) {
             KillTimer(hwnd, IDT_RESTORE_WIDTH);
             if (bar->configured_width > 0 && !bar->width_expanded) {
@@ -735,22 +745,20 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     return 0;
                 }
             }
-            /* Fall through to global click action */
+            /* Delay click action to distinguish from double-click */
             bar->button_count = 0;
             InvalidateRect(hwnd, NULL, TRUE);
             if (bar->script_result.clickable) {
-                if (bar->script_result.click_action == CLICK_DIALOG && bar->item_index >= 0) {
-                    PinItem *it = &g_cfg.items[bar->item_index];
-                    show_script_dialog(it->lua_path, it->params, it->param_count,
-                        &bar->script_result.dialog);
-                } else if (bar->script_result.click_url[0]) {
-                    ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
-                }
+                SetTimer(hwnd, IDT_CLICK_DELAY, 200, NULL);
             }
         }
         return 0;
 
     case WM_LBUTTONDBLCLK:
+        if (bar) {
+            KillTimer(hwnd, IDT_CLICK_DELAY);
+            bar->btn_click_consumed = TRUE;
+        }
         show_main_window();
         return 0;
 
