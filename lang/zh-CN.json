@@ -83,5 +83,6 @@
   "bar.unpin": "取消固定",
   "bar.manage_items": "管理项目...",
   "bar.exit": "退出",
-  "scripting.version_required": "需要 TaskPin v%s+（当前 v%s）"
+  "scripting.version_required": "需要 TaskPin v%s+（当前 v%s）",
+  "app.already_running": "TaskPin 已在运行中"
 }

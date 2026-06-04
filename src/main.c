@@ -1,6 +1,72 @@
 #include "ui.h"
 #include "logger.h"
 #include <objbase.h>
+#include <dbghelp.h>
+
+/* Crash handler: dump stack trace to taskpin.log and show message */
+static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep) {
+    WCHAR log_path[MAX_PATH];
+    GetModuleFileNameW(NULL, log_path, MAX_PATH);
+    WCHAR *slash = wcsrchr(log_path, L'\\');
+    if (slash) *(slash + 1) = L'\0';
+    lstrcatW(log_path, L"crash.log");
+
+    FILE *f = _wfopen(log_path, L"a");
+    if (f) {
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        fprintf(f, "\n=== CRASH %04d-%02d-%02d %02d:%02d:%02d ===\n",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+        fprintf(f, "Exception: 0x%08X at address 0x%p\n",
+            (unsigned)ep->ExceptionRecord->ExceptionCode,
+            ep->ExceptionRecord->ExceptionAddress);
+
+        HANDLE proc = GetCurrentProcess();
+        HANDLE thread = GetCurrentThread();
+        SymInitialize(proc, NULL, TRUE);
+
+        CONTEXT *ctx = ep->ContextRecord;
+        STACKFRAME64 frame = {0};
+        frame.AddrPC.Mode = AddrModeFlat;
+        frame.AddrFrame.Mode = AddrModeFlat;
+        frame.AddrStack.Mode = AddrModeFlat;
+#ifdef _M_X64
+        DWORD machine = IMAGE_FILE_MACHINE_AMD64;
+        frame.AddrPC.Offset = ctx->Rip;
+        frame.AddrFrame.Offset = ctx->Rbp;
+        frame.AddrStack.Offset = ctx->Rsp;
+#else
+        DWORD machine = IMAGE_FILE_MACHINE_I386;
+        frame.AddrPC.Offset = ctx->Eip;
+        frame.AddrFrame.Offset = ctx->Ebp;
+        frame.AddrStack.Offset = ctx->Esp;
+#endif
+        fprintf(f, "Stack trace:\n");
+        for (int i = 0; i < 32; i++) {
+            if (!StackWalk64(machine, proc, thread, &frame, ctx, NULL,
+                    SymFunctionTableAccess64, SymGetModuleBase64, NULL))
+                break;
+            if (frame.AddrPC.Offset == 0) break;
+
+            char buf[sizeof(SYMBOL_INFO) + 256];
+            SYMBOL_INFO *sym = (SYMBOL_INFO *)buf;
+            sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+            sym->MaxNameLen = 255;
+            DWORD64 disp = 0;
+            if (SymFromAddr(proc, frame.AddrPC.Offset, &disp, sym)) {
+                fprintf(f, "  [%d] %s + 0x%llx\n", i, sym->Name, (unsigned long long)disp);
+            } else {
+                fprintf(f, "  [%d] 0x%p\n", i, (void *)frame.AddrPC.Offset);
+            }
+        }
+        SymCleanup(proc);
+        fclose(f);
+    }
+
+    MessageBoxW(NULL, L"TaskPin crashed. See crash.log for details.",
+        L"TaskPin - Fatal Error", MB_ICONERROR | MB_OK);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 
 /* Global variable definitions */
 TaskPinConfig g_cfg;
@@ -14,6 +80,7 @@ int g_bar_count = 0;
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow) {
     (void)hPrev; (void)cmdLine; (void)nShow;
+    SetUnhandledExceptionFilter(crash_handler);
     g_hinst = hInst;
 
     /* Logger: init early for --event mode, reinit after config_load */
@@ -196,6 +263,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     HANDLE hMutex = CreateMutexW(NULL, TRUE, L"Global\\TaskPin_SingleInstance");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (hMutex) CloseHandle(hMutex);
+        i18n_init();
+        MessageBoxW(NULL, tr("app.already_running"), L"TaskPin", MB_ICONINFORMATION | MB_OK);
         return 0;
     }
 

@@ -83,5 +83,6 @@
   "bar.unpin": "Unpin",
   "bar.manage_items": "Manage Items...",
   "bar.exit": "Exit",
-  "scripting.version_required": "Requires TaskPin v%s+ (current v%s)"
+  "scripting.version_required": "Requires TaskPin v%s+ (current v%s)",
+  "app.already_running": "TaskPin is already running."
 }
