@@ -1,11 +1,14 @@
 *.o
 *.exe
 config.ini
+config.ini.bak
 config.json
 icon_gen.png
 zentao_task.py
 zentao_task.lua
 !examples/*.lua
 taskpin.log
+crash.log
 .ace-tool/
+.claude/
 scripts/
