@@ -2,6 +2,7 @@
 #include "scripting.h"
 #include "config.h"
 #include "image.h"
+#include "webview2.h"
 #include <shellapi.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,7 @@ typedef struct {
     int tbl_button_count;
     int item_y[DIALOG_MAX_ITEMS];
     int item_h[DIALOG_MAX_ITEMS];
+    WebView *webviews[DIALOG_MAX_ITEMS];
 } ScriptDialogState;
 
 #define MAX_SCRIPT_DIALOGS 16
@@ -122,8 +124,19 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     DWORD exstyle = WS_EX_TOPMOST;
     if (spec->borderless)
         exstyle |= WS_EX_TOOLWINDOW;
-    if (spec->clickthrough || spec->opacity < 255 || spec->transparent_bg)
+
+    /* Check if dialog has webview — layered windows can't host child windows */
+    BOOL has_webview = FALSE;
+    for (int i = 0; i < spec->item_count; i++) {
+        if (spec->items[i].type == DI_WEBVIEW) { has_webview = TRUE; break; }
+    }
+
+    if (has_webview) {
+        /* WS_EX_NOREDIRECTIONBITMAP: true per-pixel transparency via DirectComposition */
+        exstyle |= 0x00200000L;
+    } else if (spec->clickthrough || spec->opacity < 255 || spec->transparent_bg) {
         exstyle |= WS_EX_LAYERED;
+    }
     RECT wr = {0, 0, w, h};
     AdjustWindowRectEx(&wr, style, FALSE, exstyle);
 
@@ -151,11 +164,13 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
         NULL, NULL, GetModuleHandle(NULL), state);
     register_dialog(dlg_hwnd);
 
-    if (spec->transparent_bg) {
-        SetLayeredWindowAttributes(dlg_hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
-    } else if (spec->opacity < 255 || spec->clickthrough) {
-        SetLayeredWindowAttributes(dlg_hwnd, 0,
-            (BYTE)(spec->opacity < 255 ? spec->opacity : 255), LWA_ALPHA);
+    if (!has_webview) {
+        if (spec->transparent_bg) {
+            SetLayeredWindowAttributes(dlg_hwnd, RGB(255, 0, 255), 0, LWA_COLORKEY);
+        } else if (spec->opacity < 255 || spec->clickthrough) {
+            SetLayeredWindowAttributes(dlg_hwnd, 0,
+                (BYTE)(spec->opacity < 255 ? spec->opacity : 255), LWA_ALPHA);
+        }
     }
     ShowWindow(dlg_hwnd, SW_SHOW);
     UpdateWindow(dlg_hwnd);
@@ -209,6 +224,11 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             y += 26;
             break;
         }
+        case DI_WEBVIEW: {
+            int rh = item->img_h > 0 ? item->img_h : 300;
+            y += rh;
+            break;
+        }
         }
         y += 4; /* gap between items */
     }
@@ -222,10 +242,17 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
     state->button_count = 0;
     state->tbl_button_count = 0;
 
-    COLORREF bg_color = state->spec.transparent_bg ? RGB(255, 0, 255) : DIALOG_BG;
-    HBRUSH bg = CreateSolidBrush(bg_color);
-    FillRect(hdc, &rc, bg);
-    DeleteObject(bg);
+    BOOL has_wv = FALSE;
+    for (int i = 0; i < state->spec.item_count; i++) {
+        if (state->spec.items[i].type == DI_WEBVIEW) { has_wv = TRUE; break; }
+    }
+
+    if (!has_wv) {
+        COLORREF bg_color = state->spec.transparent_bg ? RGB(255, 0, 255) : DIALOG_BG;
+        HBRUSH bg = CreateSolidBrush(bg_color);
+        FillRect(hdc, &rc, bg);
+        DeleteObject(bg);
+    }
 
     SetBkMode(hdc, TRANSPARENT);
 
@@ -430,6 +457,23 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             }
             break;
         }
+        case DI_WEBVIEW: {
+            int rw = item->img_w > 0 ? item->img_w : client_w;
+            int rh = item->img_h > 0 ? item->img_h : (rc.bottom - rc.top);
+            if (!state->webviews[i] && item->url[0]) {
+                if (webview_available()) {
+                    state->webviews[i] = webview_create(hwnd, 0, 0, rw, rh, item->url);
+                } else {
+                    SetTextColor(hdc, RGB(180, 180, 180));
+                    TextOutW(hdc, PADDING_X, rh / 2 - 8,
+                        L"[WebView not available - install Microsoft Edge]", 48);
+                }
+            } else if (state->webviews[i] && !webview_is_dragging()) {
+                webview_resize(state->webviews[i], 0, 0, rw, rh);
+            }
+            y += rh;
+            break;
+        }
         }
         state->item_h[i] = y - y_before;
         y += 4;
@@ -552,9 +596,27 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                     return 0;
                 }
             }
+            /* Toggle webview visibility for Shift+drag (only when mouse over dialog) */
+            static BOOL s_shift_was_down = FALSE;
+            BOOL shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            BOOL mouse_over = FALSE;
+            if (shift_down) {
+                POINT pt; GetCursorPos(&pt);
+                RECT wr; GetWindowRect(hwnd, &wr);
+                mouse_over = PtInRect(&wr, pt);
+            }
+            BOOL should_hide = shift_down && mouse_over;
+            if (should_hide != s_shift_was_down) {
+                s_shift_was_down = should_hide;
+                if (should_hide)
+                    webview_hide_all();
+                else
+                    webview_show_all();
+            }
         }
         if (wp == IDT_DIALOG_REFRESH && state) {
-            refresh_dialog(hwnd, state);
+            if (!(GetAsyncKeyState(VK_SHIFT) & 0x8000) && !webview_is_dragging())
+                refresh_dialog(hwnd, state);
         }
         return 0;
 
@@ -760,7 +822,7 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     }
 
     case WM_SIZE:
-        if (state) InvalidateRect(hwnd, NULL, TRUE);
+        if (state && !webview_is_dragging()) InvalidateRect(hwnd, NULL, TRUE);
         return 0;
 
     case WM_NCHITTEST: {
@@ -848,7 +910,12 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 config_save(&g_cfg);
             }
         }
-        if (state) HeapFree(GetProcessHeap(), 0, state);
+        if (state) {
+            for (int i = 0; i < DIALOG_MAX_ITEMS; i++) {
+                if (state->webviews[i]) webview_destroy(state->webviews[i]);
+            }
+            HeapFree(GetProcessHeap(), 0, state);
+        }
         unregister_dialog(hwnd);
         return 0;
     }

@@ -1084,6 +1084,19 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "size");
             if (!lua_isnil(ls, -1)) item->font_size = (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
+        } else if (strcmp(type, "webview") == 0) {
+            item->type = DI_WEBVIEW;
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "url");
+            const char *u = lua_tostring(ls, -1);
+            if (u) strncpy(item->url, u, 511);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "width");
+            item->img_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "height");
+            item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
         } else {
             lua_pop(ls, 1);
             lua_pop(ls, 1);
@@ -1103,6 +1116,28 @@ static BOOL is_dialog_table(lua_State *ls, int idx) {
     BOOL r = lua_toboolean(ls, -1);
     lua_pop(ls, 1);
     return r;
+}
+
+char *script_eval_expr(const char *expr) {
+    if (!L || !expr) return NULL;
+    EnterCriticalSection(&g_lua_cs);
+
+    char code[4096];
+    snprintf(code, sizeof(code), "return json.encode(%s)", expr);
+
+    if (luaL_dostring(L, code) != LUA_OK) {
+        const char *err = lua_tostring(L, -1);
+        char *result = err ? _strdup(err) : _strdup("null");
+        lua_settop(L, 0);
+        LeaveCriticalSection(&g_lua_cs);
+        return result;
+    }
+
+    const char *val = lua_tostring(L, -1);
+    char *result = val ? _strdup(val) : _strdup("null");
+    lua_settop(L, 0);
+    LeaveCriticalSection(&g_lua_cs);
+    return result;
 }
 
 void script_init(void) {

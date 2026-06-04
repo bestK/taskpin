@@ -19,21 +19,25 @@ LIB_SRCS = $(LIB_DIR)/appbar.c $(LIB_DIR)/fetcher.c $(LIB_DIR)/config.c \
            $(LIB_DIR)/update.c $(LIB_DIR)/httputil.c $(LIB_DIR)/sysinfo.c \
            $(LIB_DIR)/script_dialog.c $(LIB_DIR)/image.c $(LIB_DIR)/event.c \
            $(LIB_DIR)/i18n.c $(LIB_DIR)/logger.c
+CPP_SRCS = $(LIB_DIR)/webview2.cpp
 LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)
 
-OBJS = $(SRCS:.c=.o) $(LIB_SRCS:.c=.o) taskpin_res.o
+OBJS = $(SRCS:.c=.o) $(LIB_SRCS:.c=.o) $(CPP_SRCS:.cpp=.o) taskpin_res.o
 LUA_OBJS = $(LUA_SRCS:.c=.o)
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(LUA_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lstdc++
 
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(LIB_DIR)/%.o: $(LIB_DIR)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(LIB_DIR)/%.o: $(LIB_DIR)/%.cpp
+	g++ -O2 -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN -I$(LIB_DIR) -I$(LIB_DIR)/webview2 -c -o $@ $<
 
 $(LUA_DIR)/%.o: $(LUA_DIR)/%.c
 	$(CC) $(CFLAGS_LUA) -c -o $@ $<

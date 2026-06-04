@@ -84,5 +84,6 @@
   "bar.manage_items": "Manage Items...",
   "bar.exit": "Exit",
   "scripting.version_required": "Requires TaskPin v%s+ (current v%s)",
-  "app.already_running": "TaskPin is already running."
+  "app.already_running": "TaskPin is already running.",
+  "webview.drag_hint": "Shift + Drag / Scroll"
 }

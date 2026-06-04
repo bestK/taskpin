@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>TaskPin WebView Demo</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                overflow: hidden;
+            }
+            body {
+                font-family: -apple-system, 'Segoe UI', sans-serif;
+                background: transparent;
+                color: #eee;
+                min-height: 100vh;
+            }
+            h1 {
+                color: #4fc3f7;
+                margin-bottom: 16px;
+                font-size: 20px;
+            }
+            .card {
+                background: #16213e;
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 12px;
+                border: 1px solid #0f3460;
+            }
+            .card h3 {
+                color: #4fc3f7;
+                margin-bottom: 8px;
+                font-size: 14px;
+            }
+            .card p {
+                color: #aaa;
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            button {
+                background: #4fc3f7;
+                color: #1a1a2e;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: bold;
+                margin-top: 8px;
+                margin-right: 8px;
+            }
+            button:hover {
+                background: #81d4fa;
+            }
+            #output {
+                background: #0f3460;
+                border-radius: 4px;
+                padding: 12px;
+                margin-top: 12px;
+                font-family: monospace;
+                font-size: 12px;
+                color: #4fc3f7;
+                min-height: 40px;
+            }
+            .time {
+                color: #81d4fa;
+                font-size: 24px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>TaskPin WebView Demo</h1>
+
+        <div class="card">
+            <h3>JS Bridge</h3>
+            <p>Click the button to send a message to TaskPin native side via <code>postMessage</code>.</p>
+            <button onclick="sendNotify()">Send Notification</button>
+            <button onclick="showTime()">Show Time</button>
+            <div id="output">Ready.</div>
+        </div>
+
+        <div class="card">
+            <h3>Live Clock</h3>
+            <p class="time" id="clock">--:--:--</p>
+        </div>
+
+        <div class="card">
+            <h3>System Info</h3>
+            <p>
+                This page is rendered by Microsoft Edge WebView2, embedded directly in a TaskPin dialog window. No
+                external browser, no extra DLL.
+            </p>
+            <p id="winsize"></p>
+        </div>
+
+        <script>
+            async function sendNotify() {
+                let result = await taskpin.sys.notify('TaskPin WebView', 'Hello from WebView!');
+                document.getElementById('output').textContent = 'Notification sent! Result: ' + JSON.stringify(result);
+            }
+
+            function showTime() {
+                document.getElementById('output').textContent = 'Time: ' + new Date().toLocaleString();
+            }
+
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('clock').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+            }, 1000);
+
+            function updateSize() {
+                document.getElementById('winsize').textContent =
+                    'Window: ' + window.innerWidth + ' x ' + window.innerHeight + 'px';
+            }
+            updateSize();
+            window.addEventListener('resize', updateSize);
+        </script>
+    </body>
+</html>

@@ -4,6 +4,10 @@
 #include <windows.h>
 #include "config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MAX_SPANS 32
 #define SPAN_TEXT_LEN 256
 #define IMG_SOURCE_MAX (200 * 1024)
@@ -52,7 +56,7 @@ typedef struct {
 #define CLICK_URL    0
 #define CLICK_DIALOG 1
 
-typedef enum { DI_TEXT, DI_HR, DI_TABLE, DI_IMG, DI_BUTTON } DialogItemType;
+typedef enum { DI_TEXT, DI_HR, DI_TABLE, DI_IMG, DI_BUTTON, DI_WEBVIEW } DialogItemType;
 
 typedef struct {
     DialogItemType type;
@@ -116,6 +120,10 @@ void script_shutdown(void);
 void script_set_global_bool(const char *name, BOOL value);
 void script_set_global_string(const char *name, const char *value);
 
+/* Execute a Lua expression and return result as JSON string (caller frees).
+   E.g. expr="sys.cpu()" → returns "45" or "null" on error. */
+char *script_eval_expr(const char *expr);
+
 BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *result);
 
 /* Execute a Lua file with params injected as `args` table. */
@@ -145,5 +153,9 @@ void script_parse_version(const WCHAR *lua_path, char *out, int out_size);
 
 /* Check @require declaration. Returns TRUE if satisfied or not declared. */
 BOOL script_check_require(const WCHAR *lua_path, char *required, int req_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
