@@ -3,6 +3,7 @@
 #include "i18n.h"
 #include "cJSON.h"
 #include "scripting.h"
+#include "httputil.h"
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -20,6 +21,7 @@ typedef HRESULT (STDMETHODCALLTYPE *CreateWebView2EnvironmentFn)(
 static CreateWebView2EnvironmentFn s_create_env = nullptr;
 static BOOL s_init_tried = FALSE;
 static BOOL s_available = FALSE;
+static int s_init_error = 0;  /* 0=ok, 1=no runtime, 2=download failed */
 
 struct WebView {
     ICoreWebView2 *webview;
@@ -158,7 +160,43 @@ static void ensure_init() {
         }
     }
 
-    if (!hMod) return;
+    /* 5. Auto-download if not found locally */
+    if (!hMod) {
+#ifdef _WIN64
+        const WCHAR *dll_urls[] = {
+            L"https://raw.githubusercontent.com/bestK/taskpin/master/deps/x64/WebView2Loader.dll",
+            L"https://gh-proxy.com/https://raw.githubusercontent.com/bestK/taskpin/master/deps/x64/WebView2Loader.dll",
+            NULL
+        };
+#else
+        const WCHAR *dll_urls[] = {
+            L"https://raw.githubusercontent.com/bestK/taskpin/master/deps/x86/WebView2Loader.dll",
+            L"https://gh-proxy.com/https://raw.githubusercontent.com/bestK/taskpin/master/deps/x86/WebView2Loader.dll",
+            NULL
+        };
+#endif
+        int out_len = 0;
+        char *data = nullptr;
+        for (int u = 0; dll_urls[u] && !hMod; u++) {
+            data = http_get_sync(dll_urls[u], &out_len);
+            if (data && out_len > 10000 && data[0] == 'M' && data[1] == 'Z') {
+                FILE *f = _wfopen(local_path, L"wb");
+                if (f) {
+                    fwrite(data, 1, out_len, f);
+                    fclose(f);
+                    hMod = LoadLibraryW(local_path);
+                }
+            }
+            free(data);
+            data = nullptr;
+        }
+        if (!hMod) s_init_error = 2;
+    }
+
+    if (!hMod) {
+        if (s_init_error == 0) s_init_error = 1;
+        return;
+    }
 
     s_create_env = (CreateWebView2EnvironmentFn)GetProcAddress(hMod,
         "CreateCoreWebView2EnvironmentWithOptions");
@@ -168,6 +206,10 @@ static void ensure_init() {
 extern "C" BOOL webview_available(void) {
     ensure_init();
     return s_available;
+}
+
+extern "C" int webview_init_error(void) {
+    return s_init_error;
 }
 
 /* COM callback: environment created → create controller */

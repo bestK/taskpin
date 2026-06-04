@@ -85,5 +85,7 @@
   "bar.exit": "退出",
   "scripting.version_required": "需要 TaskPin v%s+（当前 v%s）",
   "app.already_running": "TaskPin 已在运行中",
-  "webview.drag_hint": "Shift + 拖动 / 滚轮缩放"
+  "webview.drag_hint": "Shift + 拖动 / 滚轮缩放",
+  "webview.err_no_runtime": "[WebView 不可用 - 请安装 Microsoft Edge]",
+  "webview.err_download_failed": "[WebView2Loader.dll 下载失败]\n下载地址: https://gh-proxy.com/https://github.com/bestK/taskpin/raw/master/deps/x64/WebView2Loader.dll\n放置到: %s"
 }

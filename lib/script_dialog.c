@@ -465,8 +465,20 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                     state->webviews[i] = webview_create(hwnd, 0, 0, rw, rh, item->url);
                 } else {
                     SetTextColor(hdc, RGB(180, 180, 180));
-                    TextOutW(hdc, PADDING_X, rh / 2 - 8,
-                        L"[WebView not available - install Microsoft Edge]", 48);
+                    SetBkMode(hdc, TRANSPARENT);
+                    int err = webview_init_error();
+                    if (err == 2) {
+                        WCHAR exe_dir[MAX_PATH];
+                        GetModuleFileNameW(NULL, exe_dir, MAX_PATH);
+                        PathRemoveFileSpecW(exe_dir);
+                        WCHAR msg[1024];
+                        wsprintfW(msg, tr("webview.err_download_failed"), exe_dir);
+                        RECT tr_rc = { PADDING_X, PADDING_Y, rw - PADDING_X, rh - PADDING_Y };
+                        DrawTextW(hdc, msg, -1, &tr_rc, DT_LEFT | DT_WORDBREAK);
+                    } else {
+                        const WCHAR *msg = tr("webview.err_no_runtime");
+                        TextOutW(hdc, PADDING_X, rh / 2 - 8, msg, lstrlenW(msg));
+                    }
                 }
             } else if (state->webviews[i] && !webview_is_dragging()) {
                 webview_resize(state->webviews[i], 0, 0, rw, rh);
