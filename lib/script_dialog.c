@@ -490,8 +490,8 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             break;
         }
         case DI_WEBVIEW: {
-            int rw = item->img_w > 0 ? item->img_w : client_w;
-            int rh = item->img_h > 0 ? item->img_h : (rc.bottom - rc.top);
+            int rw = client_w;
+            int rh = rc.bottom - rc.top;
             if (!state->webviews[i] && item->url[0]) {
                 if (webview_available()) {
                     state->webviews[i] = webview_create(hwnd, 0, 0, rw, rh, item->url);

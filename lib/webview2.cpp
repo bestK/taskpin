@@ -314,8 +314,8 @@ public:
                                     SetWindowPos(m_wv->parent, NULL, 0, 0, w, h,
                                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
                                     if (m_wv->controller) {
-                                        RECT bounds = {0, 0, w, h};
-                                        m_wv->controller->put_Bounds(bounds);
+                                        RECT cr; GetClientRect(m_wv->parent, &cr);
+                                        m_wv->controller->put_Bounds(cr);
                                     }
                                 } else if (msg[0] == L'{') {
                                     /* JSON proxy: {"id":N,"action":"sys.xxx","args":[...]} → Lua call */
