@@ -204,6 +204,23 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
         }
     }
 
+    /* Custom window icon */
+    if (spec->icon[0]) {
+        int out_w = 0, out_h = 0;
+        HBITMAP hbmp = image_load(spec->icon, 32, 32, &out_w, &out_h);
+        if (hbmp) {
+            ICONINFO ii = {0};
+            ii.fIcon = TRUE;
+            ii.hbmMask = hbmp;
+            ii.hbmColor = hbmp;
+            HICON hIcon = CreateIconIndirect(&ii);
+            if (hIcon) {
+                SendMessageW(dlg_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+                SendMessageW(dlg_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+            }
+        }
+    }
+
     ShowWindow(dlg_hwnd, SW_SHOW);
     UpdateWindow(dlg_hwnd);
 }

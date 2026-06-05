@@ -890,6 +890,12 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
     if (tfg) spec->title_color = parse_color_str(tfg);
     lua_pop(ls, 1);
 
+    spec->icon[0] = '\0';
+    lua_getfield(ls, idx, "icon");
+    const char *ico = lua_tostring(ls, -1);
+    if (ico) strncpy(spec->icon, ico, 511);
+    lua_pop(ls, 1);
+
     lua_getfield(ls, idx, "width");
     if (!lua_isnil(ls, -1)) spec->width = (int)lua_tointeger(ls, -1);
     lua_pop(ls, 1);

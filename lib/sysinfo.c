@@ -1123,6 +1123,97 @@ static int l_sys_language(lua_State *ls) {
     return 1;
 }
 
+static int l_sys_find_window(lua_State *ls) {
+    const char *title = luaL_checkstring(ls, 1);
+    WCHAR wtitle[256];
+    MultiByteToWideChar(CP_UTF8, 0, title, -1, wtitle, 256);
+    HWND hwnd = FindWindowW(NULL, wtitle);
+    if (!hwnd) { lua_pushnil(ls); return 1; }
+    RECT wr;
+    GetWindowRect(hwnd, &wr);
+    lua_newtable(ls);
+    lua_pushinteger(ls, wr.left); lua_setfield(ls, -2, "x");
+    lua_pushinteger(ls, wr.top); lua_setfield(ls, -2, "y");
+    lua_pushinteger(ls, wr.right - wr.left); lua_setfield(ls, -2, "w");
+    lua_pushinteger(ls, wr.bottom - wr.top); lua_setfield(ls, -2, "h");
+    lua_pushboolean(ls, IsWindowVisible(hwnd)); lua_setfield(ls, -2, "visible");
+    return 1;
+}
+
+/* sys.check_collision(x, y, w, h) → {hit=true, direction="left", window="title"} or {hit=false} */
+static int l_sys_window_collision(lua_State *ls) {
+    int mx = (int)luaL_checkinteger(ls, 1);
+    int my = (int)luaL_checkinteger(ls, 2);
+    int mw = (int)luaL_checkinteger(ls, 3);
+    int mh = (int)luaL_checkinteger(ls, 4);
+    RECT me = { mx, my, mx + mw, my + mh };
+
+    lua_newtable(ls);
+
+    HWND hwnd = NULL;
+    RECT best_r = {0};
+    int best_overlap = 0;
+    WCHAR best_title[256] = {0};
+
+    hwnd = GetTopWindow(NULL);
+    while (hwnd) {
+        if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) { hwnd = GetNextWindow(hwnd, GW_HWNDNEXT); continue; }
+        WCHAR title[256];
+        if (GetWindowTextW(hwnd, title, 256) == 0) { hwnd = GetNextWindow(hwnd, GW_HWNDNEXT); continue; }
+
+        RECT wr;
+        GetWindowRect(hwnd, &wr);
+        /* Skip self (exact match) */
+        if (wr.left == me.left && wr.top == me.top && wr.right == me.right && wr.bottom == me.bottom) {
+            hwnd = GetNextWindow(hwnd, GW_HWNDNEXT); continue;
+        }
+
+        RECT overlap;
+        if (IntersectRect(&overlap, &me, &wr)) {
+            int area = (overlap.right - overlap.left) * (overlap.bottom - overlap.top);
+            if (area > best_overlap) {
+                best_overlap = area;
+                best_r = wr;
+                lstrcpynW(best_title, title, 256);
+            }
+        }
+        hwnd = GetNextWindow(hwnd, GW_HWNDNEXT);
+    }
+
+    if (best_overlap > 0) {
+        lua_pushboolean(ls, 1); lua_setfield(ls, -2, "hit");
+
+        /* Determine collision direction (which side of me is the other window) */
+        int cx_me = (me.left + me.right) / 2;
+        int cy_me = (me.top + me.bottom) / 2;
+        int cx_other = (best_r.left + best_r.right) / 2;
+        int cy_other = (best_r.top + best_r.bottom) / 2;
+        int dx = cx_other - cx_me;
+        int dy = cy_other - cy_me;
+
+        const char *dir;
+        if (abs(dx) > abs(dy))
+            dir = dx > 0 ? "right" : "left";
+        else
+            dir = dy > 0 ? "bottom" : "top";
+
+        lua_pushstring(ls, dir); lua_setfield(ls, -2, "direction");
+
+        char utf8[512];
+        WideCharToMultiByte(CP_UTF8, 0, best_title, -1, utf8, 512, NULL, NULL);
+        lua_pushstring(ls, utf8); lua_setfield(ls, -2, "window");
+
+        lua_pushinteger(ls, best_r.left); lua_setfield(ls, -2, "x");
+        lua_pushinteger(ls, best_r.top); lua_setfield(ls, -2, "y");
+        lua_pushinteger(ls, best_r.right - best_r.left); lua_setfield(ls, -2, "w");
+        lua_pushinteger(ls, best_r.bottom - best_r.top); lua_setfield(ls, -2, "h");
+    } else {
+        lua_pushboolean(ls, 0); lua_setfield(ls, -2, "hit");
+    }
+
+    return 1;
+}
+
 static int l_sys_gh_proxy(lua_State *ls) {
     const char *url = luaL_checkstring(ls, 1);
     ensure_china_check();
@@ -1378,6 +1469,10 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "is_china");
     lua_pushcfunction(ls, l_sys_language);
     lua_setfield(ls, -2, "language");
+    lua_pushcfunction(ls, l_sys_find_window);
+    lua_setfield(ls, -2, "find_window");
+    lua_pushcfunction(ls, l_sys_window_collision);
+    lua_setfield(ls, -2, "window_collision");
     lua_pushcfunction(ls, l_sys_gh_proxy);
     lua_setfield(ls, -2, "gh_proxy");
     lua_pushcfunction(ls, l_sys_key_pressed);

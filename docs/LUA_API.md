@@ -1062,3 +1062,73 @@ end
 
 local resp = http.get("http://" .. args.server .. ":" .. args.port .. "/status")
 ```
+
+---
+
+## sys.language()
+
+返回用户系统语言标识（如 `"zh-CN"`、`"en-US"`）。
+
+```lua
+local lang = sys.language()  -- "zh-CN"
+```
+
+## sys.find_window(title)
+
+按窗口标题查找窗口，返回位置和大小信息。未找到返回 nil。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| title | string | 窗口标题（精确匹配） |
+
+**返回值**: table `{x, y, w, h, visible}` 或 nil。
+
+```lua
+local win = sys.find_window("记事本")
+if win then
+    log("位置: " .. win.x .. "," .. win.y .. " 大小: " .. win.w .. "x" .. win.h)
+end
+```
+
+## sys.window_list()
+
+列出所有可见窗口及其位置信息。
+
+**返回值**: table 数组，每项包含 `{title, x, y, w, h}`。
+
+```lua
+local windows = sys.window_list()
+for _, w in ipairs(windows) do
+    log(w.title .. " at " .. w.x .. "," .. w.y)
+end
+```
+
+## sys.window_collision(x, y, w, h)
+
+检测指定矩形区域是否与其他窗口重叠，返回碰撞信息和方向。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| x | number | 矩形左上角 X |
+| y | number | 矩形左上角 Y |
+| w | number | 矩形宽度 |
+| h | number | 矩形高度 |
+
+**返回值**: table，`hit=false` 时无碰撞；`hit=true` 时包含碰撞详情。
+
+| 字段 | 说明 |
+|------|------|
+| hit | boolean，是否碰撞 |
+| direction | 碰撞方向：`"left"`, `"right"`, `"top"`, `"bottom"` |
+| window | 碰撞窗口标题 |
+| x, y, w, h | 碰撞窗口的位置和大小 |
+
+```lua
+local col = sys.window_collision(L.x, L.y, 200, 200)
+if col.hit then
+    if col.direction == "right" then L.vx = -math.abs(L.vx) end
+    if col.direction == "left" then L.vx = math.abs(L.vx) end
+    if col.direction == "bottom" then L.vy = -math.abs(L.vy) end
+    if col.direction == "top" then L.vy = math.abs(L.vy) end
+end
+```

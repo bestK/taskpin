@@ -88,6 +88,7 @@ typedef struct {
     WCHAR title[128];
     COLORREF title_bg_color;   /* title bar background color, 0xFFFFFFFF = default */
     COLORREF title_color;      /* title bar text color, 0xFFFFFFFF = default */
+    char icon[512];            /* title bar icon path (local file or URL) */
     int width, height;
     int refresh;         /* milliseconds, 0 = no auto-refresh */
     BOOL borderless;     /* TRUE = no title bar */
