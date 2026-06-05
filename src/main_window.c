@@ -113,11 +113,9 @@ LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDB_ADD:
             show_edit_dialog(hwnd, -1);
             break;
-        case 4099: {
-            HANDLE h = CreateThread(NULL, 0, check_update_thread, hwnd, 0, NULL);
-            if (h) CloseHandle(h);
+        case 4099:
+            check_update_manual();
             break;
-        }
         case IDB_SETTINGS:
             show_settings_dialog(hwnd);
             break;

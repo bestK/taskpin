@@ -14,3 +14,4 @@ crash.log
 scripts/
 WebView2Loader.dll
 webview2_data/
+lang/version

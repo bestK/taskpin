@@ -110,6 +110,34 @@ void i18n_init(void) {
     WCHAR lang_dir[MAX_PATH];
     wsprintfW(lang_dir, L"%s\\lang", exe_dir);
 
+    /* Check lang version — re-download if outdated */
+    WCHAR ver_path[MAX_PATH];
+    wsprintfW(ver_path, L"%s\\version", lang_dir);
+    BOOL need_update = TRUE;
+    FILE *vf = _wfopen(ver_path, L"r");
+    if (vf) {
+        char ver[32] = {0};
+        fgets(ver, sizeof(ver), vf);
+        fclose(vf);
+        char *nl = strchr(ver, '\n'); if (nl) *nl = '\0';
+        char *cr = strchr(ver, '\r'); if (cr) *cr = '\0';
+        if (strcmp(ver, TASKPIN_VERSION) == 0) need_update = FALSE;
+    }
+    if (need_update) {
+        /* Version mismatch — download updated lang files */
+        char base[8];
+        strncpy(base, s_lang, 7);
+        base[7] = '\0';
+        char *d = strchr(base, '-'); if (d) *d = '\0';
+        char filename[64];
+        snprintf(filename, sizeof(filename), "%s.json", s_lang);
+        i18n_download_file(lang_dir, filename);
+        snprintf(filename, sizeof(filename), "%s.json", base);
+        i18n_download_file(lang_dir, filename);
+        if (strncmp(s_lang, "en", 2) != 0)
+            i18n_download_file(lang_dir, "en.json");
+    }
+
     WCHAR lang_path[MAX_PATH];
     WCHAR lang_file[64];
     MultiByteToWideChar(CP_UTF8, 0, s_lang, -1, lang_file, 64);
@@ -161,6 +189,13 @@ void i18n_init(void) {
                 i18n_load_file(lang_path);
             }
         }
+    }
+
+    /* Write version file after successful load/download */
+    if (s_count > 0 && need_update) {
+        CreateDirectoryW(lang_dir, NULL);
+        FILE *vfw = _wfopen(ver_path, L"w");
+        if (vfw) { fputs(TASKPIN_VERSION, vfw); fclose(vfw); }
     }
 }
 

@@ -823,6 +823,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (bar && bar->item_index >= 0)
             AppendMenuW(hMenu, MF_STRING, IDM_UNPIN, tr("bar.unpin"));
         AppendMenuW(hMenu, MF_STRING, IDM_SHOW, tr("bar.manage_items"));
+        AppendMenuW(hMenu, MF_STRING, IDM_UPDATE, tr("bar.check_update"));
         AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
         AppendMenuW(hMenu, MF_STRING, IDM_EXIT, tr("bar.exit"));
         SetForegroundWindow(hwnd);
@@ -848,6 +849,9 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 bars_create_all();
                 listview_populate();
             }
+            break;
+        case IDM_UPDATE:
+            check_update_manual();
             break;
         }
         return 0;

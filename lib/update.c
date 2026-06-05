@@ -125,43 +125,55 @@ static void do_silent_update(void) {
     }
 }
 
+/* Returns: 1=updated, 0=up-to-date, -1=error */
+static int do_check_update(BOOL interactive) {
+    WCHAR ver_url[512];
+    gh_url(L"bestK/taskpin/raw/master/version.txt", ver_url, 512);
+    char *resp = http_get_sync(ver_url, NULL);
+    if (!resp) {
+        if (interactive)
+            MessageBoxW(NULL, L"Failed to check for updates.", L"TaskPin", MB_OK | MB_ICONERROR);
+        return -1;
+    }
+
+    char *tag = resp;
+    while (*tag == ' ' || *tag == '\r' || *tag == '\n') tag++;
+    char *end = tag + strlen(tag) - 1;
+    while (end > tag && (*end == ' ' || *end == '\r' || *end == '\n')) *end-- = '\0';
+
+    if (strcmp(tag, TASKPIN_VERSION) > 0) {
+        WCHAR msg[512];
+        WCHAR wtag[64];
+        MultiByteToWideChar(CP_UTF8, 0, tag, -1, wtag, 64);
+        wsprintfW(msg, L"New version v%s available (current: v" L"" TASKPIN_VERSION L")\n\nUpdate now?", wtag);
+        if (MessageBoxW(NULL, msg, L"TaskPin Update", MB_YESNO | MB_ICONINFORMATION) == IDYES) {
+            free(resp);
+            do_silent_update();
+            return 1;
+        }
+        free(resp);
+        return 0;
+    }
+
+    if (interactive)
+        MessageBoxW(NULL, L"Already up to date (v" L"" TASKPIN_VERSION L").", L"TaskPin", MB_OK | MB_ICONINFORMATION);
+    free(resp);
+    return 0;
+}
+
 DWORD WINAPI check_update_thread(LPVOID param) {
     (void)param;
     Sleep(3000);
-
     g_china = is_in_china();
 
     for (;;) {
-        WCHAR ver_url[512];
-        gh_url(L"bestK/taskpin/raw/master/version.txt", ver_url, 512);
-        char *resp = http_get_sync(ver_url, NULL);
-        if (!resp) goto next;
-
-        /* Trim whitespace */
-        char *tag = resp;
-        while (*tag == ' ' || *tag == '\r' || *tag == '\n') tag++;
-        char *end = tag + strlen(tag) - 1;
-        while (end > tag && (*end == ' ' || *end == '\r' || *end == '\n')) *end-- = '\0';
-
-        if (strcmp(tag, TASKPIN_VERSION) > 0) {
-            WCHAR msg[512];
-            WCHAR wtag[64];
-            MultiByteToWideChar(CP_UTF8, 0, tag, -1, wtag, 64);
-            wsprintfW(msg, L"New version v%s available (current: v" L"" TASKPIN_VERSION L")\n\nUpdate now?", wtag);
-
-            if (MessageBoxW(NULL, msg, L"TaskPin Update", MB_YESNO | MB_ICONINFORMATION) == IDYES) {
-                free(resp);
-                do_silent_update();
-                return 0; /* ExitProcess called inside */
-            }
-            /* User declined — stop checking */
-            free(resp);
-            return 0;
-        }
-
-        free(resp);
-next:
-        /* No update found — wait 30 minutes and check again */
+        int r = do_check_update(FALSE);
+        if (r != 0) return 0;
         Sleep(30 * 60 * 1000);
     }
+}
+
+void check_update_manual(void) {
+    g_china = is_in_china();
+    do_check_update(TRUE);
 }

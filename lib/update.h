@@ -10,4 +10,7 @@
 /* Background thread: check GitHub for new version, prompt user if available. */
 DWORD WINAPI check_update_thread(LPVOID param);
 
+/* Manual check: immediately check and show result (blocking). */
+void check_update_manual(void);
+
 #endif
