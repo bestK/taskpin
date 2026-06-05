@@ -827,6 +827,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         AppendMenuW(hMenu, MF_STRING, IDM_EXIT, tr("bar.exit"));
         SetForegroundWindow(hwnd);
         TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+        PostMessageW(hwnd, WM_NULL, 0, 0);
         DestroyMenu(hMenu);
         return 0;
     }
@@ -834,7 +835,11 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case IDM_SHOW: show_main_window(); break;
-        case IDM_EXIT: bars_destroy_all(); PostQuitMessage(0); break;
+        case IDM_EXIT:
+            bars_destroy_all();
+            script_dialog_close_all();
+            PostQuitMessage(0);
+            break;
         case IDM_UNPIN:
             if (bar && bar->item_index >= 0 && bar->item_index < g_cfg.count) {
                 g_cfg.items[bar->item_index].pinned = FALSE;

@@ -879,6 +879,17 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
     else lstrcpyW(spec->title, L"Dialog");
     lua_pop(ls, 1);
 
+    spec->title_bg_color = 0xFFFFFFFF;
+    spec->title_color = 0xFFFFFFFF;
+    lua_getfield(ls, idx, "title_bg_color");
+    const char *tbg = lua_tostring(ls, -1);
+    if (tbg) spec->title_bg_color = parse_color_str(tbg);
+    lua_pop(ls, 1);
+    lua_getfield(ls, idx, "title_color");
+    const char *tfg = lua_tostring(ls, -1);
+    if (tfg) spec->title_color = parse_color_str(tfg);
+    lua_pop(ls, 1);
+
     lua_getfield(ls, idx, "width");
     if (!lua_isnil(ls, -1)) spec->width = (int)lua_tointeger(ls, -1);
     lua_pop(ls, 1);

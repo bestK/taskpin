@@ -86,6 +86,8 @@ typedef struct {
 
 typedef struct {
     WCHAR title[128];
+    COLORREF title_bg_color;   /* title bar background color, 0xFFFFFFFF = default */
+    COLORREF title_color;      /* title bar text color, 0xFFFFFFFF = default */
     int width, height;
     int refresh;         /* milliseconds, 0 = no auto-refresh */
     BOOL borderless;     /* TRUE = no title bar */

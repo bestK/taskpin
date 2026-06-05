@@ -10,5 +10,6 @@
 void script_dialog_init(HINSTANCE hinst);
 void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                         const DialogSpec *spec);
+void script_dialog_close_all(void);
 
 #endif

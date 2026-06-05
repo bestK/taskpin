@@ -4,6 +4,7 @@
 #include "image.h"
 #include "webview2.h"
 #include "i18n.h"
+#include "logger.h"
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <stdlib.h>
@@ -98,6 +99,15 @@ void script_dialog_init(HINSTANCE hinst) {
     s_class_registered = TRUE;
 }
 
+void script_dialog_close_all(void) {
+    for (int i = 0; i < s_dialog_count; i++) {
+        if (s_dialog_hwnds[i]) {
+            DestroyWindow(s_dialog_hwnds[i]);
+            s_dialog_hwnds[i] = NULL;
+        }
+    }
+}
+
 void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                         const DialogSpec *spec) {
     HWND existing = find_dialog_by_path(lua_path);
@@ -174,6 +184,26 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
                 (BYTE)(spec->opacity < 255 ? spec->opacity : 255), LWA_ALPHA);
         }
     }
+
+    /* Custom title bar colors (Windows 10 1809+) */
+    if (spec->title_bg_color != 0xFFFFFFFF || spec->title_color != 0xFFFFFFFF) {
+        HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+        if (dwm) {
+            typedef HRESULT (WINAPI *DwmSetAttrFn)(HWND, DWORD, LPCVOID, DWORD);
+            DwmSetAttrFn pDwmSetAttr = (DwmSetAttrFn)GetProcAddress(dwm, "DwmSetWindowAttribute");
+            if (pDwmSetAttr) {
+                if (spec->title_bg_color != 0xFFFFFFFF) {
+                    COLORREF bg = spec->title_bg_color;
+                    pDwmSetAttr(dlg_hwnd, 35, &bg, sizeof(bg));
+                }
+                if (spec->title_color != 0xFFFFFFFF) {
+                    COLORREF fg = spec->title_color;
+                    pDwmSetAttr(dlg_hwnd, 36, &fg, sizeof(fg));
+                }
+            }
+        }
+    }
+
     ShowWindow(dlg_hwnd, SW_SHOW);
     UpdateWindow(dlg_hwnd);
 }
@@ -500,7 +530,14 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
     ScriptResult *result = (ScriptResult *)HeapAlloc(
         GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
     if (!result) return;
+    DWORD t0 = GetTickCount();
     if (script_exec_file(state->lua_path, state->params, state->param_count, result)) {
+        DWORD elapsed = GetTickCount() - t0;
+        if (elapsed > 500) {
+            char path8[256];
+            WideCharToMultiByte(CP_UTF8, 0, state->lua_path, -1, path8, 256, NULL, NULL);
+            logger_write(LOG_ERROR, "dialog refresh blocked UI for %dms (%s) - avoid network calls in dialog refresh", (int)elapsed, path8);
+        }
         if (result->click_action == CLICK_DIALOG && result->dialog.item_count > 0) {
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
             if (state->spec.x >= 0 && state->spec.y >= 0) {
