@@ -18,7 +18,7 @@ LIB_SRCS = $(LIB_DIR)/appbar.c $(LIB_DIR)/fetcher.c $(LIB_DIR)/config.c \
            $(LIB_DIR)/cJSON.c $(LIB_DIR)/cjson_utils.c $(LIB_DIR)/scripting.c $(LIB_DIR)/base64.c \
            $(LIB_DIR)/update.c $(LIB_DIR)/httputil.c $(LIB_DIR)/sysinfo.c \
            $(LIB_DIR)/script_dialog.c $(LIB_DIR)/image.c $(LIB_DIR)/event.c \
-           $(LIB_DIR)/i18n.c $(LIB_DIR)/logger.c $(LIB_DIR)/websocket.c
+           $(LIB_DIR)/i18n.c $(LIB_DIR)/logger.c $(LIB_DIR)/websocket.c $(LIB_DIR)/hotkey.c
 CPP_SRCS = $(LIB_DIR)/webview2.cpp
 LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)
 

@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "sysinfo.h"
 #include "websocket.h"
+#include "hotkey.h"
 #include <stdio.h>
 
 BarStateEntry g_global_state[MAX_BAR_STATE];
@@ -636,6 +637,68 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
 
+    case WM_HOTKEY: {
+        if (!bar) break;
+        int idx = bar->item_index;
+        if (idx < 0 || idx >= g_cfg.count) break;
+        if (!g_cfg.items[idx].lua_path[0]) break;
+
+        /* Get selection from focused window */
+        SelectionResult sel;
+        hotkey_get_selection(&sel);
+
+        /* Inject selection as global and execute script */
+        ScriptResult *result = (ScriptResult *)HeapAlloc(
+            GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
+        if (!result) { hotkey_free_selection(&sel); break; }
+
+        script_set_global_string("__selection_type",
+            sel.type == 1 ? "text" : sel.type == 2 ? "files" : sel.type == 3 ? "image" : "none");
+        script_set_global_string("__selection_text", sel.text ? sel.text : "");
+
+        if (sel.type == 2 && sel.files) {
+            /* Build JSON array of file paths */
+            char fbuf[4096] = {0};
+            strcat(fbuf, "[");
+            for (int fi = 0; fi < sel.file_count; fi++) {
+                char u8[MAX_PATH];
+                WideCharToMultiByte(CP_UTF8, 0, sel.files[fi], -1, u8, MAX_PATH, NULL, NULL);
+                if (fi > 0) strcat(fbuf, ",");
+                strcat(fbuf, "\"");
+                /* escape backslashes */
+                char *dst = fbuf + strlen(fbuf);
+                for (char *s = u8; *s; s++) {
+                    if (*s == '\\') { *dst++ = '\\'; *dst++ = '\\'; }
+                    else *dst++ = *s;
+                }
+                *dst = '\0';
+                strcat(fbuf, "\"");
+            }
+            strcat(fbuf, "]");
+            script_set_global_string("__selection_files", fbuf);
+        } else {
+            script_set_global_string("__selection_files", "[]");
+        }
+        script_set_global_string("__selection_image", sel.image_path);
+
+        if (script_exec_file(g_cfg.items[idx].lua_path,
+                g_cfg.items[idx].params, g_cfg.items[idx].param_count, result)) {
+            bar->script_result = *result;
+            lstrcpynW(bar->display, result->display, FETCH_BUF_SIZE);
+            bar->rich = result->rich;
+            if (result->tooltip[0] && bar->tooltip_hwnd) {
+                lstrcpynW(bar->tooltip_text, result->tooltip, 512);
+                TOOLINFOW ti = { sizeof(ti), TTF_SUBCLASS | TTF_IDISHWND,
+                    bar->hwnd, (UINT_PTR)bar->hwnd, {0}, NULL, bar->tooltip_text, 0 };
+                SendMessageW(bar->tooltip_hwnd, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+            }
+        }
+        HeapFree(GetProcessHeap(), 0, result);
+        hotkey_free_selection(&sel);
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+
     case WM_MOUSELEAVE:
         if (bar && bar->show_border) {
             bar->show_border = FALSE;
@@ -972,6 +1035,28 @@ void bars_create_all(void) {
         SetTimer(bar->hwnd, IDT_REFRESH, refresh_interval, NULL);
         start_fetch(bar);
 
+        /* Register @hotkey if declared */
+        if (g_cfg.items[i].lua_path[0]) {
+            char hk_str[64] = {0};
+            /* Check if user overrode via HOTKEY param */
+            for (int p = 0; p < g_cfg.items[i].param_count; p++) {
+                char k8[64];
+                WideCharToMultiByte(CP_UTF8, 0, g_cfg.items[i].params[p].key, -1, k8, 64, NULL, NULL);
+                if (_stricmp(k8, "HOTKEY") == 0) {
+                    WideCharToMultiByte(CP_UTF8, 0, g_cfg.items[i].params[p].value, -1, hk_str, 64, NULL, NULL);
+                    break;
+                }
+            }
+            if (!hk_str[0])
+                script_parse_hotkey(g_cfg.items[i].lua_path, hk_str, 64);
+            if (hk_str[0]) {
+                UINT mod, vk;
+                if (hotkey_parse(hk_str, &mod, &vk)) {
+                    hotkey_register(bar->hwnd, g_bar_count, mod, vk);
+                }
+            }
+        }
+
         offset_x += w + 2;
         g_bar_count++;
     }
@@ -1007,6 +1092,7 @@ void bars_destroy_all(void) {
             int idx = g_bars[i].item_index;
             if (idx >= 0 && idx < g_cfg.count && g_cfg.items[idx].lua_path[0])
                 ws_close_by_script(g_cfg.items[idx].lua_path);
+            hotkey_unregister_bar(i);
             DestroyWindow(g_bars[i].hwnd);
             g_bars[i].hwnd = NULL;
         }

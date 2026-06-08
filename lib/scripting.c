@@ -5,6 +5,7 @@
 #include "logger.h"
 #include "i18n.h"
 #include "websocket.h"
+#include "hotkey.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -1370,10 +1371,12 @@ void script_init(void) {
 
     /* Register websocket API */
     ws_init();
+    hotkey_init();
     register_websocket_api(L);
 }
 
 void script_shutdown(void) {
+    hotkey_shutdown();
     ws_shutdown();
     if (L) { lua_close(L); L = NULL; }
     image_shutdown();
@@ -1525,6 +1528,33 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
     lua_setglobal(L, "args");
 
     event_push_lua(L);
+
+    /* Build selection table from __selection_* globals (set by hotkey handler) */
+    lua_getglobal(L, "__selection_type");
+    const char *sel_type = lua_tostring(L, -1);
+    if (sel_type && strcmp(sel_type, "none") != 0) {
+        lua_newtable(L);
+        lua_pushstring(L, sel_type);
+        lua_setfield(L, -2, "type");
+        lua_getglobal(L, "__selection_text");
+        lua_setfield(L, -2, "text");
+        /* Parse files JSON array */
+        lua_getglobal(L, "__selection_files");
+        const char *fj = lua_tostring(L, -1);
+        if (fj && fj[0] == '[') {
+            luaL_dostring(L, "return json.decode(__selection_files)");
+            lua_setfield(L, -3, "files");
+        }
+        lua_pop(L, 1);
+        lua_getglobal(L, "__selection_image");
+        lua_setfield(L, -2, "image");
+        lua_setglobal(L, "selection");
+        /* Clear after use */
+        lua_pushnil(L); lua_setglobal(L, "__selection_type");
+    } else {
+        lua_pushnil(L); lua_setglobal(L, "selection");
+    }
+    lua_pop(L, 1);
 
     char path8[512];
     WideCharToMultiByte(CP_UTF8, 0, full_path, -1, path8, 512, NULL, NULL);
@@ -1680,6 +1710,38 @@ BOOL script_parse_realtime(const WCHAR *lua_path) {
     }
     fclose(f);
     return result;
+}
+
+/* ??? parse @hotkey declaration ??? */
+
+void script_parse_hotkey(const WCHAR *lua_path, char *out, int out_size) {
+    out[0] = '\0';
+    if (!lua_path || !lua_path[0]) return;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return;
+
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@hotkey", 7) != 0) continue;
+        p += 7;
+        while (*p == ' ' || *p == '\t') p++;
+        /* trim trailing whitespace */
+        char *end = p + strlen(p) - 1;
+        while (end > p && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+        strncpy(out, p, out_size - 1);
+        out[out_size - 1] = '\0';
+        break;
+    }
+    fclose(f);
 }
 
 /* ??? parse @bar_width declaration ??? */
