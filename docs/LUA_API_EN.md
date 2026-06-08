@@ -112,8 +112,42 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | `"text"` | value, color, size, bold, image, image_width, image_height | Text line (optional inline image) |
 | `"image"` | source, width, height, src_x, src_y, src_w, src_h | Standalone image block (supports sprite sheet cropping) |
 | `"hr"` | — | Horizontal separator |
-| `"table"` | columns, rows | Table (max 6 columns × 24 rows) |
-| `"button"` | value, cmd, url, color, bg_color, size | Clickable button |
+| `"table"` | columns, col_widths, rows, height, wrap | Table (max 6 columns × 24 rows) |
+| `"button"` | value, cmd, url, lua, color, bg_color, size, width, height, align | Clickable button |
+
+**table layout fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| columns | table | Column name array |
+| col_widths | table\|nil | Column width array (px), `0` or omit = auto-fill remaining space |
+| rows | table | Row data array |
+| height | number\|nil | Row height (px), default auto-calculated |
+| wrap | boolean\|nil | Auto-wrap text in cells, default false |
+
+```lua
+{ type = "table",
+  columns = { "Name", "Status", "Detail" },
+  col_widths = { 80, 60, 0 },  -- first two fixed, third auto-fills
+  height = 24,                   -- 24px row height
+  wrap = true,                   -- auto-wrap long text
+  rows = { {"app.exe", "Running", "Some long description..."} }
+}
+```
+
+**button layout fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| width | number\|nil | Button width (px), default auto-fit text |
+| height | number\|nil | Button height (px), default auto-fit |
+| align | string\|nil | Alignment: `"left"` (default), `"center"`, `"right"`, `"inline"` |
+
+```lua
+{ type = "button", value = "Centered", url = "https://example.com",
+  color = "#FFF", bg_color = "#336699", size = 10,
+  width = 200, height = 36, align = "center" },
+```
 
 **Image + text example**:
 

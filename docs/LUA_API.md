@@ -112,8 +112,42 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | `"text"` | value, color, size, bold, image, image_width, image_height | 文本行（可选内嵌图片） |
 | `"image"` | source, width, height, src_x, src_y, src_w, src_h | 独立图片块（支持精灵表裁切） |
 | `"hr"` | — | 水平分隔线 |
-| `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
-| `"button"` | value, cmd, url, lua, color, bg_color, size | 可点击按钮 |
+| `"table"` | columns, col_widths, rows, height, wrap | 表格（最多 6 列 × 24 行） |
+| `"button"` | value, cmd, url, lua, color, bg_color, size, width, height, align | 可点击按钮 |
+
+**table 布局字段**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| columns | table | 列名数组 |
+| col_widths | table\|nil | 列宽数组（px），`0` 或不填表示自动分配剩余宽度 |
+| rows | table | 行数据数组 |
+| height | number\|nil | 行高（px），默认自动计算 |
+| wrap | boolean\|nil | 单元格文本自动换行，默认 false |
+
+```lua
+{ type = "table",
+  columns = { "Name", "Status", "Detail" },
+  col_widths = { 80, 60, 0 },  -- 前两列固定宽度，第三列自动填充
+  height = 24,                   -- 行高 24px
+  wrap = true,                   -- 长文本自动换行
+  rows = { {"app.exe", "Running", "Some long description..."} }
+}
+```
+
+**button 布局字段**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| width | number\|nil | 按钮宽度（px），默认自适应文字 |
+| height | number\|nil | 按钮高度（px），默认自适应 |
+| align | string\|nil | 对齐：`"left"`（默认）、`"center"`、`"right"`、`"inline"` |
+
+```lua
+{ type = "button", value = "居中按钮", url = "https://example.com",
+  color = "#FFF", bg_color = "#336699", size = 10,
+  width = 200, height = 36, align = "center" },
+```
 
 **图文混排示例**：
 

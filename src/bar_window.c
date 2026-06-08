@@ -436,17 +436,19 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             bar->text_width = left_total[0];
         } else {
             bar->has_interactive = FALSE;
+            const WCHAR *text = bar->display;
+            if (!text[0] && bar->fetching) text = L"loading...";
             SetTextColor(hdc, g_cfg.font_color);
             SelectObject(hdc, g_font);
             SIZE sz;
-            GetTextExtentPoint32W(hdc, bar->display, lstrlenW(bar->display), &sz);
+            GetTextExtentPoint32W(hdc, text, lstrlenW(text), &sz);
             bar->text_width = sz.cx;
 
             int avail = rc.right - rc.left - 12;
             if (sz.cx <= avail) {
                 bar->scroll_offset = 0;
                 rc.left += 8; rc.right -= 4;
-                DrawTextW(hdc, bar->display, -1, &rc,
+                DrawTextW(hdc, text, -1, &rc,
                     DT_SINGLELINE | DT_VCENTER | DT_LEFT);
             } else {
                 RECT clip = rc;
@@ -454,7 +456,7 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 IntersectClipRect(hdc, clip.left, clip.top, clip.right, clip.bottom);
                 rc.left = 8 - bar->scroll_offset;
                 rc.right = rc.left + sz.cx + 50;
-                DrawTextW(hdc, bar->display, -1, &rc,
+                DrawTextW(hdc, text, -1, &rc,
                     DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOCLIP);
             }
         }
