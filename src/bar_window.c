@@ -120,6 +120,12 @@ void start_fetch(BarInstance *bar) {
                 bar->script_result = *result;
                 lstrcpynW(bar->display, result->display, FETCH_BUF_SIZE);
                 bar->rich = result->rich;
+                if (result->tooltip[0] && bar->tooltip_hwnd) {
+                    lstrcpynW(bar->tooltip_text, result->tooltip, 512);
+                    TOOLINFOW ti = { sizeof(ti), TTF_SUBCLASS | TTF_IDISHWND,
+                        bar->hwnd, (UINT_PTR)bar->hwnd, {0}, NULL, bar->tooltip_text, 0 };
+                    SendMessageW(bar->tooltip_hwnd, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+                }
             }
             HeapFree(GetProcessHeap(), 0, result);
             InvalidateRect(bar->hwnd, NULL, TRUE);
@@ -572,6 +578,13 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             bar->script_result = lctx->result;
             lstrcpynW(bar->display, lctx->result.display, FETCH_BUF_SIZE);
             bar->rich = lctx->result.rich;
+            /* Update tooltip if script provided one */
+            if (lctx->result.tooltip[0] && bar->tooltip_hwnd) {
+                lstrcpynW(bar->tooltip_text, lctx->result.tooltip, 512);
+                TOOLINFOW ti = { sizeof(ti), TTF_SUBCLASS | TTF_IDISHWND,
+                    bar->hwnd, (UINT_PTR)bar->hwnd, {0}, NULL, bar->tooltip_text, 0 };
+                SendMessageW(bar->tooltip_hwnd, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+            }
         } else {
             lstrcpyW(bar->display, L"[script error]");
             bar->rich.count = 0;
@@ -933,6 +946,27 @@ void bars_create_all(void) {
         appbar_embed(bar->hwnd, w, px, py);
         ShowWindow(bar->hwnd, SW_SHOWNOACTIVATE);
         UpdateWindow(bar->hwnd);
+
+        /* Create tooltip */
+        bar->tooltip_hwnd = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL,
+            WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+            0, 0, 0, 0, bar->hwnd, NULL, g_hinst, NULL);
+        if (bar->tooltip_hwnd) {
+            TOOLINFOW ti = { sizeof(ti), TTF_SUBCLASS | TTF_IDISHWND,
+                bar->hwnd, (UINT_PTR)bar->hwnd, {0}, NULL, NULL, 0 };
+            /* Default tooltip: script name */
+            WCHAR name_buf[128] = {0};
+            if (g_cfg.items[i].name[0]) {
+                lstrcpynW(name_buf, g_cfg.items[i].name, 128);
+            } else if (g_cfg.items[i].lua_path[0]) {
+                script_parse_name(g_cfg.items[i].lua_path, name_buf, 128);
+            }
+            if (!name_buf[0]) lstrcpyW(name_buf, L"TaskPin");
+            lstrcpynW(bar->tooltip_text, name_buf, 512);
+            ti.lpszText = bar->tooltip_text;
+            SendMessageW(bar->tooltip_hwnd, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+            SendMessageW(bar->tooltip_hwnd, TTM_SETMAXTIPWIDTH, 0, 400);
+        }
 
         DWORD refresh_interval = g_cfg.items[i].realtime ? 50 : g_cfg.items[i].interval_ms;
         SetTimer(bar->hwnd, IDT_REFRESH, refresh_interval, NULL);

@@ -115,6 +115,7 @@ typedef struct {
     WCHAR click_url[1024];   /* URL to open (when click_action==CLICK_URL) */
     DisplayContent rich;     /* rich text spans (if count>0, use this) */
     DialogSpec dialog;       /* dialog spec (when click_action==CLICK_DIALOG) */
+    WCHAR tooltip[512];      /* tooltip text (4th return value) */
 } ScriptResult;
 
 /* Parsed @param declaration from script header */

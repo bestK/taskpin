@@ -115,6 +115,8 @@ typedef struct {
     int state_count;
     BOOL btn_click_consumed;
     BOOL has_interactive;
+    HWND tooltip_hwnd;
+    WCHAR tooltip_text[512];
 } BarInstance;
 
 extern BarInstance g_bars[MAX_BARS];

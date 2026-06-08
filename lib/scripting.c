@@ -1457,6 +1457,12 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
             if (url) MultiByteToWideChar(CP_UTF8, 0, url, -1, result->click_url, 1024);
         }
     }
+    /* 4th return: tooltip text */
+    result->tooltip[0] = L'\0';
+    if (nresults >= 4) {
+        const char *tip = lua_tostring(L, 4);
+        if (tip) MultiByteToWideChar(CP_UTF8, 0, tip, -1, result->tooltip, 512);
+    }
 
     lua_settop(L, 0);
     LeaveCriticalSection(&g_lua_cs);
@@ -1557,6 +1563,12 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
             const char *url = lua_tostring(L, 3);
             if (url) MultiByteToWideChar(CP_UTF8, 0, url, -1, result->click_url, 1024);
         }
+    }
+    /* 4th return: tooltip text */
+    result->tooltip[0] = L'\0';
+    if (nresults >= 4) {
+        const char *tip = lua_tostring(L, 4);
+        if (tip) MultiByteToWideChar(CP_UTF8, 0, tip, -1, result->tooltip, 512);
     }
 
     lua_settop(L, 0);
