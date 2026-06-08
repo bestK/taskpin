@@ -137,7 +137,7 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     if (spec->borderless)
         exstyle |= WS_EX_TOOLWINDOW;
 
-    /* Check if dialog has webview — layered windows can't host child windows */
+    /* Check if dialog has webview ??layered windows can't host child windows */
     BOOL has_webview = FALSE;
     for (int i = 0; i < spec->item_count; i++) {
         if (spec->items[i].type == DI_WEBVIEW) { has_webview = TRUE; break; }
@@ -265,16 +265,17 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             break;
         }
         case DI_IMG: {
-            int rh = item->img_h > 0 ? item->img_h : 64;
+            int rh = item->height > 0 ? item->height : 64;
             y += rh;
             break;
         }
         case DI_BUTTON: {
-            y += 26;
+            int btn_h = item->height > 0 ? item->height : 26;
+            if (item->align != ALIGN_INLINE) y += btn_h;
             break;
         }
         case DI_WEBVIEW: {
-            int rh = item->img_h > 0 ? item->img_h : 300;
+            int rh = item->height > 0 ? item->height : 300;
             y += rh;
             break;
         }
@@ -290,6 +291,22 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
     state->button_count = 0;
     state->tbl_button_count = 0;
+
+    /* Show loading indicator when content hasn't been populated yet */
+    if (state->spec.item_count == 0) {
+        HBRUSH bg = CreateSolidBrush(DIALOG_BG);
+        FillRect(hdc, &rc, bg);
+        DeleteObject(bg);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(136, 136, 136));
+        HFONT hf = create_dialog_font(10, FALSE);
+        HFONT old = (HFONT)SelectObject(hdc, hf);
+        const WCHAR *msg = L"Loading...";
+        DrawTextW(hdc, msg, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, old);
+        DeleteObject(hf);
+        return;
+    }
 
     BOOL has_wv = FALSE;
     for (int i = 0; i < state->spec.item_count; i++) {
@@ -326,8 +343,8 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             int line_h = tm.tmHeight;
             /* Draw inline icon if present */
             if (item->img_source[0]) {
-                int iw = item->img_w > 0 ? item->img_w : tm.tmHeight;
-                int ih = item->img_h > 0 ? item->img_h : tm.tmHeight;
+                int iw = item->width > 0 ? item->width : tm.tmHeight;
+                int ih = item->height > 0 ? item->height : tm.tmHeight;
                 int out_w = 0, out_h = 0;
                 HBITMAP hbmp = image_load(item->img_source, iw, ih, &out_w, &out_h);
                 if (hbmp) {
@@ -342,6 +359,15 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                     text_x += dw + 4;
                     if (dh > line_h) line_h = dh;
                 }
+            }
+            if (item->align == ALIGN_CENTER || item->align == ALIGN_RIGHT) {
+                SIZE sz;
+                GetTextExtentPoint32W(hdc, item->text, lstrlenW(item->text), &sz);
+                int content_w = (text_x - PADDING_X) + sz.cx;
+                if (item->align == ALIGN_CENTER)
+                    text_x = (client_w - content_w) / 2 + (text_x - PADDING_X);
+                else
+                    text_x = client_w - PADDING_X - sz.cx;
             }
             TextOutW(hdc, text_x, y, item->text, lstrlenW(item->text));
             y += line_h + 4;
@@ -449,8 +475,8 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
         }
         case DI_IMG: {
             if (!item->img_source[0]) break;
-            int rw = item->img_w > 0 ? item->img_w : 64;
-            int rh = item->img_h > 0 ? item->img_h : 64;
+            int rw = item->width > 0 ? item->width : 64;
+            int rh = item->height > 0 ? item->height : 64;
 
             if (item->src_w > 0 && item->src_h > 0) {
                 /* Sprite sheet crop mode: load at native size, blit region centered */
@@ -487,22 +513,25 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
         }
         case DI_BUTTON: {
             if (state->button_count < DLG_MAX_BUTTONS) {
-                int btn_h = 26;
-                int btn_w = client_w - PADDING_X * 2;
+                int btn_h = item->height > 0 ? item->height : 26;
+                int btn_w = item->width > 0 ? item->width : (client_w - PADDING_X * 2);
+                int btn_x = PADDING_X;
+                if (item->align == ALIGN_CENTER) btn_x = (client_w - btn_w) / 2;
+                else if (item->align == ALIGN_RIGHT) btn_x = client_w - PADDING_X - btn_w;
                 int btn_id = DLG_BTN_BASE_ID + state->button_count;
                 HWND hbtn = state->buttons[state->button_count];
                 if (!hbtn) {
                     hbtn = CreateWindowExW(0, L"BUTTON", item->text,
                         WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                        PADDING_X, y, btn_w, btn_h,
+                        btn_x, y, btn_w, btn_h,
                         hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
                     state->buttons[state->button_count] = hbtn;
                 } else {
-                    MoveWindow(hbtn, PADDING_X, y, btn_w, btn_h, TRUE);
+                    MoveWindow(hbtn, btn_x, y, btn_w, btn_h, TRUE);
                     SetWindowTextW(hbtn, item->text);
                 }
                 state->button_count++;
-                y += btn_h + 2;
+                if (item->align != ALIGN_INLINE) y += btn_h + 2;
             }
             break;
         }
@@ -630,6 +659,18 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     ScriptDialogState *state = (ScriptDialogState *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
     switch (msg) {
+    case WM_SETCURSOR: {
+        if ((HWND)wp != hwnd) {
+            WCHAR cls[16];
+            GetClassNameW((HWND)wp, cls, 16);
+            if (lstrcmpiW(cls, L"BUTTON") == 0) {
+                SetCursor(LoadCursorW(NULL, IDC_HAND));
+                return TRUE;
+            }
+        }
+        break;
+    }
+
     case WM_CREATE: {
         CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
         state = (ScriptDialogState *)cs->lpCreateParams;

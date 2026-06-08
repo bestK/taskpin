@@ -41,7 +41,7 @@ static void script_log_write(const char *msg) {
     fclose(f);
 }
 
-/* ─── built-in json.decode for Lua ─── */
+/* ??? built-in json.decode for Lua ??? */
 
 static void push_cjson_node(lua_State *ls, cJSON *item);
 
@@ -89,7 +89,7 @@ static int l_json_decode(lua_State *ls) {
     return 1;
 }
 
-/* ─── json.encode: Lua table → JSON string ─── */
+/* ??? json.encode: Lua table ??JSON string ??? */
 
 static cJSON *lua_to_cjson(lua_State *ls, int idx) {
     idx = lua_absindex(ls, idx);
@@ -154,7 +154,7 @@ static int l_json_encode(lua_State *ls) {
     return 1;
 }
 
-/* ─── built-in http.get / http.post for Lua ─── */
+/* ??? built-in http.get / http.post for Lua ??? */
 
 #include "httputil.h"
 
@@ -191,7 +191,7 @@ static int l_http_post(lua_State *ls) { return http_request(ls, L"POST"); }
 static int l_http_put(lua_State *ls) { return http_request(ls, L"PUT"); }
 static int l_http_delete(lua_State *ls) { return http_request(ls, L"DELETE"); }
 
-/* ─── log() for Lua ─── */
+/* ??? log() for Lua ??? */
 
 static void lua_log_with_level(lua_State *ls, int level) {
     int n = lua_gettop(ls);
@@ -231,9 +231,9 @@ static int l_log_error(lua_State *ls) { lua_log_with_level(ls, LOG_ERROR); retur
 
 static int l_log(lua_State *ls) { lua_remove(ls, 1); lua_log_with_level(ls, LOG_INFO); return 0; }
 
-/* ─── init / shutdown ─── */
+/* ??? init / shutdown ??? */
 
-/* ─── font() span system for rich text ─── */
+/* ??? font() span system for rich text ??? */
 
 #define SPAN_MT "TaskPin.Span"
 
@@ -851,7 +851,7 @@ static void parse_rich_result(lua_State *ls, int idx, DisplayContent *rich) {
     }
 }
 
-/* ─── dialog() Lua function ─── */
+/* ??? dialog() Lua function ??? */
 
 static int l_dialog(lua_State *ls) {
     if (!lua_istable(ls, 1)) {
@@ -980,10 +980,17 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             if (ico) strncpy(item->img_source, ico, 511);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "image_width");
-            item->img_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            item->width = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "image_height");
-            item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            item->height = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "align");
+            const char *ta = lua_tostring(ls, -1);
+            if (ta) {
+                if (strcmp(ta, "center") == 0) item->align = ALIGN_CENTER;
+                else if (strcmp(ta, "right") == 0) item->align = ALIGN_RIGHT;
+            }
             lua_pop(ls, 1);
         } else if (strcmp(type, "hr") == 0) {
             item->type = DI_HR;
@@ -1054,10 +1061,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             if (src) strncpy(item->img_source, src, 511);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "width");
-            item->img_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            item->width = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "height");
-            item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            item->height = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "src_x");
             item->src_x = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
@@ -1101,6 +1108,20 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "size");
             if (!lua_isnil(ls, -1)) item->font_size = (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
+            lua_getfield(ls, -1, "width");
+            if (!lua_isnil(ls, -1)) item->width = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "height");
+            if (!lua_isnil(ls, -1)) item->height = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+            lua_getfield(ls, -1, "align");
+            const char *align = lua_tostring(ls, -1);
+            if (align) {
+                if (strcmp(align, "center") == 0) item->align = ALIGN_CENTER;
+                else if (strcmp(align, "right") == 0) item->align = ALIGN_RIGHT;
+                else if (strcmp(align, "inline") == 0) item->align = ALIGN_INLINE;
+            }
+            lua_pop(ls, 1);
         } else if (strcmp(type, "webview") == 0) {
             item->type = DI_WEBVIEW;
             lua_pop(ls, 1);
@@ -1109,10 +1130,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             if (u) strncpy(item->url, u, 511);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "width");
-            item->img_w = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            item->width = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
             lua_getfield(ls, -1, "height");
-            item->img_h = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+            item->height = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
             lua_pop(ls, 1);
         } else {
             lua_pop(ls, 1);
@@ -1232,7 +1253,7 @@ void script_set_global_string(const char *name, const char *value) {
     LeaveCriticalSection(&g_lua_cs);
 }
 
-/* ─── execute template code ─── */
+/* ??? execute template code ??? */
 
 BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *result) {
     if (!L || !lua_code || !lua_code[0] || !result) return FALSE;
@@ -1299,7 +1320,7 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
     return (result->display[0] != L'\0' || result->rich.count > 0);
 }
 
-/* ─── execute Lua file ─── */
+/* ??? execute Lua file ??? */
 
 static void resolve_lua_path(const WCHAR *lua_path, WCHAR *full_path) {
     if (lua_path[0] != L'\\' && lua_path[0] != L'/' &&
@@ -1398,7 +1419,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
     return (result->display[0] != L'\0' || result->rich.count > 0);
 }
 
-/* ─── parse @param declarations ─── */
+/* ??? parse @param declarations ??? */
 
 int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_decls) {
     if (!lua_path || !lua_path[0]) return 0;
@@ -1450,7 +1471,7 @@ int script_parse_params(const WCHAR *lua_path, ScriptParamDecl *decls, int max_d
     return count;
 }
 
-/* ─── parse @refresh declaration ─── */
+/* ??? parse @refresh declaration ??? */
 
 int script_parse_refresh(const WCHAR *lua_path) {
     if (!lua_path || !lua_path[0]) return 0;
@@ -1479,7 +1500,7 @@ int script_parse_refresh(const WCHAR *lua_path) {
     return result;
 }
 
-/* ─── parse @realtime declaration ─── */
+/* ??? parse @realtime declaration ??? */
 
 BOOL script_parse_realtime(const WCHAR *lua_path) {
     if (!lua_path || !lua_path[0]) return FALSE;
@@ -1504,7 +1525,7 @@ BOOL script_parse_realtime(const WCHAR *lua_path) {
     return result;
 }
 
-/* ─── parse @bar_width declaration ─── */
+/* ??? parse @bar_width declaration ??? */
 
 int script_parse_bar_width(const WCHAR *lua_path) {
     if (!lua_path || !lua_path[0]) return 0;
@@ -1533,7 +1554,7 @@ int script_parse_bar_width(const WCHAR *lua_path) {
     return result;
 }
 
-/* ─── parse @name declaration ─── */
+/* ??? parse @name declaration ??? */
 
 void script_parse_name(const WCHAR *lua_path, WCHAR *out, int out_size) {
     out[0] = L'\0';
@@ -1554,7 +1575,7 @@ void script_parse_name(const WCHAR *lua_path, WCHAR *out, int out_size) {
         if (p[0] != '-' || p[1] != '-') break;
         p += 2;
         while (*p == ' ') p++;
-        /* First line: extract "-- xxx.lua - Description" → Description */
+        /* First line: extract "-- xxx.lua - Description" ??Description */
         if (first_line) {
             first_line = FALSE;
             char *dash = strstr(p, " - ");
@@ -1582,7 +1603,7 @@ void script_parse_name(const WCHAR *lua_path, WCHAR *out, int out_size) {
     }
 }
 
-/* ─── parse @version declaration ─── */
+/* ??? parse @version declaration ??? */
 
 void script_parse_version(const WCHAR *lua_path, char *out, int out_size) {
     out[0] = '\0';
@@ -1612,7 +1633,7 @@ void script_parse_version(const WCHAR *lua_path, char *out, int out_size) {
     fclose(f);
 }
 
-/* ─── parse @require declaration and check ─── */
+/* ??? parse @require declaration and check ??? */
 
 static int version_compare(const char *a, const char *b) {
     int a1=0,a2=0,a3=0, b1=0,b2=0,b3=0;

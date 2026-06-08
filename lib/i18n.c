@@ -116,14 +116,10 @@ void i18n_init(void) {
     char *dash = strchr(base, '-');
     if (dash) *dash = '\0';
 
-    /* Try download latest lang files (overwrites local) */
+    /* Try download latest lang file (overwrites local) */
     char filename[64];
     snprintf(filename, sizeof(filename), "%s.json", s_lang);
     i18n_download_file(lang_dir, filename);
-    if (strcmp(base, s_lang) != 0) {
-        snprintf(filename, sizeof(filename), "%s.json", base);
-        i18n_download_file(lang_dir, filename);
-    }
 
     /* Load from local files */
     WCHAR lang_path[MAX_PATH];
@@ -133,16 +129,9 @@ void i18n_init(void) {
     wsprintfW(lang_path, L"%s\\%s.json", lang_dir, lang_file);
     i18n_load_file(lang_path);
 
-    if (s_count == 0) {
-        WCHAR base_w[8];
-        MultiByteToWideChar(CP_UTF8, 0, base, -1, base_w, 8);
-        wsprintfW(lang_path, L"%s\\%s.json", lang_dir, base_w);
-        i18n_load_file(lang_path);
-    }
-
     if (s_count == 0 && strncmp(s_lang, "en", 2) != 0) {
-        i18n_download_file(lang_dir, "en.json");
-        wsprintfW(lang_path, L"%s\\en.json", lang_dir);
+        i18n_download_file(lang_dir, "en-US.json");
+        wsprintfW(lang_path, L"%s\\en-US.json", lang_dir);
         i18n_load_file(lang_path);
     }
 }

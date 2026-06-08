@@ -321,7 +321,7 @@ local dialog_content = {
       cmd = '"' .. exe_escaped .. '" --source claude-code --event ' .. (hook_installed and "uninstall-hook" or "install-hook"),
       bg_color = "#333333",
       color = hook_installed and "#C62828" or "#2E7D32",
-      size = 10 },
+      size = 10, width = 140, height = 30, align = "center" },
 }
 
 local info = dialog({
