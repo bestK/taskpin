@@ -3,6 +3,7 @@
 #include "cJSON.h"
 #include "logger.h"
 #include "sysinfo.h"
+#include "websocket.h"
 #include <stdio.h>
 
 BarStateEntry g_global_state[MAX_BAR_STATE];
@@ -967,6 +968,9 @@ void bars_create_all(void) {
 void bars_destroy_all(void) {
     for (int i = 0; i < g_bar_count; i++) {
         if (g_bars[i].hwnd) {
+            int idx = g_bars[i].item_index;
+            if (idx >= 0 && idx < g_cfg.count && g_cfg.items[idx].lua_path[0])
+                ws_close_by_script(g_cfg.items[idx].lua_path);
             DestroyWindow(g_bars[i].hwnd);
             g_bars[i].hwnd = NULL;
         }

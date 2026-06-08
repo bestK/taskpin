@@ -4,6 +4,7 @@
 #include "event.h"
 #include "logger.h"
 #include "i18n.h"
+#include "websocket.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -1014,6 +1015,29 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             }
             lua_pop(ls, 1);
 
+            /* Parse col_widths */
+            lua_getfield(ls, -1, "col_widths");
+            if (lua_istable(ls, -1)) {
+                int nw = (int)lua_rawlen(ls, -1);
+                if (nw > item->col_count) nw = item->col_count;
+                for (int c = 1; c <= nw; c++) {
+                    lua_rawgeti(ls, -1, c);
+                    item->col_widths[c-1] = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+                    lua_pop(ls, 1);
+                }
+            }
+            lua_pop(ls, 1);
+
+            /* Row height */
+            lua_getfield(ls, -1, "height");
+            if (!lua_isnil(ls, -1)) item->height = (int)lua_tointeger(ls, -1);
+            lua_pop(ls, 1);
+
+            /* Word wrap */
+            lua_getfield(ls, -1, "wrap");
+            item->word_wrap = lua_toboolean(ls, -1);
+            lua_pop(ls, 1);
+
             /* Parse rows */
             lua_getfield(ls, -1, "rows");
             if (lua_istable(ls, -1)) {
@@ -1156,6 +1180,120 @@ static BOOL is_dialog_table(lua_State *ls, int idx) {
     return r;
 }
 
+/* --- WebSocket Lua bindings --- */
+
+#define WS_META "WSConnection"
+static WCHAR g_current_lua_path[MAX_PATH];
+
+static WSConnection **ws_check(lua_State *ls) {
+    return (WSConnection **)luaL_checkudata(ls, 1, WS_META);
+}
+
+static int l_ws_connect(lua_State *ls) {
+    const char *url_str = luaL_checkstring(ls, 1);
+    BOOL reconnect = TRUE;
+    const char *extra_headers = NULL;
+
+    if (lua_istable(ls, 2)) {
+        lua_getfield(ls, 2, "reconnect");
+        if (!lua_isnil(ls, -1)) reconnect = lua_toboolean(ls, -1);
+        lua_pop(ls, 1);
+        lua_getfield(ls, 2, "headers");
+        if (lua_isstring(ls, -1)) extra_headers = lua_tostring(ls, -1);
+        lua_pop(ls, 1);
+    }
+
+    WCHAR wurl[2048];
+    MultiByteToWideChar(CP_UTF8, 0, url_str, -1, wurl, 2048);
+    WCHAR wheaders[2048] = {0};
+    if (extra_headers)
+        MultiByteToWideChar(CP_UTF8, 0, extra_headers, -1, wheaders, 2048);
+
+    WSConnection *ws = ws_connect(wurl, wheaders[0] ? wheaders : NULL, reconnect);
+    if (!ws) { lua_pushnil(ls); return 1; }
+
+    lstrcpynW(ws->owner_path, g_current_lua_path, MAX_PATH);
+
+    WSConnection **ud = (WSConnection **)lua_newuserdata(ls, sizeof(WSConnection *));
+    *ud = ws;
+    luaL_getmetatable(ls, WS_META);
+    lua_setmetatable(ls, -2);
+    return 1;
+}
+
+static int l_ws_send(lua_State *ls) {
+    WSConnection **ud = ws_check(ls);
+    if (!*ud) { lua_pushboolean(ls, FALSE); return 1; }
+    size_t len;
+    const char *data = luaL_checklstring(ls, 2, &len);
+    int r = ws_send(*ud, data, (int)len);
+    lua_pushboolean(ls, r > 0);
+    return 1;
+}
+
+static int l_ws_recv(lua_State *ls) {
+    WSConnection **ud = ws_check(ls);
+    if (!*ud) { lua_pushnil(ls); return 1; }
+    char *data = NULL;
+    int len = 0;
+    if (ws_recv(*ud, &data, &len) && data) {
+        lua_pushlstring(ls, data, len);
+        free(data);
+    } else {
+        lua_pushnil(ls);
+    }
+    return 1;
+}
+
+static int l_ws_close(lua_State *ls) {
+    WSConnection **ud = ws_check(ls);
+    if (*ud) { ws_close(*ud); *ud = NULL; }
+    return 0;
+}
+
+static int l_ws_is_connected(lua_State *ls) {
+    WSConnection **ud = ws_check(ls);
+    lua_pushboolean(ls, *ud ? ws_is_connected(*ud) : FALSE);
+    return 1;
+}
+
+static int l_ws_set_reconnect(lua_State *ls) {
+    WSConnection **ud = ws_check(ls);
+    if (*ud) (*ud)->reconnect = lua_toboolean(ls, 2);
+    return 0;
+}
+
+static int l_ws_gc(lua_State *ls) {
+    WSConnection **ud = (WSConnection **)luaL_checkudata(ls, 1, WS_META);
+    if (*ud) { ws_close(*ud); *ud = NULL; }
+    return 0;
+}
+
+static void register_websocket_api(lua_State *ls) {
+    luaL_newmetatable(ls, WS_META);
+    lua_pushvalue(ls, -1);
+    lua_setfield(ls, -2, "__index");
+
+    lua_pushcfunction(ls, l_ws_send);
+    lua_setfield(ls, -2, "send");
+    lua_pushcfunction(ls, l_ws_recv);
+    lua_setfield(ls, -2, "recv");
+    lua_pushcfunction(ls, l_ws_close);
+    lua_setfield(ls, -2, "close");
+    lua_pushcfunction(ls, l_ws_is_connected);
+    lua_setfield(ls, -2, "is_connected");
+    lua_pushcfunction(ls, l_ws_set_reconnect);
+    lua_setfield(ls, -2, "set_reconnect");
+    lua_pushcfunction(ls, l_ws_gc);
+    lua_setfield(ls, -2, "__gc");
+    lua_pop(ls, 1);
+
+    lua_newtable(ls);
+    lua_pushcfunction(ls, l_ws_connect);
+    lua_setfield(ls, -2, "connect");
+    lua_setglobal(ls, "websocket");
+}
+
 char *script_eval_expr(const char *expr) {
     if (!L || !expr) return NULL;
     EnterCriticalSection(&g_lua_cs);
@@ -1229,9 +1367,14 @@ void script_init(void) {
 
     /* Register sys.* system info API */
     sysinfo_register_lua(L);
+
+    /* Register websocket API */
+    ws_init();
+    register_websocket_api(L);
 }
 
 void script_shutdown(void) {
+    ws_shutdown();
     if (L) { lua_close(L); L = NULL; }
     image_shutdown();
     DeleteCriticalSection(&g_lua_cs);
@@ -1359,6 +1502,8 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
 
     WCHAR full_path[MAX_PATH];
     resolve_lua_path(lua_path, full_path);
+
+    lstrcpynW(g_current_lua_path, full_path, MAX_PATH);
 
     /* Inject args table */
     lua_newtable(L);
