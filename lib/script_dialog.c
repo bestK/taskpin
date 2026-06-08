@@ -637,6 +637,7 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         if (state->spec.refresh > 0) {
             SetTimer(hwnd, IDT_DIALOG_REFRESH, (UINT)state->spec.refresh, NULL);
         }
+        PostMessage(hwnd, WM_TIMER, IDT_DIALOG_REFRESH, 0);
         if (state->spec.borderless) {
             SetTimer(hwnd, IDT_DIALOG_ESC, 100, NULL);
         }
