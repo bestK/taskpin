@@ -333,6 +333,140 @@ local resp = http.post(
 
 ---
 
+## websocket.connect(url [, options])
+
+创建 WebSocket 连接。连接建立后由独立线程接收消息，Lua 侧通过 `ws:recv()` 非阻塞获取。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| url | string | WebSocket 地址，支持 `ws://` 和 `wss://` |
+| options | table\|nil | 可选配置表 |
+
+**options 字段**:
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| reconnect | boolean | true | 断线自动重连（指数退避 1s~30s） |
+| headers | string\|nil | nil | 自定义请求头，`\r\n` 分隔 |
+
+**返回值**: WebSocket 连接对象，失败返回 `nil`（当 reconnect=false 且连接失败时）。
+
+```lua
+-- 基本连接（自动重连）
+local ws = websocket.connect("wss://example.com/stream")
+
+-- 带配置
+local ws = websocket.connect("wss://api.example.com/ws", {
+    reconnect = true,
+    headers = "Authorization: Bearer token123\r\nX-Custom: value"
+})
+```
+
+**生命周期**: 连接绑定到创建它的脚本（bar），bar 移除时自动关闭。建议使用 `_G` 全局变量保持连接跨刷新周期存活。
+
+---
+
+## ws:send(data)
+
+发送文本消息。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| data | string | 要发送的内容 |
+
+**返回值**: `true` 成功，`false` 失败（未连接）。
+
+```lua
+ws:send("hello")
+ws:send(json.encode({ type = "subscribe", channel = "ticker" }))
+```
+
+---
+
+## ws:recv()
+
+非阻塞接收消息。从内部队列取出一条消息，队列为空返回 `nil`。
+
+**返回值**: 消息字符串或 `nil`。
+
+```lua
+local msg = ws:recv()
+if msg then
+    local data = json.decode(msg)
+    -- 处理数据...
+end
+```
+
+**队列**: 最多缓存 32 条消息，溢出时丢弃最旧的。
+
+---
+
+## ws:close()
+
+主动关闭连接并释放资源。
+
+```lua
+ws:close()
+```
+
+---
+
+## ws:is_connected()
+
+检查连接状态。
+
+**返回值**: `true` 已连接，`false` 未连接/重连中。
+
+```lua
+if ws:is_connected() then
+    ws:send("ping")
+end
+```
+
+---
+
+## ws:set_reconnect(enabled)
+
+动态开启/关闭自动重连。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| enabled | boolean | `true` 开启，`false` 关闭 |
+
+```lua
+ws:set_reconnect(false)  -- 断开后不再重连
+```
+
+---
+
+## WebSocket 使用示例
+
+推荐配合 `@realtime` 声明使用，50ms 轮询确保消息及时显示：
+
+```lua
+-- @realtime
+-- @bar_width 150
+
+if not _G._ws then
+    _G._ws = websocket.connect("wss://stream.example.com/data")
+end
+
+local ws = _G._ws
+local msg = ws:recv()
+if msg then
+    _G._last = json.decode(msg)
+end
+
+local d = _G._last
+if not d then
+    return font(ws:is_connected() and "等待数据" or "连接中...", "#888", 9), true
+end
+
+return font(d.price, "#4FC3F7", 12), true
+```
+
+---
+
 ## sys.cpu()
 
 返回当前 CPU 使用率（0-100 整数）。首次调用返回 0（需要两次采样计算差值）。

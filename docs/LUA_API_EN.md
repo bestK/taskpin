@@ -305,6 +305,103 @@ Sends an HTTP DELETE request. Same usage as `http.post`.
 
 ---
 
+## websocket.connect(url [, options])
+
+Creates a WebSocket connection. Messages are received by a background thread; Lua reads them via non-blocking `ws:recv()`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| url | string | WebSocket URL, supports `ws://` and `wss://` |
+| options | table\|nil | Optional config table |
+
+**options fields**:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| reconnect | boolean | true | Auto-reconnect on disconnect (exponential backoff 1s~30s) |
+| headers | string\|nil | nil | Custom request headers, `\r\n` separated |
+
+**Returns**: WebSocket connection object, or `nil` if connection fails and reconnect=false.
+
+```lua
+local ws = websocket.connect("wss://example.com/stream")
+
+local ws = websocket.connect("wss://api.example.com/ws", {
+    reconnect = true,
+    headers = "Authorization: Bearer token123\r\nX-Custom: value"
+})
+```
+
+**Lifecycle**: Connection is tied to the script (bar) that created it. Automatically closed when bar is removed. Use `_G` globals to persist connections across refresh cycles.
+
+---
+
+## ws:send(data)
+
+Sends a text message. Returns `true` on success, `false` if not connected.
+
+```lua
+ws:send("hello")
+ws:send(json.encode({ type = "subscribe", channel = "ticker" }))
+```
+
+---
+
+## ws:recv()
+
+Non-blocking receive. Dequeues one message, returns `nil` if queue is empty. Queue holds up to 32 messages (oldest dropped on overflow).
+
+```lua
+local msg = ws:recv()
+if msg then
+    local data = json.decode(msg)
+end
+```
+
+---
+
+## ws:close()
+
+Closes the connection and releases resources.
+
+---
+
+## ws:is_connected()
+
+Returns `true` if connected, `false` if disconnected/reconnecting.
+
+---
+
+## ws:set_reconnect(enabled)
+
+Dynamically enable/disable auto-reconnect.
+
+---
+
+## WebSocket Example
+
+Recommended with `@realtime` for responsive message display:
+
+```lua
+-- @realtime
+-- @bar_width 150
+
+if not _G._ws then
+    _G._ws = websocket.connect("wss://stream.example.com/data")
+end
+
+local msg = _G._ws:recv()
+if msg then _G._last = json.decode(msg) end
+
+local d = _G._last
+if not d then
+    return font(_G._ws:is_connected() and "Waiting..." or "Connecting...", "#888", 9), true
+end
+return font(d.price, "#4FC3F7", 12), true
+```
+
+---
+
 ## sys.cpu()
 
 Returns current CPU usage (0-100 integer). First call returns 0 (needs two samples to compute delta).

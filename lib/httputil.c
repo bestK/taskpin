@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEFAULT_MAX_SIZE (256 * 1024)
+#define DEFAULT_MAX_SIZE (2 * 1024 * 1024)
 
 static HINTERNET g_http_session = NULL;
 

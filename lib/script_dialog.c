@@ -256,7 +256,7 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             HFONT old = (HFONT)SelectObject(hdc, hf);
             TEXTMETRICW tm;
             GetTextMetricsW(hdc, &tm);
-            int row_h = tm.tmHeight + 6;
+            int row_h = item->height > 0 ? item->height : (tm.tmHeight + 6);
             y += row_h; /* header */
             y += 2;     /* header separator */
             y += row_h * item->row_count;
@@ -392,8 +392,25 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             HFONT old = (HFONT)SelectObject(hdc, hf_norm);
             TEXTMETRICW tm;
             GetTextMetricsW(hdc, &tm);
-            int row_h = tm.tmHeight + 6;
-            int col_w = (client_w - PADDING_X * 2) / (item->col_count > 0 ? item->col_count : 1);
+            int row_h = item->height > 0 ? item->height : (tm.tmHeight + 6);
+            int total_w = client_w - PADDING_X * 2;
+
+            /* Compute per-column widths */
+            int cw[DIALOG_MAX_COLS];
+            int fixed_sum = 0, auto_count = 0;
+            for (int c = 0; c < item->col_count; c++) {
+                if (item->col_widths[c] > 0) { cw[c] = item->col_widths[c]; fixed_sum += cw[c]; }
+                else { cw[c] = 0; auto_count++; }
+            }
+            int auto_w = auto_count > 0 ? (total_w - fixed_sum) / auto_count : 0;
+            if (auto_w < 0) auto_w = 0;
+            for (int c = 0; c < item->col_count; c++) {
+                if (cw[c] == 0) cw[c] = auto_w;
+            }
+            /* Compute column x offsets */
+            int cx[DIALOG_MAX_COLS];
+            cx[0] = PADDING_X;
+            for (int c = 1; c < item->col_count; c++) cx[c] = cx[c-1] + cw[c-1];
 
             /* Header */
             RECT hdr_rc = { PADDING_X, y, client_w - PADDING_X, y + row_h };
@@ -404,8 +421,9 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             SelectObject(hdc, hf_bold);
             SetTextColor(hdc, DIALOG_FG);
             for (int c = 0; c < item->col_count; c++) {
-                TextOutW(hdc, PADDING_X + c * col_w + 4, y + 3,
-                    item->columns[c], lstrlenW(item->columns[c]));
+                RECT hdr_cell = { cx[c] + 4, y + 3, cx[c] + cw[c] - 2, y + row_h - 1 };
+                DrawTextW(hdc, item->columns[c], -1, &hdr_cell,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
             }
             y += row_h;
 
@@ -421,7 +439,20 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             /* Rows */
             SelectObject(hdc, hf_norm);
             for (int r = 0; r < item->row_count; r++) {
-                RECT row_rc = { PADDING_X, y, client_w - PADDING_X, y + row_h };
+                /* Compute actual row height */
+                int actual_row_h = row_h;
+                if (item->word_wrap) {
+                    for (int c = 0; c < item->col_count; c++) {
+                        RECT measure = { 0, 0, cw[c] - 6, 0 };
+                        DrawTextW(hdc, item->cells[r][c], -1, &measure,
+                            DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+                        int cell_h = measure.bottom + 6;
+                        if (cell_h > actual_row_h) actual_row_h = cell_h;
+                    }
+                }
+                if (item->height > 0 && actual_row_h < item->height) actual_row_h = item->height;
+
+                RECT row_rc = { PADDING_X, y, client_w - PADDING_X, y + actual_row_h };
                 HBRUSH row_bg = CreateSolidBrush((r % 2 == 0) ? TABLE_ROW_EVEN : TABLE_ROW_ODD);
                 FillRect(hdc, &row_rc, row_bg);
                 DeleteObject(row_bg);
@@ -429,17 +460,18 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                 COLORREF row_clr = (item->row_colors[r] != 0) ? item->row_colors[r] : DIALOG_FG;
                 SetTextColor(hdc, row_clr);
 
-                int text_cols = item->col_count;
                 int btn_w_px = 0;
                 if (item->row_urls[r][0] || item->row_cmds[r][0] || item->row_luas[r][0]) {
                     btn_w_px = 50;
-                    text_cols = item->col_count;
                 }
-                int text_col_w = (client_w - PADDING_X * 2 - btn_w_px) / (text_cols > 0 ? text_cols : 1);
+
+                DWORD dt_flags = DT_LEFT | DT_END_ELLIPSIS | DT_NOPREFIX;
+                if (item->word_wrap) dt_flags |= DT_WORDBREAK;
+                else dt_flags |= DT_SINGLELINE | DT_VCENTER;
 
                 for (int c = 0; c < item->col_count; c++) {
-                    TextOutW(hdc, PADDING_X + c * text_col_w + 4, y + 3,
-                        item->cells[r][c], lstrlenW(item->cells[r][c]));
+                    RECT cell_rc = { cx[c] + 4, y + 3, cx[c] + cw[c] - 2, y + actual_row_h - 1 };
+                    DrawTextW(hdc, item->cells[r][c], -1, &cell_rc, dt_flags);
                 }
 
                 /* Row action button */
@@ -455,17 +487,17 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                     if (!hbtn) {
                         hbtn = CreateWindowExW(WS_EX_TRANSPARENT, L"BUTTON", btn_label,
                             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-                            bx, y, btn_w_px, row_h,
+                            bx, y, btn_w_px, actual_row_h,
                             hwnd, (HMENU)(INT_PTR)btn_id, GetModuleHandle(NULL), NULL);
                         state->tbl_buttons[state->tbl_button_count] = hbtn;
                     } else {
                         SetWindowTextW(hbtn, btn_label);
-                        MoveWindow(hbtn, bx, y, btn_w_px, row_h, TRUE);
+                        MoveWindow(hbtn, bx, y, btn_w_px, actual_row_h, TRUE);
                     }
                     state->tbl_button_count++;
                 }
 
-                y += row_h;
+                y += actual_row_h;
             }
 
             SelectObject(hdc, old);

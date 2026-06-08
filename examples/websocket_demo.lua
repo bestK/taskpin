@@ -1,5 +1,5 @@
 -- websocket_demo.lua - WebSocket 连接演示
--- @refresh 500
+-- @realtime
 -- @bar_width 200
 
 -- 使用全局变量保持连接跨刷新周期存活

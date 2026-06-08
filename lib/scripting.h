@@ -68,6 +68,7 @@ typedef struct {
     int col_count;
     int row_count;
     WCHAR columns[DIALOG_MAX_COLS][64];
+    int col_widths[DIALOG_MAX_COLS];  /* per-column width in px, 0 = auto */
     WCHAR cells[DIALOG_MAX_ROWS][DIALOG_MAX_COLS][64];
     COLORREF row_colors[DIALOG_MAX_ROWS];
     char row_urls[DIALOG_MAX_ROWS][256];
@@ -84,6 +85,7 @@ typedef struct {
     char cmd[512];
     char lua_code[512];
     int align;  /* ALIGN_LEFT=0, ALIGN_CENTER, ALIGN_RIGHT, ALIGN_INLINE */
+    BOOL word_wrap;  /* TRUE = auto wrap text in table cells */
 } DialogItem;
 
 enum { ALIGN_LEFT = 0, ALIGN_CENTER, ALIGN_RIGHT, ALIGN_INLINE };
