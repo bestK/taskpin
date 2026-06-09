@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "logger.h"
 #include "hotkey.h"
+#include "sysinfo.h"
 #include <objbase.h>
 #include <dbghelp.h>
 
