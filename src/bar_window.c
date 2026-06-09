@@ -622,6 +622,9 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 SendMessageW(bar->tooltip_hwnd, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
             }
         } else {
+            char path8[256];
+            WideCharToMultiByte(CP_UTF8, 0, lctx->lua_path, -1, path8, 256, NULL, NULL);
+            logger_write(LOG_ERROR, "script returned no display content: %s", path8);
             lstrcpyW(bar->display, L"[script error]");
             bar->rich.count = 0;
         }

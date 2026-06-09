@@ -49,7 +49,7 @@ typedef struct {
 
 /* ─── Dialog DSL ─── */
 
-#define DIALOG_MAX_ITEMS 8
+#define DIALOG_MAX_ITEMS 16
 #define DIALOG_MAX_COLS  6
 #define DIALOG_MAX_ROWS  24
 
@@ -130,6 +130,10 @@ void script_shutdown(void);
 void script_set_global_bool(const char *name, BOOL value);
 void script_set_global_string(const char *name, const char *value);
 
+/* Try to acquire the Lua lock without blocking. Returns TRUE if acquired. */
+BOOL script_try_lock(void);
+void script_unlock(void);
+
 /* Execute a Lua expression and return result as JSON string (caller frees).
    E.g. expr="sys.cpu()" → returns "45" or "null" on error. */
 char *script_eval_expr(const char *expr);
@@ -139,6 +143,10 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 /* Execute a Lua file with params injected as `args` table. */
 BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                       ScriptResult *result);
+
+/* Non-blocking variant: returns FALSE immediately if Lua is busy. */
+BOOL script_exec_file_try(const WCHAR *lua_path, const ParamEntry *params, int param_count,
+                          ScriptResult *result);
 
 /* Parse @param declarations from a Lua file header.
    Returns number of params found (up to max_decls). */

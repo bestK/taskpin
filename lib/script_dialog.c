@@ -108,9 +108,30 @@ void script_dialog_close_all(void) {
     }
 }
 
+void script_dialog_close_by_path(const WCHAR *lua_path) {
+    HWND hwnd = find_dialog_by_path(lua_path);
+    if (hwnd) DestroyWindow(hwnd);
+}
+
+BOOL script_dialog_is_open(const WCHAR *lua_path) {
+    return find_dialog_by_path(lua_path) != NULL;
+}
+
 void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                         const DialogSpec *spec) {
-    HWND existing = find_dialog_by_path(lua_path);
+    /* Resolve to absolute path for consistent matching */
+    WCHAR full_path[MAX_PATH];
+    if (lua_path[0] != L'\\' && lua_path[0] != L'/' &&
+        !(lua_path[0] && lua_path[1] == L':')) {
+        GetModuleFileNameW(NULL, full_path, MAX_PATH);
+        WCHAR *slash = wcsrchr(full_path, L'\\');
+        if (slash) *(slash + 1) = L'\0';
+        lstrcatW(full_path, lua_path);
+    } else {
+        lstrcpynW(full_path, lua_path, MAX_PATH);
+    }
+
+    HWND existing = find_dialog_by_path(full_path);
     if (existing) {
         SetForegroundWindow(existing);
         return;
@@ -121,7 +142,7 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     if (!state) return;
 
     memcpy(&state->spec, spec, sizeof(DialogSpec));
-    lstrcpynW(state->lua_path, lua_path, MAX_PATH);
+    lstrcpynW(state->lua_path, full_path, MAX_PATH);
     state->param_count = param_count;
     if (params && param_count > 0)
         memcpy(state->params, params, sizeof(ParamEntry) * param_count);
@@ -608,22 +629,19 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
     ScriptResult *result = (ScriptResult *)HeapAlloc(
         GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
     if (!result) return;
-    DWORD t0 = GetTickCount();
-    if (script_exec_file(state->lua_path, state->params, state->param_count, result)) {
-        DWORD elapsed = GetTickCount() - t0;
-        if (elapsed > 500) {
-            char path8[256];
-            WideCharToMultiByte(CP_UTF8, 0, state->lua_path, -1, path8, 256, NULL, NULL);
-            logger_write(LOG_ERROR, "dialog refresh blocked UI for %dms (%s) - avoid network calls in dialog refresh", (int)elapsed, path8);
-        }
-        if (result->click_action == CLICK_DIALOG && result->dialog.item_count > 0) {
+    if (!script_exec_file_try(state->lua_path, state->params, state->param_count, result)) {
+        HeapFree(GetProcessHeap(), 0, result);
+        return;
+    }
+    if (result->click_action == CLICK_DIALOG) {
+        if (result->dialog.item_count > 0) {
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
             if (state->spec.x >= 0 && state->spec.y >= 0) {
                 SetWindowPos(hwnd, NULL, state->spec.x, state->spec.y, 0, 0,
                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
-            InvalidateRect(hwnd, NULL, TRUE);
         }
+        InvalidateRect(hwnd, NULL, TRUE);
     }
     HeapFree(GetProcessHeap(), 0, result);
 }

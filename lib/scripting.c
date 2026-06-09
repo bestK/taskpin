@@ -6,6 +6,7 @@
 #include "i18n.h"
 #include "websocket.h"
 #include "hotkey.h"
+#include "script_dialog.h"
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
@@ -13,6 +14,7 @@
 #include <winhttp.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static lua_State *L = NULL;
 static CRITICAL_SECTION g_lua_cs;
@@ -860,7 +862,35 @@ static int l_dialog(lua_State *ls) {
         lua_newtable(ls);
         return 1;
     }
-    /* Return the same table with _dialog marker */
+
+    lua_getglobal(ls, "__dialog_open");
+    BOOL dlg_open = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+
+    if (dlg_open) {
+        /* Dialog is open: if render function exists, call it to produce content */
+        lua_getfield(ls, 1, "render");
+        if (lua_isfunction(ls, -1)) {
+            if (lua_pcall(ls, 0, 1, 0) == LUA_OK && lua_istable(ls, -1)) {
+                lua_setfield(ls, 1, "content");
+            } else {
+                const char *err = lua_tostring(ls, -1);
+                if (err) logger_write(LOG_ERROR, "render: %s", err);
+                lua_pop(ls, 1);
+            }
+        } else {
+            lua_pop(ls, 1);
+        }
+    } else {
+        /* Dialog not open: strip content to skip C-side parsing */
+        lua_pushnil(ls);
+        lua_setfield(ls, 1, "content");
+    }
+
+    /* Clear render function before returning (not needed in spec) */
+    lua_pushnil(ls);
+    lua_setfield(ls, 1, "render");
+
     lua_pushboolean(ls, 1);
     lua_setfield(ls, 1, "_dialog");
     lua_pushvalue(ls, 1);
@@ -1181,10 +1211,320 @@ static BOOL is_dialog_table(lua_State *ls, int idx) {
     return r;
 }
 
+/* --- open_dialog / close_dialog Lua bindings --- */
+
+static WCHAR g_current_lua_path[MAX_PATH];
+extern TaskPinConfig g_cfg;
+
+static int l_open_dialog(lua_State *ls) {
+    if (lua_gettop(ls) >= 1 && lua_istable(ls, 1)) {
+        DialogSpec spec;
+        parse_dialog_spec(ls, 1, &spec);
+        if (spec.refresh <= 0) spec.refresh = 1000;
+        show_script_dialog(g_current_lua_path, NULL, 0, &spec);
+    } else {
+        int refresh = script_parse_refresh(g_current_lua_path);
+        if (refresh <= 0) refresh = 1000;
+        const ParamEntry *params = NULL;
+        int param_count = 0;
+        for (int i = 0; i < g_cfg.count; i++) {
+            if (lstrcmpiW(g_cfg.items[i].lua_path, g_current_lua_path) == 0) {
+                params = g_cfg.items[i].params;
+                param_count = g_cfg.items[i].param_count;
+                break;
+            }
+        }
+        DialogSpec spec;
+        memset(&spec, 0, sizeof(spec));
+        spec.width = 400;
+        spec.height = 300;
+        spec.refresh = refresh;
+        spec.opacity = 255;
+        spec.x = -1;
+        spec.y = -1;
+        lstrcpyW(spec.title, L"Dialog");
+        show_script_dialog(g_current_lua_path, params, param_count, &spec);
+    }
+    return 0;
+}
+
+static int l_close_dialog(lua_State *ls) {
+    (void)ls;
+    script_dialog_close_by_path(g_current_lua_path);
+    return 0;
+}
+
+static int l_dialog_is_open(lua_State *ls) {
+    (void)ls;
+    lua_pushboolean(ls, script_dialog_is_open(g_current_lua_path));
+    return 1;
+}
+
+/* --- Animation Lua bindings (anim.*) --- */
+
+#define ANIM_REGISTRY_KEY "taskpin_anim_starts"
+
+static DWORD anim_get_start(lua_State *ls, const char *id) {
+    lua_getfield(ls, LUA_REGISTRYINDEX, ANIM_REGISTRY_KEY);
+    if (lua_isnil(ls, -1)) {
+        lua_pop(ls, 1);
+        lua_newtable(ls);
+        lua_pushvalue(ls, -1);
+        lua_setfield(ls, LUA_REGISTRYINDEX, ANIM_REGISTRY_KEY);
+    }
+    lua_getfield(ls, -1, id);
+    DWORD start;
+    if (lua_isnil(ls, -1)) {
+        start = GetTickCount();
+        lua_pop(ls, 1);
+        lua_pushinteger(ls, (lua_Integer)start);
+        lua_setfield(ls, -2, id);
+    } else {
+        start = (DWORD)lua_tointeger(ls, -1);
+        lua_pop(ls, 1);
+    }
+    lua_pop(ls, 1);
+    return start;
+}
+
+static double anim_clamp(double v, double lo, double hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static int l_anim_elapsed(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    DWORD start = anim_get_start(ls, id);
+    lua_pushinteger(ls, (lua_Integer)(GetTickCount() - start));
+    return 1;
+}
+
+static int l_anim_reset(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    lua_getfield(ls, LUA_REGISTRYINDEX, ANIM_REGISTRY_KEY);
+    if (!lua_isnil(ls, -1)) {
+        lua_pushnil(ls);
+        lua_setfield(ls, -2, id);
+    }
+    lua_pop(ls, 1);
+    return 0;
+}
+
+static int l_anim_blink(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int interval = luaL_optinteger(ls, 2, 500);
+    if (interval <= 0) interval = 500;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    lua_pushboolean(ls, ((int)(elapsed / interval) % 2) == 0);
+    return 1;
+}
+
+static int l_anim_progress(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int duration = luaL_optinteger(ls, 2, 1000);
+    if (duration <= 0) duration = 1000;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = anim_clamp((double)elapsed / duration, 0.0, 1.0);
+    lua_pushnumber(ls, t);
+    return 1;
+}
+
+static int l_anim_loop(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int period = luaL_optinteger(ls, 2, 1000);
+    if (period <= 0) period = 1000;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = (double)(elapsed % period) / period;
+    lua_pushnumber(ls, t);
+    return 1;
+}
+
+static int l_anim_ping_pong(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int period = luaL_optinteger(ls, 2, 1000);
+    if (period <= 0) period = 1000;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    int cycle = period * 2;
+    int pos = (int)(elapsed % cycle);
+    double t;
+    if (pos < period) t = (double)pos / period;
+    else t = 1.0 - (double)(pos - period) / period;
+    lua_pushnumber(ls, t);
+    return 1;
+}
+
+static int l_anim_fade_in(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int duration = luaL_optinteger(ls, 2, 500);
+    if (duration <= 0) duration = 500;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = anim_clamp((double)elapsed / duration, 0.0, 1.0);
+    lua_pushinteger(ls, (lua_Integer)(t * 255));
+    return 1;
+}
+
+static int l_anim_fade_out(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int duration = luaL_optinteger(ls, 2, 500);
+    if (duration <= 0) duration = 500;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = anim_clamp((double)elapsed / duration, 0.0, 1.0);
+    lua_pushinteger(ls, (lua_Integer)((1.0 - t) * 255));
+    return 1;
+}
+
+static int l_anim_scale(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int duration = luaL_optinteger(ls, 2, 500);
+    double from = luaL_optnumber(ls, 3, 0.0);
+    double to = luaL_optnumber(ls, 4, 1.0);
+    if (duration <= 0) duration = 500;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = anim_clamp((double)elapsed / duration, 0.0, 1.0);
+    lua_pushnumber(ls, from + (to - from) * t);
+    return 1;
+}
+
+static int l_anim_pulse(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int period = luaL_optinteger(ls, 2, 1000);
+    double lo = luaL_optnumber(ls, 3, 0.0);
+    double hi = luaL_optnumber(ls, 4, 1.0);
+    if (period <= 0) period = 1000;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double angle = 3.14159265358979 * 2.0 * (double)(elapsed % period) / period;
+    double cos_val = (1.0 - cos(angle)) / 2.0;
+    lua_pushnumber(ls, lo + (hi - lo) * cos_val);
+    return 1;
+}
+
+static int l_anim_fly(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int duration = luaL_optinteger(ls, 2, 500);
+    int from_x = (int)luaL_optinteger(ls, 3, 0);
+    int from_y = (int)luaL_optinteger(ls, 4, 0);
+    int to_x = (int)luaL_optinteger(ls, 5, 0);
+    int to_y = (int)luaL_optinteger(ls, 6, 0);
+    if (duration <= 0) duration = 500;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = anim_clamp((double)elapsed / duration, 0.0, 1.0);
+    /* ease-out for natural fly feel */
+    double et = 1.0 - (1.0 - t) * (1.0 - t);
+    lua_pushinteger(ls, (lua_Integer)(from_x + (to_x - from_x) * et));
+    lua_pushinteger(ls, (lua_Integer)(from_y + (to_y - from_y) * et));
+    return 2;
+}
+
+static int l_anim_color(lua_State *ls) {
+    const char *id = luaL_checkstring(ls, 1);
+    int duration = luaL_optinteger(ls, 2, 500);
+    const char *from_s = luaL_optstring(ls, 3, "#000000");
+    const char *to_s = luaL_optstring(ls, 4, "#ffffff");
+    if (duration <= 0) duration = 500;
+    DWORD elapsed = GetTickCount() - anim_get_start(ls, id);
+    double t = anim_clamp((double)elapsed / duration, 0.0, 1.0);
+
+    unsigned int fr = 0, fg = 0, fb = 0, tr = 0, tg = 0, tb = 0;
+    if (from_s[0] == '#') from_s++;
+    if (to_s[0] == '#') to_s++;
+    sscanf(from_s, "%2x%2x%2x", &fr, &fg, &fb);
+    sscanf(to_s, "%2x%2x%2x", &tr, &tg, &tb);
+
+    int r = (int)(fr + (tr - fr) * t);
+    int g = (int)(fg + (tg - fg) * t);
+    int b = (int)(fb + (tb - fb) * t);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "#%02x%02x%02x", r, g, b);
+    lua_pushstring(ls, buf);
+    return 1;
+}
+
+static int l_anim_ease_in(lua_State *ls) {
+    double t = luaL_checknumber(ls, 1);
+    t = anim_clamp(t, 0.0, 1.0);
+    lua_pushnumber(ls, t * t);
+    return 1;
+}
+
+static int l_anim_ease_out(lua_State *ls) {
+    double t = luaL_checknumber(ls, 1);
+    t = anim_clamp(t, 0.0, 1.0);
+    lua_pushnumber(ls, 1.0 - (1.0 - t) * (1.0 - t));
+    return 1;
+}
+
+static int l_anim_ease_in_out(lua_State *ls) {
+    double t = luaL_checknumber(ls, 1);
+    t = anim_clamp(t, 0.0, 1.0);
+    if (t < 0.5) lua_pushnumber(ls, 2.0 * t * t);
+    else lua_pushnumber(ls, 1.0 - 2.0 * (1.0 - t) * (1.0 - t));
+    return 1;
+}
+
+static int l_anim_bounce(lua_State *ls) {
+    double t = luaL_checknumber(ls, 1);
+    t = anim_clamp(t, 0.0, 1.0);
+    double n;
+    if (t < 1.0 / 2.75) n = 7.5625 * t * t;
+    else if (t < 2.0 / 2.75) { t -= 1.5 / 2.75; n = 7.5625 * t * t + 0.75; }
+    else if (t < 2.5 / 2.75) { t -= 2.25 / 2.75; n = 7.5625 * t * t + 0.9375; }
+    else { t -= 2.625 / 2.75; n = 7.5625 * t * t + 0.984375; }
+    lua_pushnumber(ls, n);
+    return 1;
+}
+
+static int l_anim_lerp(lua_State *ls) {
+    double a = luaL_checknumber(ls, 1);
+    double b = luaL_checknumber(ls, 2);
+    double t = luaL_checknumber(ls, 3);
+    t = anim_clamp(t, 0.0, 1.0);
+    lua_pushnumber(ls, a + (b - a) * t);
+    return 1;
+}
+
+static void register_anim_api(lua_State *ls) {
+    lua_newtable(ls);
+    lua_pushcfunction(ls, l_anim_elapsed);
+    lua_setfield(ls, -2, "elapsed");
+    lua_pushcfunction(ls, l_anim_reset);
+    lua_setfield(ls, -2, "reset");
+    lua_pushcfunction(ls, l_anim_blink);
+    lua_setfield(ls, -2, "blink");
+    lua_pushcfunction(ls, l_anim_progress);
+    lua_setfield(ls, -2, "progress");
+    lua_pushcfunction(ls, l_anim_loop);
+    lua_setfield(ls, -2, "loop");
+    lua_pushcfunction(ls, l_anim_ping_pong);
+    lua_setfield(ls, -2, "ping_pong");
+    lua_pushcfunction(ls, l_anim_fade_in);
+    lua_setfield(ls, -2, "fade_in");
+    lua_pushcfunction(ls, l_anim_fade_out);
+    lua_setfield(ls, -2, "fade_out");
+    lua_pushcfunction(ls, l_anim_scale);
+    lua_setfield(ls, -2, "scale");
+    lua_pushcfunction(ls, l_anim_pulse);
+    lua_setfield(ls, -2, "pulse");
+    lua_pushcfunction(ls, l_anim_fly);
+    lua_setfield(ls, -2, "fly");
+    lua_pushcfunction(ls, l_anim_color);
+    lua_setfield(ls, -2, "color");
+    lua_pushcfunction(ls, l_anim_ease_in);
+    lua_setfield(ls, -2, "ease_in");
+    lua_pushcfunction(ls, l_anim_ease_out);
+    lua_setfield(ls, -2, "ease_out");
+    lua_pushcfunction(ls, l_anim_ease_in_out);
+    lua_setfield(ls, -2, "ease_in_out");
+    lua_pushcfunction(ls, l_anim_bounce);
+    lua_setfield(ls, -2, "bounce");
+    lua_pushcfunction(ls, l_anim_lerp);
+    lua_setfield(ls, -2, "lerp");
+    lua_setglobal(ls, "animation");
+}
+
 /* --- WebSocket Lua bindings --- */
 
 #define WS_META "WSConnection"
-static WCHAR g_current_lua_path[MAX_PATH];
 
 static WSConnection **ws_check(lua_State *ls) {
     return (WSConnection **)luaL_checkudata(ls, 1, WS_META);
@@ -1351,6 +1691,17 @@ void script_init(void) {
     lua_pushcfunction(L, l_dialog);
     lua_setglobal(L, "dialog");
 
+    /* Register open_dialog() / close_dialog() / dialog_is_open() */
+    lua_pushcfunction(L, l_open_dialog);
+    lua_setglobal(L, "open_dialog");
+    lua_pushcfunction(L, l_close_dialog);
+    lua_setglobal(L, "close_dialog");
+    lua_pushcfunction(L, l_dialog_is_open);
+    lua_setglobal(L, "dialog_is_open");
+
+    /* Register anim.* animation API */
+    register_anim_api(L);
+
     /* Register log table: log.info(), log.debug(), log.error(), log() */
     lua_newtable(L);
     lua_pushcfunction(L, l_log_info);
@@ -1381,6 +1732,14 @@ void script_shutdown(void) {
     if (L) { lua_close(L); L = NULL; }
     image_shutdown();
     DeleteCriticalSection(&g_lua_cs);
+}
+
+BOOL script_try_lock(void) {
+    return TryEnterCriticalSection(&g_lua_cs);
+}
+
+void script_unlock(void) {
+    LeaveCriticalSection(&g_lua_cs);
 }
 
 void script_set_global_bool(const char *name, BOOL value) {
@@ -1423,7 +1782,7 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 
     if (luaL_dostring(L, wrapped) != LUA_OK) {
         const char *err = lua_tostring(L, -1);
-        script_log_write(err);
+        logger_write(LOG_ERROR, "lua: %s", err ? err : "(unknown error)");
         lua_pop(L, 1);
         LeaveCriticalSection(&g_lua_cs);
         return FALSE;
@@ -1469,7 +1828,8 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 
     lua_settop(L, 0);
     LeaveCriticalSection(&g_lua_cs);
-    return (result->display[0] != L'\0' || result->rich.count > 0);
+    return (result->display[0] != L'\0' || result->rich.count > 0 ||
+            result->clickable || result->click_action == CLICK_DIALOG);
 }
 
 /* ??? execute Lua file ??? */
@@ -1486,8 +1846,21 @@ static void resolve_lua_path(const WCHAR *lua_path, WCHAR *full_path) {
     }
 }
 
+static BOOL script_exec_file_ex(const WCHAR *lua_path, const ParamEntry *params, int param_count,
+                                ScriptResult *result, BOOL nonblock);
+
 BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param_count,
                       ScriptResult *result) {
+    return script_exec_file_ex(lua_path, params, param_count, result, FALSE);
+}
+
+BOOL script_exec_file_try(const WCHAR *lua_path, const ParamEntry *params, int param_count,
+                          ScriptResult *result) {
+    return script_exec_file_ex(lua_path, params, param_count, result, TRUE);
+}
+
+static BOOL script_exec_file_ex(const WCHAR *lua_path, const ParamEntry *params, int param_count,
+                                ScriptResult *result, BOOL nonblock) {
     if (!L || !lua_path || !lua_path[0] || !result) return FALSE;
 
     /* Version check */
@@ -1503,7 +1876,11 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
         return TRUE;
     }
 
-    EnterCriticalSection(&g_lua_cs);
+    if (nonblock) {
+        if (!TryEnterCriticalSection(&g_lua_cs)) return FALSE;
+    } else {
+        EnterCriticalSection(&g_lua_cs);
+    }
     result->display[0] = L'\0';
     result->clickable = FALSE;
     result->click_action = CLICK_URL;
@@ -1513,6 +1890,10 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
     resolve_lua_path(lua_path, full_path);
 
     lstrcpynW(g_current_lua_path, full_path, MAX_PATH);
+
+    /* Inject __dialog_open so scripts/animation can short-circuit */
+    lua_pushboolean(L, script_dialog_is_open(full_path));
+    lua_setglobal(L, "__dialog_open");
 
     /* Inject args table */
     lua_newtable(L);
@@ -1561,7 +1942,7 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
 
     if (luaL_dofile(L, path8) != LUA_OK) {
         const char *err = lua_tostring(L, -1);
-        script_log_write(err);
+        logger_write(LOG_ERROR, "lua: %s", err ? err : "(unknown error)");
         if (err) MultiByteToWideChar(CP_UTF8, 0, err, -1, result->display, 2048);
         else lstrcpyW(result->display, L"[lua error]");
         lua_settop(L, 0);
@@ -1603,7 +1984,8 @@ BOOL script_exec_file(const WCHAR *lua_path, const ParamEntry *params, int param
 
     lua_settop(L, 0);
     LeaveCriticalSection(&g_lua_cs);
-    return (result->display[0] != L'\0' || result->rich.count > 0);
+    return (result->display[0] != L'\0' || result->rich.count > 0 ||
+            result->clickable || result->click_action == CLICK_DIALOG);
 }
 
 /* ??? parse @param declarations ??? */
