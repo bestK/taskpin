@@ -9,9 +9,10 @@ TaskPin 为 Lua 脚本提供以下内置 API，可在脚本中直接使用。
 ```lua
 -- 返回值 1: 显示文本（字符串或 font() span）
 -- 返回值 2: 是否可点击（boolean，可选）
--- 返回值 3: 点击打开的 URL（string，可选）
+-- 返回值 3: 点击打开的 URL / dialog spec（可选）
+-- 返回值 4: tooltip 文本（string，可选，鼠标悬停时显示）
 
-return "Hello World", true, "https://example.com"
+return "Hello World", true, "https://example.com", "这是提示文字"
 ```
 
 ---
@@ -1165,6 +1166,35 @@ local sprite = sys.gh_proxy("https://raw.githubusercontent.com/user/repo/master/
 
 ---
 
+## sys.is_admin()
+
+检测当前是否以管理员权限运行。
+
+**返回值**: boolean。
+
+```lua
+if sys.is_admin() then
+    -- 可以使用需要权限的功能
+end
+```
+
+---
+
+## sys.elevate()
+
+请求以管理员身份重启 TaskPin（弹出 UAC 提示）。成功则当前进程退出。
+
+**返回值**: boolean，UAC 确认返回 true（随后进程退出），用户拒绝返回 false。
+
+```lua
+if not sys.is_admin() then
+    sys.elevate()
+    return
+end
+```
+
+---
+
 ## 全局变量
 
 | 变量 | 说明 |
@@ -1172,6 +1202,7 @@ local sprite = sys.gh_proxy("https://raw.githubusercontent.com/user/repo/master/
 | `response` | URL 模式下，HTTP 响应原始文本（仅在 Template 表达式中可用） |
 | `args` | Lua File 模式下，用户配置的参数表（key-value） |
 | `event` | 外部事件表（无事件时为 nil），含 source、name 及参数字段 |
+| `selection` | 热键触发时的选中内容（无热键或未选中时为 nil） |
 
 ```lua
 -- 在 Lua File 模式中访问参数
@@ -1200,6 +1231,35 @@ if event then
 end
 ```
 
+### selection 全局变量
+
+当脚本声明了 `@hotkey` 且用户按下热键时，TaskPin 自动获取当前选中内容并注入 `selection` 表。无热键触发时为 nil。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | `"text"` / `"files"` / `"image"` |
+| text | string | 选中的文本内容（type="text" 时有值） |
+| files | table | 文件路径数组（type="files" 时有值） |
+| image | string | 临时图片路径（type="image" 时有值） |
+
+```lua
+-- @hotkey Ctrl+Shift+T
+
+if not selection then
+    return font("等待热键...", "#888", 9), true
+end
+
+if selection.type == "text" then
+    -- 处理选中文字
+    return font(selection.text, "#4FC3F7", 9), true
+elseif selection.type == "files" then
+    -- selection.files = {"C:\\path\\file1.txt", ...}
+    return font(#selection.files .. " 个文件", "#81C784", 9), true
+end
+```
+
+**注意**: 获取选中内容的机制是备份剪贴板→模拟 Ctrl+C→读取→恢复剪贴板，对用户无感知。热键可通过 `HOTKEY` 参数让用户自定义（避免冲突）。
+
 ---
 
 ## 脚本声明
@@ -1215,6 +1275,8 @@ end
 | `@bar_width px` | number | 任务栏显示宽度（像素） |
 | `@version ver` | string | 脚本版本号 |
 | `@require ver` | string | 最低 TaskPin 版本要求（不满足时显示提示） |
+| `@hotkey keys` | string | 注册全局热键（如 `Ctrl+Shift+T`），触发时获取选中内容执行脚本 |
+| `@admin desc` | string | 声明需要管理员权限，启动时提示提权，desc 为提示说明 |
 
 **自动命名规则**：若无 `@name`，TaskPin 从首行注释 `-- file.lua - 描述` 中提取"描述"作为名称。
 
