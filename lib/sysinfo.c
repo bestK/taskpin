@@ -394,6 +394,14 @@ static int l_sys_top_processes(lua_State *ls) {
 #include <winsock2.h>
 #include <tcpestats.h>
 
+/* MinGW32 may lack these declarations */
+#ifndef GetPerTcpConnectionEStats
+ULONG WINAPI GetPerTcpConnectionEStats(PMIB_TCPROW, TCP_ESTATS_TYPE,
+    PUCHAR, ULONG, ULONG, PUCHAR, ULONG, ULONG, PUCHAR, ULONG, ULONG);
+ULONG WINAPI SetPerTcpConnectionEStats(PMIB_TCPROW, TCP_ESTATS_TYPE,
+    PUCHAR, ULONG, ULONG, ULONG);
+#endif
+
 #define NET_PROC_MAX 128
 
 typedef struct {
