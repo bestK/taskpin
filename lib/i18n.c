@@ -52,6 +52,7 @@ static void i18n_load_file(const WCHAR *path) {
     cJSON_Delete(root);
 }
 
+#ifndef DEV_MODE
 static BOOL i18n_download_file(const WCHAR *dir, const char *filename) {
     /* Ensure lang/ directory exists */
     CreateDirectoryW(dir, NULL);
@@ -97,6 +98,7 @@ static BOOL i18n_download_file(const WCHAR *dir, const char *filename) {
     free(resp);
     return TRUE;
 }
+#endif
 
 void i18n_init(void) {
     WCHAR lang_w[LOCALE_NAME_MAX_LENGTH];
@@ -117,9 +119,14 @@ void i18n_init(void) {
     if (dash) *dash = '\0';
 
     /* Try download latest lang file (overwrites local) */
+#ifndef DEV_MODE
     char filename[64];
     snprintf(filename, sizeof(filename), "%s.json", s_lang);
     i18n_download_file(lang_dir, filename);
+#else
+    char filename[64];
+    snprintf(filename, sizeof(filename), "%s.json", s_lang);
+#endif
 
     /* Load from local files */
     WCHAR lang_path[MAX_PATH];
@@ -130,7 +137,9 @@ void i18n_init(void) {
     i18n_load_file(lang_path);
 
     if (s_count == 0 && strncmp(s_lang, "en", 2) != 0) {
+#ifndef DEV_MODE
         i18n_download_file(lang_dir, "en-US.json");
+#endif
         wsprintfW(lang_path, L"%s\\en-US.json", lang_dir);
         i18n_load_file(lang_path);
     }

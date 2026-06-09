@@ -6,7 +6,11 @@ SRC_DIR = src
 LIB_DIR = lib
 LUA_DIR = lib/lua
 
+MODE ?= dev
 CFLAGS = -std=c99 -O2 -Wall -Wextra -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN -DTASKPIN_VERSION=\"$(VERSION)\" -I$(LIB_DIR) -I$(SRC_DIR)
+ifeq ($(MODE),dev)
+CFLAGS += -DDEV_MODE
+endif
 CFLAGS_LUA = -O2 -DLUA_COMPAT_5_3 -DWIN32_LEAN_AND_MEAN -DLUA_USE_LONGJMP
 LDFLAGS = -static -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32 -liphlpapi -lmsimg32 -lole32 -lwininet -ldbghelp
 TARGET = taskpin.exe

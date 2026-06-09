@@ -91,5 +91,9 @@
   "bar.check_update": "Check for Updates",
   "bar.update_available": "New version v%s available. Download?",
   "bar.up_to_date": "Already up to date.",
-  "bar.update_failed": "Failed to check for updates."
+  "bar.update_failed": "Failed to check for updates.",
+  "elevate.blocked": "⚠️ Admin required",
+  "elevate.desc_default": "This script requires administrator privileges",
+  "elevate.restart_confirm": "Restart TaskPin as administrator?",
+  "elevate.dialog_title": "TaskPin - Admin Required"
 }

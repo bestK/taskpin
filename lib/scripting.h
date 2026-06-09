@@ -162,6 +162,11 @@ void script_parse_name(const WCHAR *lua_path, WCHAR *out, int out_size);
    Returns the hotkey string (e.g. "Ctrl+Shift+T") or empty. */
 void script_parse_hotkey(const WCHAR *lua_path, char *out, int out_size);
 
+/* Parse @admin declaration from script header.
+   Returns TRUE if declared. If out_desc provided, copies the description. */
+BOOL script_parse_admin(const WCHAR *lua_path);
+void script_parse_admin_desc(const WCHAR *lua_path, char *out_desc, int out_size);
+
 /* Parse @version declaration from a Lua file header. */
 void script_parse_version(const WCHAR *lua_path, char *out, int out_size);
 

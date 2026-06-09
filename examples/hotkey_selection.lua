@@ -1,5 +1,5 @@
 -- hotkey_selection.lua - 快捷键获取选中内容演示
--- @hotkey Ctrl+L
+-- @hotkey Ctrl+8
 -- @bar_width 160
 -- @param HOTKEY string 快捷键(默认 Ctrl+Shift+Q, 冲突请修改)
 

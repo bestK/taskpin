@@ -132,6 +132,7 @@ extern HFONT g_font;
 extern HWND g_main_hwnd;
 extern HWND g_listview;
 extern HINSTANCE g_hinst;
+extern HANDLE g_instance_mutex;
 
 /* expression.c */
 void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size);

@@ -10,6 +10,8 @@
 #include <endpointvolume.h>
 #include <wininet.h>
 
+static BOOL is_elevated(void);
+
 /* ─── CPU usage via GetSystemTimes delta ─── */
 
 static ULONGLONG ft_to_u64(FILETIME ft) {
@@ -390,13 +392,14 @@ static int l_sys_top_processes(lua_State *ls) {
 
 #include <tcpmib.h>
 #include <winsock2.h>
+#include <tcpestats.h>
 
 #define NET_PROC_MAX 128
 
 typedef struct {
     DWORD pid;
-    ULONG64 io_read;
-    ULONG64 io_write;
+    ULONG64 bytes_in;
+    ULONG64 bytes_out;
 } NetProcSnap;
 
 static NetProcSnap s_np_prev[NET_PROC_MAX];
@@ -404,6 +407,8 @@ static int s_np_prev_count = 0;
 static DWORD s_np_prev_tick = 0;
 
 static int l_sys_net_processes(lua_State *ls) {
+    BOOL elevated = is_elevated();
+
     /* Step 1: Get all TCP connections with owning PID */
     DWORD tcp_size = 0;
     GetExtendedTcpTable(NULL, &tcp_size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
@@ -418,8 +423,8 @@ static int l_sys_net_processes(lua_State *ls) {
         return 1;
     }
 
-    /* Step 2: Aggregate connections by PID (only ESTABLISHED) */
-    typedef struct { DWORD pid; int conns; } PidEntry;
+    /* Step 2: Aggregate by PID. If admin, sum TCP DataBytes per connection. */
+    typedef struct { DWORD pid; int conns; ULONG64 bytes_in; ULONG64 bytes_out; } PidEntry;
     PidEntry pids[NET_PROC_MAX];
     int pid_count = 0;
 
@@ -429,19 +434,50 @@ static int l_sys_net_processes(lua_State *ls) {
         DWORD pid = row->dwOwningPid;
         if (pid == 0) continue;
 
-        int found = 0;
-        for (int j = 0; j < pid_count; j++) {
-            if (pids[j].pid == pid) { pids[j].conns++; found = 1; break; }
+        ULONG64 conn_in = 0, conn_out = 0;
+        if (elevated) {
+            TCP_ESTATS_DATA_ROD_v0 rod = {0};
+            MIB_TCPROW tcpRow;
+            tcpRow.dwState = row->dwState;
+            tcpRow.dwLocalAddr = row->dwLocalAddr;
+            tcpRow.dwLocalPort = row->dwLocalPort;
+            tcpRow.dwRemoteAddr = row->dwRemoteAddr;
+            tcpRow.dwRemotePort = row->dwRemotePort;
+
+            /* Enable stats on this connection (idempotent) */
+            TCP_BOOLEAN_OPTIONAL bos = TcpBoolOptEnabled;
+            TCP_ESTATS_DATA_RW_v0 rw = { bos };
+            SetPerTcpConnectionEStats(&tcpRow, TcpConnectionEstatsData,
+                (PUCHAR)&rw, 0, sizeof(rw), 0);
+
+            DWORD err = GetPerTcpConnectionEStats(&tcpRow, TcpConnectionEstatsData,
+                NULL, 0, 0, NULL, 0, 0,
+                (PUCHAR)&rod, 0, sizeof(rod));
+            if (err == NO_ERROR) {
+                conn_in = rod.DataBytesIn;
+                conn_out = rod.DataBytesOut;
+            }
         }
-        if (!found && pid_count < NET_PROC_MAX) {
+
+        int found = -1;
+        for (int j = 0; j < pid_count; j++) {
+            if (pids[j].pid == pid) { found = j; break; }
+        }
+        if (found >= 0) {
+            pids[found].conns++;
+            pids[found].bytes_in += conn_in;
+            pids[found].bytes_out += conn_out;
+        } else if (pid_count < NET_PROC_MAX) {
             pids[pid_count].pid = pid;
             pids[pid_count].conns = 1;
+            pids[pid_count].bytes_in = conn_in;
+            pids[pid_count].bytes_out = conn_out;
             pid_count++;
         }
     }
     free(tcp_table);
 
-    /* Step 3: For each PID, get process name + IO counters */
+    /* Step 3: Compute speed from delta */
     DWORD now = GetTickCount();
     DWORD dt = (s_np_prev_tick > 0) ? (now - s_np_prev_tick) : 0;
 
@@ -449,14 +485,13 @@ static int l_sys_net_processes(lua_State *ls) {
     int cur_snap_count = 0;
 
     lua_newtable(ls);
-    int idx = 1;
+    int lua_idx = 1;
 
     for (int i = 0; i < pid_count; i++) {
         DWORD pid = pids[i].pid;
         HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
         if (!hProc) continue;
 
-        /* Get process name and full path */
         WCHAR wname[MAX_PATH];
         DWORD name_size = MAX_PATH;
         char name8[MAX_PATH];
@@ -470,38 +505,41 @@ static int l_sys_net_processes(lua_State *ls) {
             lstrcpyA(name8, "unknown");
         }
 
-        /* Get IO counters */
-        IO_COUNTERS ioc;
-        ULONG64 io_read = 0, io_write = 0;
-        double read_speed = 0, write_speed = 0;
-        if (GetProcessIoCounters(hProc, &ioc)) {
-            io_read = ioc.ReadTransferCount;
-            io_write = ioc.WriteTransferCount;
-
-            /* Find previous snapshot for this PID */
-            if (dt > 0) {
-                for (int j = 0; j < s_np_prev_count; j++) {
-                    if (s_np_prev[j].pid == pid) {
-                        read_speed = (double)(io_read - s_np_prev[j].io_read) * 1000.0 / dt;
-                        write_speed = (double)(io_write - s_np_prev[j].io_write) * 1000.0 / dt;
-                        if (read_speed < 0) read_speed = 0;
-                        if (write_speed < 0) write_speed = 0;
-                        break;
-                    }
-                }
-            }
-
-            /* Save to current snapshot */
-            if (cur_snap_count < NET_PROC_MAX) {
-                cur_snap[cur_snap_count].pid = pid;
-                cur_snap[cur_snap_count].io_read = io_read;
-                cur_snap[cur_snap_count].io_write = io_write;
-                cur_snap_count++;
+        ULONG64 cur_in, cur_out;
+        if (elevated) {
+            cur_in = pids[i].bytes_in;
+            cur_out = pids[i].bytes_out;
+        } else {
+            IO_COUNTERS ioc;
+            if (GetProcessIoCounters(hProc, &ioc)) {
+                cur_in = ioc.ReadTransferCount;
+                cur_out = ioc.WriteTransferCount;
+            } else {
+                cur_in = cur_out = 0;
             }
         }
         CloseHandle(hProc);
 
-        /* Push entry to lua table */
+        double dl_speed = 0, ul_speed = 0;
+        if (dt > 0) {
+            for (int j = 0; j < s_np_prev_count; j++) {
+                if (s_np_prev[j].pid == pid) {
+                    dl_speed = (double)(cur_in - s_np_prev[j].bytes_in) * 1000.0 / dt;
+                    ul_speed = (double)(cur_out - s_np_prev[j].bytes_out) * 1000.0 / dt;
+                    if (dl_speed < 0) dl_speed = 0;
+                    if (ul_speed < 0) ul_speed = 0;
+                    break;
+                }
+            }
+        }
+
+        if (cur_snap_count < NET_PROC_MAX) {
+            cur_snap[cur_snap_count].pid = pid;
+            cur_snap[cur_snap_count].bytes_in = cur_in;
+            cur_snap[cur_snap_count].bytes_out = cur_out;
+            cur_snap_count++;
+        }
+
         lua_newtable(ls);
         lua_pushinteger(ls, (lua_Integer)pid);
         lua_setfield(ls, -2, "pid");
@@ -511,14 +549,13 @@ static int l_sys_net_processes(lua_State *ls) {
         lua_setfield(ls, -2, "path");
         lua_pushinteger(ls, pids[i].conns);
         lua_setfield(ls, -2, "connections");
-        lua_pushnumber(ls, read_speed);
+        lua_pushnumber(ls, dl_speed);
         lua_setfield(ls, -2, "download");
-        lua_pushnumber(ls, write_speed);
+        lua_pushnumber(ls, ul_speed);
         lua_setfield(ls, -2, "upload");
-        lua_rawseti(ls, -2, idx++);
+        lua_rawseti(ls, -2, lua_idx++);
     }
 
-    /* Update snapshot */
     memcpy(s_np_prev, cur_snap, sizeof(NetProcSnap) * cur_snap_count);
     s_np_prev_count = cur_snap_count;
     s_np_prev_tick = now;
@@ -1369,6 +1406,45 @@ static int l_sys_key_triggered(lua_State *ls) {
     return 1;
 }
 
+/* ─── Admin / Elevation ─── */
+
+static BOOL is_elevated(void) {
+    BOOL elevated = FALSE;
+    HANDLE hToken = NULL;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION te = {0};
+        DWORD sz = sizeof(te);
+        if (GetTokenInformation(hToken, TokenElevation, &te, sizeof(te), &sz))
+            elevated = te.TokenIsElevated;
+        CloseHandle(hToken);
+    }
+    return elevated;
+}
+
+BOOL sysinfo_is_admin(void) { return is_elevated(); }
+
+static int l_sys_is_admin(lua_State *ls) {
+    lua_pushboolean(ls, is_elevated());
+    return 1;
+}
+
+static int l_sys_elevate(lua_State *ls) {
+    (void)ls;
+    if (is_elevated()) { lua_pushboolean(ls, TRUE); return 1; }
+
+    WCHAR exe[MAX_PATH];
+    GetModuleFileNameW(NULL, exe, MAX_PATH);
+    SHELLEXECUTEINFOW sei = {0};
+    sei.cbSize = sizeof(sei);
+    sei.lpVerb = L"runas";
+    sei.lpFile = exe;
+    sei.nShow = SW_SHOWNORMAL;
+    BOOL ok = ShellExecuteExW(&sei);
+    lua_pushboolean(ls, ok);
+    if (ok) PostQuitMessage(0);
+    return 1;
+}
+
 /* ─── Registration ─── */
 
 void sysinfo_register_lua(void *lua_state) {
@@ -1483,5 +1559,9 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "key_combo");
     lua_pushcfunction(ls, l_sys_watch_keys);
     lua_setfield(ls, -2, "watch_keys");
+    lua_pushcfunction(ls, l_sys_is_admin);
+    lua_setfield(ls, -2, "is_admin");
+    lua_pushcfunction(ls, l_sys_elevate);
+    lua_setfield(ls, -2, "elevate");
     lua_setglobal(ls, "sys");
 }

@@ -1744,6 +1744,59 @@ void script_parse_hotkey(const WCHAR *lua_path, char *out, int out_size) {
     fclose(f);
 }
 
+/* ??? parse @admin declaration ??? */
+
+BOOL script_parse_admin(const WCHAR *lua_path) {
+    if (!lua_path || !lua_path[0]) return FALSE;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return FALSE;
+
+    char line[512];
+    BOOL result = FALSE;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@admin", 6) == 0) { result = TRUE; break; }
+    }
+    fclose(f);
+    return result;
+}
+
+void script_parse_admin_desc(const WCHAR *lua_path, char *out_desc, int out_size) {
+    out_desc[0] = '\0';
+    if (!lua_path || !lua_path[0]) return;
+
+    WCHAR full_path[MAX_PATH];
+    resolve_lua_path(lua_path, full_path);
+
+    FILE *f = _wfopen(full_path, L"r");
+    if (!f) return;
+
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] != '-' || p[1] != '-') break;
+        p += 2;
+        while (*p == ' ') p++;
+        if (strncmp(p, "@admin", 6) != 0) continue;
+        p += 6;
+        while (*p == ' ' || *p == '\t') p++;
+        char *end = p + strlen(p) - 1;
+        while (end > p && (*end == '\n' || *end == '\r' || *end == ' ')) *end-- = '\0';
+        if (*p) strncpy(out_desc, p, out_size - 1);
+        break;
+    }
+    fclose(f);
+}
+
 /* ??? parse @bar_width declaration ??? */
 
 int script_parse_bar_width(const WCHAR *lua_path) {

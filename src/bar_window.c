@@ -112,6 +112,17 @@ void start_fetch(BarInstance *bar) {
             return;
         }
 
+        /* Block execution if @admin required but not elevated */
+        if (!sysinfo_is_admin() && script_parse_admin(it->lua_path)) {
+            lstrcpyW(bar->display, tr("elevate.blocked"));
+            bar->rich.count = 0;
+            bar->script_result.clickable = TRUE;
+            bar->script_result.click_action = CLICK_URL;
+            bar->script_result.click_url[0] = L'\0';
+            InvalidateRect(bar->hwnd, NULL, TRUE);
+            return;
+        }
+
         if (it->realtime) {
             sysinfo_poll_keys();
             ScriptResult *result = (ScriptResult *)HeapAlloc(
@@ -508,6 +519,30 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     &bar->script_result.dialog);
             } else if (bar->script_result.click_url[0]) {
                 ShellExecuteW(NULL, L"open", bar->script_result.click_url, NULL, NULL, SW_SHOWNORMAL);
+            } else if (!sysinfo_is_admin() && bar->item_index >= 0) {
+                /* @admin click-to-retry: show MessageBox with desc */
+                PinItem *it = &g_cfg.items[bar->item_index];
+                if (it->lua_path[0] && script_parse_admin(it->lua_path)) {
+                    char desc8[256] = {0};
+                    script_parse_admin_desc(it->lua_path, desc8, 256);
+                    WCHAR msg[512];
+                    WCHAR wdesc[256] = {0};
+                    if (desc8[0])
+                        MultiByteToWideChar(CP_UTF8, 0, desc8, -1, wdesc, 256);
+                    wsprintfW(msg, L"%s\n\n%s",
+                        wdesc[0] ? wdesc : tr("elevate.desc_default"),
+                        tr("elevate.restart_confirm"));
+                    int r = MessageBoxW(NULL, msg, tr("elevate.dialog_title"),
+                        MB_YESNO | MB_ICONQUESTION);
+                    if (r == IDYES) {
+                        WCHAR exe[MAX_PATH];
+                        GetModuleFileNameW(NULL, exe, MAX_PATH);
+                        ReleaseMutex(g_instance_mutex);
+                        CloseHandle(g_instance_mutex);
+                        ShellExecuteW(NULL, L"runas", exe, NULL, NULL, SW_SHOWNORMAL);
+                        PostQuitMessage(0);
+                    }
+                }
             }
         }
         if (wp == IDT_RESTORE_WIDTH) {

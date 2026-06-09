@@ -1,4 +1,5 @@
 -- System monitor: Network + CPU + Memory on taskbar
+-- @admin 精确统计每进程网络流量（需要管理员权限读取 TCP 连接数据）
 -- Uses sys.* built-in API + font() rich text
 -- Recommended bar_width: 250+
 

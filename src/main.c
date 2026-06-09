@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "logger.h"
+#include "hotkey.h"
 #include <objbase.h>
 #include <dbghelp.h>
 
@@ -74,6 +75,7 @@ HFONT g_font;
 HWND g_main_hwnd = NULL;
 HWND g_listview  = NULL;
 HINSTANCE g_hinst;
+HANDLE g_instance_mutex = NULL;
 
 BarInstance g_bars[MAX_BARS];
 int g_bar_count = 0;
@@ -260,9 +262,9 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     }
     if (argv) LocalFree(argv);
 
-    HANDLE hMutex = CreateMutexW(NULL, TRUE, L"Global\\TaskPin_SingleInstance");
+    g_instance_mutex = CreateMutexW(NULL, TRUE, L"Global\\TaskPin_SingleInstance");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (hMutex) CloseHandle(hMutex);
+        if (g_instance_mutex) CloseHandle(g_instance_mutex);
         i18n_init();
         MessageBoxW(NULL, tr("app.already_running"), L"TaskPin", MB_ICONINFORMATION | MB_OK);
         return 0;
@@ -296,6 +298,36 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     wc.style         = 0;
     wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     RegisterClassExW(&wc);
+
+    /* Check @admin scripts — prompt elevation via MessageBox */
+    if (!sysinfo_is_admin()) {
+        for (int i = 0; i < g_cfg.count; i++) {
+            if (!g_cfg.items[i].pinned || !g_cfg.items[i].lua_path[0]) continue;
+            if (!script_parse_admin(g_cfg.items[i].lua_path)) continue;
+
+            char desc8[256] = {0};
+            script_parse_admin_desc(g_cfg.items[i].lua_path, desc8, 256);
+            WCHAR msg[512];
+            WCHAR wdesc[256] = {0};
+            if (desc8[0])
+                MultiByteToWideChar(CP_UTF8, 0, desc8, -1, wdesc, 256);
+            wsprintfW(msg, L"%s\n\n%s",
+                wdesc[0] ? wdesc : tr("elevate.desc_default"),
+                tr("elevate.restart_confirm"));
+
+            int r = MessageBoxW(NULL, msg, tr("elevate.dialog_title"),
+                MB_YESNO | MB_ICONQUESTION);
+            if (r == IDYES) {
+                WCHAR exe[MAX_PATH];
+                GetModuleFileNameW(NULL, exe, MAX_PATH);
+                ReleaseMutex(g_instance_mutex);
+                CloseHandle(g_instance_mutex);
+                ShellExecuteW(NULL, L"runas", exe, NULL, NULL, SW_SHOWNORMAL);
+                return 0;
+            }
+            break;
+        }
+    }
 
     bars_create_all();
 

@@ -91,5 +91,9 @@
   "bar.check_update": "检查更新",
   "bar.update_available": "发现新版本 v%s，是否下载？",
   "bar.up_to_date": "已是最新版本。",
-  "bar.update_failed": "检查更新失败。"
+  "bar.update_failed": "检查更新失败。",
+  "elevate.blocked": "⚠️ 需要管理员权限",
+  "elevate.desc_default": "此脚本需要管理员权限",
+  "elevate.restart_confirm": "是否以管理员身份重启 TaskPin？",
+  "elevate.dialog_title": "TaskPin - 需要管理员权限"
 }
