@@ -260,12 +260,25 @@ bar = font("Search: ", "#FFF", 9)
 
 ## log(...)
 
-Writes to the script log. Accepts any number of arguments, separated by tabs in output.
+Writes to the script log (equivalent to `log.info(...)`). Accepts any number of arguments, separated by tabs in output.
+
+## log.info(...) / log.debug(...) / log.error(...)
+
+Write log entries at different levels, with automatic file name and line number.
+
+| Function | Level | Description |
+|----------|-------|-------------|
+| `log.info(...)` | INF | General information |
+| `log.debug(...)` | DBG | Debug info (requires debug log level enabled) |
+| `log.error(...)` | ERR | Error messages |
+
+Log format: `[timestamp][level][filename:line] content`
 
 ```lua
-log("request started", url)
-local data = json.decode(http.get(url))
-log("result:", data.status, data.message)
+log.info("request started", url)
+log.debug("response", data)
+log.error("connection failed", err)
+log("shorthand for info")
 ```
 
 ---
