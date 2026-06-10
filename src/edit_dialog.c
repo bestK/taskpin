@@ -29,6 +29,7 @@ typedef struct {
 static EditDlgState *g_edit = NULL;
 static BOOL g_edit_done = FALSE;
 static BOOL g_edit_accepted = FALSE;
+static BOOL g_in_relayout = FALSE;
 static WNDPROC g_orig_dlg_proc = NULL;
 
 static void edit_load_response(EditDlgState *st);
@@ -82,17 +83,11 @@ static void edit_load_params(const WCHAR *lua_path, const PinItem *existing) {
 
 static void edit_relayout(void) {
     if (!g_edit) return;
+    if (g_in_relayout) return;
+    g_in_relayout = TRUE;
     int sel = (int)SendMessageW(g_edit->hType, CB_GETCURSEL, 0, 0);
     BOOL is_url = (sel == ITEM_TYPE_URL);
 
-    if (is_url) {
-        RECT wr; GetWindowRect(g_edit->hDlg, &wr);
-        int cur_h = wr.bottom - wr.top;
-        if (cur_h < 800) {
-            SetWindowPos(g_edit->hDlg, NULL, 0, 0, wr.right - wr.left, 800,
-                SWP_NOMOVE | SWP_NOZORDER);
-        }
-    }
 
     int url_sw = is_url ? SW_SHOW : SW_HIDE;
     int lua_sw = is_url ? SW_HIDE : SW_SHOW;
@@ -254,23 +249,33 @@ static void edit_relayout(void) {
     int frame_h = (wr.bottom - wr.top) - dlg_rc.bottom;
     int target_h = content_h + frame_h;
     if (is_url && target_h < 800) target_h = 800;
-    SetWindowPos(g_edit->hDlg, NULL, 0, 0, wr.right - wr.left, target_h,
-        SWP_NOMOVE | SWP_NOZORDER);
+    if ((wr.bottom - wr.top) != target_h) {
+        SetWindowPos(g_edit->hDlg, NULL, 0, 0, wr.right - wr.left, target_h,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOREDRAW);
+    }
 
     ShowWindow(g_edit->hIntLabel, SW_SHOW);
     ShowWindow(g_edit->hInt, SW_SHOW);
 
     InvalidateRect(g_edit->hDlg, NULL, TRUE);
+    g_in_relayout = FALSE;
 }
 
+static int g_dlg_proc_depth = 0;
+
 static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (g_dlg_proc_depth > 2)
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    g_dlg_proc_depth++;
+
+    LRESULT result = 0;
     switch (msg) {
     case WM_COMMAND: {
         WORD id = LOWORD(wp);
         WORD code = HIWORD(wp);
         if (id == 5050 && code == CBN_SELCHANGE) {
             edit_relayout();
-            return 0;
+            result = 0; goto done;
         }
         if (id == 5052 && code == BN_CLICKED) {
             WCHAR file[MAX_PATH] = {0};
@@ -285,11 +290,11 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 SetWindowTextW(g_edit->hLuaPath, file);
                 edit_load_params(file, NULL);
             }
-            return 0;
+            result = 0; goto done;
         }
         if (id == IDB_LOAD && code == BN_CLICKED) {
             edit_load_response(g_edit);
-            return 0;
+            result = 0; goto done;
         }
         /* File browse buttons for @param file type */
         if (id >= 8000 && id < 8000 + CFG_MAX_PARAMS && code == BN_CLICKED) {
@@ -307,26 +312,29 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                     SetWindowTextW(g_edit->hParamEdit[pi], file);
                 }
             }
-            return 0;
+            result = 0; goto done;
         }
         if (id == IDE_EXPR && code == EN_CHANGE) {
             edit_update_preview(g_edit);
-            return 0;
+            result = 0; goto done;
         }
         if (id == IDB_OK && code == BN_CLICKED) {
             g_edit_accepted = TRUE;
             g_edit_done = TRUE;
-            return 0;
+            result = 0; goto done;
         }
         if (id == IDB_CANCEL && code == BN_CLICKED) {
             g_edit_done = TRUE;
-            return 0;
+            result = 0; goto done;
         }
         break;
     }
     case WM_NOTIFY: {
         NMHDR *nm = (NMHDR *)lp;
         if (g_edit && nm->hwndFrom == g_edit->hTree && nm->code == TVN_SELCHANGEDW) {
+            static BOOL in_sel_change = FALSE;
+            if (in_sel_change) { result = 0; goto done; }
+            in_sel_change = TRUE;
             NMTREEVIEWW *ntv = (NMTREEVIEWW *)lp;
             char *path = (char *)ntv->itemNew.lParam;
             if (path) {
@@ -337,18 +345,26 @@ static LRESULT CALLBACK edit_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 SendMessageW(g_edit->hExpr, EM_REPLACESEL, TRUE, (LPARAM)wpath);
                 edit_update_preview(g_edit);
             }
+            in_sel_change = FALSE;
+            result = 0; goto done;
         }
         break;
     }
     case WM_SIZE: {
-        edit_relayout();
-        return 0;
+        if (!g_in_relayout)
+            edit_relayout();
+        result = 0;
+        goto done;
     }
     case WM_CLOSE:
         g_edit_done = TRUE;
-        return 0;
+        result = 0;
+        goto done;
     }
-    return CallWindowProcW(g_orig_dlg_proc, hwnd, msg, wp, lp);
+    result = CallWindowProcW(g_orig_dlg_proc, hwnd, msg, wp, lp);
+done:
+    g_dlg_proc_depth--;
+    return result;
 }
 
 static void cjson_node_to_string(cJSON *node, char *buf, int buf_size) {
@@ -487,11 +503,15 @@ static void edit_update_preview(EditDlgState *st) {
     if (expr[0]) {
         char lua_code[CFG_MAX_EXPR * 3];
         WideCharToMultiByte(CP_UTF8, 0, expr, -1, lua_code, sizeof(lua_code), NULL, NULL);
-        ScriptResult sr = {0};
-        if (script_exec(lua_code, st->cached_response, &sr)) {
-            lstrcpynW(preview, sr.display, FETCH_BUF_SIZE);
-        } else {
-            extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+        ScriptResult *sr = (ScriptResult *)HeapAlloc(
+            GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
+        if (sr) {
+            if (script_exec(lua_code, st->cached_response, sr)) {
+                lstrcpynW(preview, sr->display, FETCH_BUF_SIZE);
+            } else {
+                extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+            }
+            HeapFree(GetProcessHeap(), 0, sr);
         }
     } else {
         MultiByteToWideChar(CP_UTF8, 0, st->cached_response, -1, preview, FETCH_BUF_SIZE);
