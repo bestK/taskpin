@@ -140,7 +140,6 @@ void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size
 /* bar_window.c */
 void start_fetch(BarInstance *bar);
 void bars_create_all(void);
-void bar_update_display(const WCHAR *lua_path, const WCHAR *text, const DisplayContent *rich);
 void bars_destroy_all(void);
 LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 

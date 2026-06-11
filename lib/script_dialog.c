@@ -273,7 +273,6 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             y += 12;
             break;
         case DI_TABLE: {
-            DialogTableData *td = item->table;
             HFONT hf = create_dialog_font(10, FALSE);
             HFONT old = (HFONT)SelectObject(hdc, hf);
             TEXTMETRICW tm;
@@ -281,7 +280,7 @@ static int calc_content_height(HDC hdc, DialogSpec *spec) {
             int row_h = item->height > 0 ? item->height : (tm.tmHeight + 6);
             y += row_h; /* header */
             y += 2;     /* header separator */
-            y += row_h * (td ? td->row_count : 0);
+            y += row_h * item->row_count;
             SelectObject(hdc, old);
             DeleteObject(hf);
             break;
@@ -409,8 +408,6 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             break;
         }
         case DI_TABLE: {
-            DialogTableData *td = item->table;
-            if (!td) break;
             HFONT hf_bold = create_dialog_font(10, TRUE);
             HFONT hf_norm = create_dialog_font(10, FALSE);
             HFONT old = (HFONT)SelectObject(hdc, hf_norm);
@@ -422,19 +419,19 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
             /* Compute per-column widths */
             int cw[DIALOG_MAX_COLS];
             int fixed_sum = 0, auto_count = 0;
-            for (int c = 0; c < td->col_count; c++) {
-                if (td->col_widths[c] > 0) { cw[c] = td->col_widths[c]; fixed_sum += cw[c]; }
+            for (int c = 0; c < item->col_count; c++) {
+                if (item->col_widths[c] > 0) { cw[c] = item->col_widths[c]; fixed_sum += cw[c]; }
                 else { cw[c] = 0; auto_count++; }
             }
             int auto_w = auto_count > 0 ? (total_w - fixed_sum) / auto_count : 0;
             if (auto_w < 0) auto_w = 0;
-            for (int c = 0; c < td->col_count; c++) {
+            for (int c = 0; c < item->col_count; c++) {
                 if (cw[c] == 0) cw[c] = auto_w;
             }
             /* Compute column x offsets */
             int cx[DIALOG_MAX_COLS];
             cx[0] = PADDING_X;
-            for (int c = 1; c < td->col_count; c++) cx[c] = cx[c-1] + cw[c-1];
+            for (int c = 1; c < item->col_count; c++) cx[c] = cx[c-1] + cw[c-1];
 
             /* Header */
             RECT hdr_rc = { PADDING_X, y, client_w - PADDING_X, y + row_h };
@@ -444,9 +441,9 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
             SelectObject(hdc, hf_bold);
             SetTextColor(hdc, DIALOG_FG);
-            for (int c = 0; c < td->col_count; c++) {
+            for (int c = 0; c < item->col_count; c++) {
                 RECT hdr_cell = { cx[c] + 4, y + 3, cx[c] + cw[c] - 2, y + row_h - 1 };
-                DrawTextW(hdc, td->columns[c], -1, &hdr_cell,
+                DrawTextW(hdc, item->columns[c], -1, &hdr_cell,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
             }
             y += row_h;
@@ -462,13 +459,13 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
 
             /* Rows */
             SelectObject(hdc, hf_norm);
-            for (int r = 0; r < td->row_count; r++) {
+            for (int r = 0; r < item->row_count; r++) {
                 /* Compute actual row height */
                 int actual_row_h = row_h;
-                if (td->word_wrap) {
-                    for (int c = 0; c < td->col_count; c++) {
+                if (item->word_wrap) {
+                    for (int c = 0; c < item->col_count; c++) {
                         RECT measure = { 0, 0, cw[c] - 6, 0 };
-                        DrawTextW(hdc, td->cells[r][c], -1, &measure,
+                        DrawTextW(hdc, item->cells[r][c], -1, &measure,
                             DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
                         int cell_h = measure.bottom + 6;
                         if (cell_h > actual_row_h) actual_row_h = cell_h;
@@ -481,30 +478,30 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
                 FillRect(hdc, &row_rc, row_bg);
                 DeleteObject(row_bg);
 
-                COLORREF row_clr = (td->row_colors[r] != 0) ? td->row_colors[r] : DIALOG_FG;
+                COLORREF row_clr = (item->row_colors[r] != 0) ? item->row_colors[r] : DIALOG_FG;
                 SetTextColor(hdc, row_clr);
 
                 int btn_w_px = 0;
-                if (td->row_urls[r][0] || td->row_cmds[r][0] || td->row_luas[r][0]) {
+                if (item->row_urls[r][0] || item->row_cmds[r][0] || item->row_luas[r][0]) {
                     btn_w_px = 50;
                 }
 
                 DWORD dt_flags = DT_LEFT | DT_END_ELLIPSIS | DT_NOPREFIX;
-                if (td->word_wrap) dt_flags |= DT_WORDBREAK;
+                if (item->word_wrap) dt_flags |= DT_WORDBREAK;
                 else dt_flags |= DT_SINGLELINE | DT_VCENTER;
 
-                for (int c = 0; c < td->col_count; c++) {
+                for (int c = 0; c < item->col_count; c++) {
                     RECT cell_rc = { cx[c] + 4, y + 3, cx[c] + cw[c] - 2, y + actual_row_h - 1 };
-                    DrawTextW(hdc, td->cells[r][c], -1, &cell_rc, dt_flags);
+                    DrawTextW(hdc, item->cells[r][c], -1, &cell_rc, dt_flags);
                 }
 
                 /* Row action button */
-                if ((td->row_urls[r][0] || td->row_cmds[r][0] || td->row_luas[r][0]) && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
+                if ((item->row_urls[r][0] || item->row_cmds[r][0] || item->row_luas[r][0]) && state->tbl_button_count < DLG_MAX_TBL_BUTTONS) {
                     int btn_id = DLG_TBL_BTN_BASE_ID + state->tbl_button_count;
                     int bx = client_w - PADDING_X - btn_w_px;
                     WCHAR btn_label[32];
-                    if (td->row_btn_text[r][0])
-                        lstrcpynW(btn_label, td->row_btn_text[r], 32);
+                    if (item->row_btn_text[r][0])
+                        lstrcpynW(btn_label, item->row_btn_text[r], 32);
                     else
                         btn_label[0] = L'\0';
                     HWND hbtn = state->tbl_buttons[state->tbl_button_count];
@@ -638,9 +635,7 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
     }
     if (result->click_action == CLICK_DIALOG) {
         if (result->dialog.item_count > 0) {
-            dialog_spec_free_tables(&state->spec);
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
-            memset(&result->dialog, 0, sizeof(DialogSpec));
             if (state->spec.x >= 0 && state->spec.y >= 0) {
                 SetWindowPos(hwnd, NULL, state->spec.x, state->spec.y, 0, 0,
                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -648,7 +643,6 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
         }
         InvalidateRect(hwnd, NULL, TRUE);
     }
-    dialog_spec_free_tables(&result->dialog);
     HeapFree(GetProcessHeap(), 0, result);
 }
 
@@ -902,25 +896,24 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             int tbl_count = 0;
             for (int i = 0; i < state->spec.item_count; i++) {
                 if (state->spec.items[i].type != DI_TABLE) continue;
-                DialogTableData *tbldata = state->spec.items[i].table;
-                if (!tbldata) continue;
-                for (int r = 0; r < tbldata->row_count; r++) {
-                    if (tbldata->row_urls[r][0] || tbldata->row_cmds[r][0] || tbldata->row_luas[r][0]) {
+                DialogItem *tbl = &state->spec.items[i];
+                for (int r = 0; r < tbl->row_count; r++) {
+                    if (tbl->row_urls[r][0] || tbl->row_cmds[r][0] || tbl->row_luas[r][0]) {
                         if (tbl_count == tbl_idx) {
-                            if (tbldata->row_luas[r][0]) {
+                            if (tbl->row_luas[r][0]) {
                                 ScriptResult *sr = (ScriptResult *)HeapAlloc(
                                     GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
                                 if (sr) {
-                                    script_exec(tbldata->row_luas[r], NULL, sr);
+                                    script_exec(tbl->row_luas[r], NULL, sr);
                                     HeapFree(GetProcessHeap(), 0, sr);
                                 }
-                            } else if (tbldata->row_urls[r][0]) {
+                            } else if (tbl->row_urls[r][0]) {
                                 WCHAR wurl[256];
-                                MultiByteToWideChar(CP_UTF8, 0, tbldata->row_urls[r], -1, wurl, 256);
+                                MultiByteToWideChar(CP_UTF8, 0, tbl->row_urls[r], -1, wurl, 256);
                                 ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
-                            } else if (tbldata->row_cmds[r][0]) {
+                            } else if (tbl->row_cmds[r][0]) {
                                 WCHAR wcmd[256];
-                                MultiByteToWideChar(CP_UTF8, 0, tbldata->row_cmds[r], -1, wcmd, 256);
+                                MultiByteToWideChar(CP_UTF8, 0, tbl->row_cmds[r], -1, wcmd, 256);
                                 STARTUPINFOW si = { .cb = sizeof(si) };
                                 PROCESS_INFORMATION pi = {0};
                                 WCHAR cmdline[320];
@@ -1017,21 +1010,20 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 DialogItem *item = &state->spec.items[i];
                 if (item->type == DI_TEXT && item->text[0]) {
                     lstrcpynW(copy_buf, item->text, 4096);
-                } else if (item->type == DI_TABLE && item->table) {
-                    DialogTableData *td = item->table;
+                } else if (item->type == DI_TABLE) {
                     int off = 0;
-                    for (int c = 0; c < td->col_count && off < 4000; c++) {
+                    for (int c = 0; c < item->col_count && off < 4000; c++) {
                         if (c > 0) copy_buf[off++] = L'\t';
-                        int len = lstrlenW(td->columns[c]);
-                        lstrcpynW(copy_buf + off, td->columns[c], 4096 - off);
+                        int len = lstrlenW(item->columns[c]);
+                        lstrcpynW(copy_buf + off, item->columns[c], 4096 - off);
                         off += len;
                     }
-                    for (int r = 0; r < td->row_count && off < 4000; r++) {
+                    for (int r = 0; r < item->row_count && off < 4000; r++) {
                         copy_buf[off++] = L'\r'; copy_buf[off++] = L'\n';
-                        for (int c = 0; c < td->col_count && off < 4000; c++) {
+                        for (int c = 0; c < item->col_count && off < 4000; c++) {
                             if (c > 0) copy_buf[off++] = L'\t';
-                            int len = lstrlenW(td->cells[r][c]);
-                            lstrcpynW(copy_buf + off, td->cells[r][c], 4096 - off);
+                            int len = lstrlenW(item->cells[r][c]);
+                            lstrcpynW(copy_buf + off, item->cells[r][c], 4096 - off);
                             off += len;
                         }
                     }
@@ -1079,7 +1071,6 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             }
         }
         if (state) {
-            dialog_spec_free_tables(&state->spec);
             for (int i = 0; i < DIALOG_MAX_ITEMS; i++) {
                 if (state->webviews[i]) webview_destroy(state->webviews[i]);
             }
