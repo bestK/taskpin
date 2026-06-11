@@ -1260,6 +1260,53 @@ static int l_dialog_is_open(lua_State *ls) {
     return 1;
 }
 
+/* --- set_bar_text / set_bar_lua --- */
+
+extern void bar_update_display(const WCHAR *lua_path, const WCHAR *text, const DisplayContent *rich);
+
+static int l_set_bar_text(lua_State *ls) {
+    const char *text = luaL_checkstring(ls, 1);
+    WCHAR wtext[2048];
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 2048);
+    bar_update_display(g_current_lua_path, wtext, NULL);
+    lua_pushstring(ls, text);
+    lua_setglobal(ls, "__bar_text");
+    return 0;
+}
+
+static int l_set_bar_lua(lua_State *ls) {
+    const char *code = luaL_checkstring(ls, 1);
+    logger_write(LOG_DEBUG, "set_bar_lua code: [%s]", code);
+    char wrapped[4096];
+    snprintf(wrapped, sizeof(wrapped), "return %s", code);
+    if (luaL_dostring(ls, wrapped) == LUA_OK) {
+        int nresults = lua_gettop(ls);
+        if (nresults >= 1 && lua_istable(ls, -1)) {
+            DisplayContent rich;
+            parse_rich_result(ls, -1, &rich);
+            WCHAR plain[2048] = {0};
+            for (int i = 0; i < rich.count; i++)
+                lstrcatW(plain, rich.spans[i].text);
+            bar_update_display(g_current_lua_path, plain, &rich);
+        } else if (nresults >= 1) {
+            const char *s = lua_tostring(ls, -1);
+            if (s) {
+                WCHAR wtext[2048];
+                MultiByteToWideChar(CP_UTF8, 0, s, -1, wtext, 2048);
+                bar_update_display(g_current_lua_path, wtext, NULL);
+            }
+        }
+        lua_settop(ls, 0);
+        lua_pushstring(ls, code);
+        lua_setglobal(ls, "__bar_lua");
+    } else {
+        const char *err = lua_tostring(ls, -1);
+        if (err) logger_write(LOG_ERROR, "set_bar_lua: %s", err);
+        lua_pop(ls, 1);
+    }
+    return 0;
+}
+
 /* --- Animation Lua bindings (anim.*) --- */
 
 #define ANIM_REGISTRY_KEY "taskpin_anim_starts"
@@ -1720,6 +1767,14 @@ void script_init(void) {
     /* Register sys.* system info API */
     sysinfo_register_lua(L);
 
+    /* Append set_bar_text/set_bar_lua to sys table */
+    lua_getglobal(L, "sys");
+    lua_pushcfunction(L, l_set_bar_text);
+    lua_setfield(L, -2, "set_bar_text");
+    lua_pushcfunction(L, l_set_bar_lua);
+    lua_setfield(L, -2, "set_bar_lua");
+    lua_pop(L, 1);
+
     /* Register websocket API */
     ws_init();
     hotkey_init();
@@ -1756,6 +1811,10 @@ void script_set_global_string(const char *name, const char *value) {
     lua_pushstring(L, value ? value : "");
     lua_setglobal(L, name);
     LeaveCriticalSection(&g_lua_cs);
+}
+
+void script_set_lua_path(const WCHAR *path) {
+    if (path) lstrcpynW(g_current_lua_path, path, MAX_PATH);
 }
 
 /* ??? execute template code ??? */

@@ -50,6 +50,7 @@ typedef struct {
     int item_y[DIALOG_MAX_ITEMS];
     int item_h[DIALOG_MAX_ITEMS];
     WebView *webviews[DIALOG_MAX_ITEMS];
+    BOOL webview_creating;
 } ScriptDialogState;
 
 #define MAX_SCRIPT_DIALOGS 16
@@ -151,6 +152,15 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     int w = spec->width > 0 ? spec->width : 400;
     int h = spec->height > 0 ? spec->height : 300;
 
+    /* Use saved size if available */
+    {
+        int idx = dlg_find_item(full_path);
+        if (idx >= 0) {
+            if (g_cfg.items[idx].dlg_w > 0) w = g_cfg.items[idx].dlg_w;
+            if (g_cfg.items[idx].dlg_h > 0) h = g_cfg.items[idx].dlg_h;
+        }
+    }
+
     DWORD style = spec->borderless
         ? (WS_POPUP)
         : (WS_OVERLAPPEDWINDOW | WS_VSCROLL);
@@ -183,7 +193,7 @@ void show_script_dialog(const WCHAR *lua_path, const ParamEntry *params, int par
     /* Use explicit x/y from spec first, then saved position */
     if (spec->x >= 0 && spec->y >= 0) {
         x = spec->x; y = spec->y;
-    } else if (spec->borderless) {
+    } else {
         int idx = dlg_find_item(state->lua_path);
         if (idx >= 0 && g_cfg.items[idx].dlg_x >= 0 && g_cfg.items[idx].dlg_y >= 0) {
             x = g_cfg.items[idx].dlg_x;
@@ -591,9 +601,10 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
         case DI_WEBVIEW: {
             int rw = client_w;
             int rh = rc.bottom - rc.top;
-            if (!state->webviews[i] && item->url[0]) {
+            if (!state->webviews[i] && item->url[0] && !state->webview_creating) {
                 if (webview_available()) {
-                    state->webviews[i] = webview_create(hwnd, 0, 0, rw, rh, item->url);
+                    state->webview_creating = TRUE;
+                    PostMessage(hwnd, WM_USER + 100, 0, 0);
                 } else {
                     SetTextColor(hdc, RGB(180, 180, 180));
                     SetBkMode(hdc, TRANSPARENT);
@@ -732,6 +743,7 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         if (state->spec.borderless) {
             SetTimer(hwnd, IDT_DIALOG_ESC, 100, NULL);
         }
+        /* Webviews are created lazily in paint_dialog after first refresh */
         return 0;
     }
 
@@ -743,6 +755,26 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             update_scrollbar(hwnd, state);
         }
         EndPaint(hwnd, &ps);
+        return 0;
+    }
+
+    case WM_USER + 100: {
+        if (!state) break;
+        RECT crc;
+        GetClientRect(hwnd, &crc);
+        int rw = crc.right - crc.left;
+        int rh = crc.bottom - crc.top;
+        if (rw <= 0) rw = state->spec.width > 0 ? state->spec.width : 400;
+        if (rh <= 0) rh = state->spec.height > 0 ? state->spec.height : 300;
+        for (int i = 0; i < state->spec.item_count; i++) {
+            if (state->spec.items[i].type == DI_WEBVIEW &&
+                state->spec.items[i].url[0] && !state->webviews[i]) {
+                state->webviews[i] = webview_create(hwnd, 0, 0, rw, rh,
+                    state->spec.items[i].url, state->lua_path);
+            }
+        }
+        state->webview_creating = FALSE;
+        InvalidateRect(hwnd, NULL, TRUE);
         return 0;
     }
 
@@ -1060,13 +1092,15 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
     case WM_DESTROY:
         KillTimer(hwnd, IDT_DIALOG_REFRESH);
         KillTimer(hwnd, IDT_DIALOG_ESC);
-        if (state && state->spec.borderless && state->lua_path[0]) {
+        if (state && state->lua_path[0]) {
             RECT wr2;
             GetWindowRect(hwnd, &wr2);
             int idx = dlg_find_item(state->lua_path);
             if (idx >= 0) {
                 g_cfg.items[idx].dlg_x = wr2.left;
                 g_cfg.items[idx].dlg_y = wr2.top;
+                g_cfg.items[idx].dlg_w = wr2.right - wr2.left;
+                g_cfg.items[idx].dlg_h = wr2.bottom - wr2.top;
                 config_save(&g_cfg);
             }
         }

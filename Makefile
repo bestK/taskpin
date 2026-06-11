@@ -12,7 +12,7 @@ ifeq ($(MODE),dev)
 CFLAGS += -DDEV_MODE
 endif
 CFLAGS_LUA = -O2 -DLUA_COMPAT_5_3 -DWIN32_LEAN_AND_MEAN -DLUA_USE_LONGJMP
-LDFLAGS = -static -mwindows -municode -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32 -liphlpapi -lmsimg32 -lole32 -lwininet -ldbghelp
+LDFLAGS = -static -mwindows -municode -Wl,--stack,8388608 -lwinhttp -luser32 -lshell32 -lgdi32 -lshlwapi -lcomctl32 -lcomdlg32 -liphlpapi -lmsimg32 -lole32 -lwininet -ldbghelp
 TARGET = taskpin.exe
 
 SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/expression.c $(SRC_DIR)/edit_dialog.c \

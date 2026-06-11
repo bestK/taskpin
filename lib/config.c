@@ -129,6 +129,8 @@ static void config_load_json(TaskPinConfig *cfg, const char *json_str) {
             it->bar_bg_color = json_read_color(jitem, "bar_bg_color", 0xFFFFFFFF);
             it->dlg_x = json_read_int(jitem, "dlg_x", -1);
             it->dlg_y = json_read_int(jitem, "dlg_y", -1);
+            it->dlg_w = json_read_int(jitem, "dlg_w", 0);
+            it->dlg_h = json_read_int(jitem, "dlg_h", 0);
 
             /* params */
             cJSON *params = cJSON_GetObjectItem(jitem, "params");
@@ -261,6 +263,8 @@ static void config_load_ini(TaskPinConfig *cfg) {
         cfg->items[i].bar_bg_color = (COLORREF)wcstoul(bg_buf, NULL, 16);
         cfg->items[i].dlg_x = GetPrivateProfileIntW(sec, L"dlg_x", -1, path);
         cfg->items[i].dlg_y = GetPrivateProfileIntW(sec, L"dlg_y", -1, path);
+        cfg->items[i].dlg_w = GetPrivateProfileIntW(sec, L"dlg_w", 0, path);
+        cfg->items[i].dlg_h = GetPrivateProfileIntW(sec, L"dlg_h", 0, path);
         for (int j = 0; j < cfg->items[i].param_count; j++) {
             WCHAR pk[32], pv[32], pl[32];
             wsprintfW(pk, L"param_key_%d", j);
@@ -403,6 +407,8 @@ void config_save(const TaskPinConfig *cfg) {
         json_add_color(jitem, "bar_bg_color", it->bar_bg_color, 1);
         cJSON_AddNumberToObject(jitem, "dlg_x", it->dlg_x);
         cJSON_AddNumberToObject(jitem, "dlg_y", it->dlg_y);
+        cJSON_AddNumberToObject(jitem, "dlg_w", it->dlg_w);
+        cJSON_AddNumberToObject(jitem, "dlg_h", it->dlg_h);
 
         /* params */
         if (it->param_count > 0) {

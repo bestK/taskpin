@@ -11,7 +11,7 @@ typedef struct WebView WebView;
 
 BOOL webview_available(void);
 int webview_init_error(void);  /* 0=ok, 1=no runtime, 2=download failed */
-WebView *webview_create(HWND parent, int x, int y, int w, int h, const char *url);
+WebView *webview_create(HWND parent, int x, int y, int w, int h, const char *url, const WCHAR *lua_path);
 void webview_resize(WebView *wv, int x, int y, int w, int h);
 void webview_navigate(WebView *wv, const char *url);
 void webview_eval(WebView *wv, const char *js);

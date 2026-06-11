@@ -130,6 +130,9 @@ void script_shutdown(void);
 void script_set_global_bool(const char *name, BOOL value);
 void script_set_global_string(const char *name, const char *value);
 
+/* Set the current script path context (for bridge callbacks) */
+void script_set_lua_path(const WCHAR *path);
+
 /* Try to acquire the Lua lock without blocking. Returns TRUE if acquired. */
 BOOL script_try_lock(void);
 void script_unlock(void);

@@ -91,6 +91,23 @@ static DWORD WINAPI lua_worker_thread(LPVOID param) {
     return 0;
 }
 
+/* ─── External bar update (from webview/lua bridge) ─── */
+
+void bar_update_display(const WCHAR *lua_path, const WCHAR *text, const DisplayContent *rich) {
+    for (int i = 0; i < g_bar_count; i++) {
+        int idx = g_bars[i].item_index;
+        if (idx < 0 || idx >= g_cfg.count) continue;
+        if (lstrcmpiW(g_cfg.items[idx].lua_path, lua_path) == 0 ||
+            wcsstr(lua_path, g_cfg.items[idx].lua_path)) {
+            if (text) lstrcpynW(g_bars[i].display, text, FETCH_BUF_SIZE);
+            if (rich) g_bars[i].rich = *rich;
+            g_bars[i].scroll_offset = 0;
+            InvalidateRect(g_bars[i].hwnd, NULL, TRUE);
+            return;
+        }
+    }
+}
+
 /* ─── Fetch logic (per-instance) ─── */
 
 void start_fetch(BarInstance *bar) {

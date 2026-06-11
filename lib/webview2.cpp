@@ -33,6 +33,7 @@ struct WebView {
     void *msg_userdata;
     RECT desired_bounds;
     HWND webview_hwnd;
+    WCHAR lua_path[MAX_PATH];
 };
 
 /* Track all active webviews for visibility toggle during drag */
@@ -353,6 +354,8 @@ public:
                                                 }
                                             }
                                             snprintf(expr + pos, sizeof(expr) - pos, ")");
+                                            if (m_wv->lua_path[0])
+                                                script_set_lua_path(m_wv->lua_path);
                                             result = script_eval_expr(expr);
                                         }
 
@@ -422,7 +425,7 @@ public:
     }
 };
 
-extern "C" WebView *webview_create(HWND parent, int x, int y, int w, int h, const char *url) {
+extern "C" WebView *webview_create(HWND parent, int x, int y, int w, int h, const char *url, const WCHAR *lua_path) {
     ensure_init();
     if (!s_available || !s_create_env) return nullptr;
 
@@ -430,6 +433,7 @@ extern "C" WebView *webview_create(HWND parent, int x, int y, int w, int h, cons
     if (!wv) return nullptr;
     wv->parent = parent;
     wv->desired_bounds = { x, y, x + w, y + h };
+    if (lua_path) lstrcpynW(wv->lua_path, lua_path, MAX_PATH);
 
     if (url) {
         /* Resolve relative file:// paths to absolute */
