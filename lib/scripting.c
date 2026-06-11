@@ -1276,7 +1276,6 @@ static int l_set_bar_text(lua_State *ls) {
 
 static int l_set_bar_lua(lua_State *ls) {
     const char *code = luaL_checkstring(ls, 1);
-    logger_write(LOG_DEBUG, "set_bar_lua code: [%s]", code);
     char wrapped[4096];
     snprintf(wrapped, sizeof(wrapped), "return %s", code);
     if (luaL_dostring(ls, wrapped) == LUA_OK) {
