@@ -53,9 +53,9 @@ extern "C" void webview_hide_all(void) {
                 L"var d=document.createElement('div');d.id='__tp_drag';"
                 L"d.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(30,30,30,0.85);z-index:999999;display:flex;align-items:center;justify-content:center;cursor:grab;user-select:none;';"
                 L"d.innerHTML='<span style=\"color:#aaa;font:14px sans-serif;pointer-events:none\">%s</span>';"
-                L"var sx,sy,wx,wy,moving=false;"
-                L"d.onmousedown=function(e){sx=e.screenX;sy=e.screenY;wx=window.screenX;wy=window.screenY;moving=true;d.style.cursor=\"grabbing\";};"
-                L"d.onmousemove=function(e){if(!moving)return;var dx=e.screenX-sx,dy=e.screenY-sy;window.chrome.webview.postMessage('__taskpin_move__:'+(wx+dx)+':'+(wy+dy));};"
+                L"var lx,ly,moving=false;"
+                L"d.onmousedown=function(e){lx=e.screenX;ly=e.screenY;moving=true;d.style.cursor=\"grabbing\";};"
+                L"d.onmousemove=function(e){if(!moving)return;var dx=e.screenX-lx,dy=e.screenY-ly;lx=e.screenX;ly=e.screenY;window.chrome.webview.postMessage('__taskpin_move_delta__:'+dx+':'+dy);};"
                 L"d.onmouseup=function(){moving=false;d.style.cursor=\"grab\";};"
                 L"d.onwheel=function(e){e.preventDefault();var delta=e.deltaY>0?-20:20;window.chrome.webview.postMessage('__taskpin_resize__:'+delta);};"
                 L"document.body.appendChild(d);"
@@ -299,7 +299,13 @@ public:
                             args->TryGetWebMessageAsString(&msg);
                             if (msg) {
                                 /* Internal drag/resize messages (from overlay) */
-                                if (wcsncmp(msg, L"__taskpin_move__:", 17) == 0) {
+                                if (wcsncmp(msg, L"__taskpin_move_delta__:", 23) == 0) {
+                                    int dx = 0, dy = 0;
+                                    swscanf(msg + 23, L"%d:%d", &dx, &dy);
+                                    RECT wr; GetWindowRect(m_wv->parent, &wr);
+                                    SetWindowPos(m_wv->parent, NULL, wr.left + dx, wr.top + dy, 0, 0,
+                                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                                } else if (wcsncmp(msg, L"__taskpin_move__:", 17) == 0) {
                                     int ax = 0, ay = 0;
                                     swscanf(msg + 17, L"%d:%d", &ax, &ay);
                                     SetWindowPos(m_wv->parent, NULL, ax, ay, 0, 0,

@@ -7,6 +7,7 @@
 #include "logger.h"
 #include <shellapi.h>
 #include <shlwapi.h>
+#include <windowsx.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -51,6 +52,9 @@ typedef struct {
     int item_h[DIALOG_MAX_ITEMS];
     WebView *webviews[DIALOG_MAX_ITEMS];
     BOOL webview_creating;
+    BOOL dragging;
+    POINT drag_start;
+    BOOL shift_hiding_webview;
 } ScriptDialogState;
 
 #define MAX_SCRIPT_DIALOGS 16
@@ -634,6 +638,30 @@ static void paint_dialog(HWND hwnd, HDC hdc, ScriptDialogState *state) {
     }
 
     state->content_height = y + state->scroll_y + PADDING_Y;
+
+    /* Draw drag hint overlay when Shift held on borderless non-webview dialog */
+    if (state->spec.borderless && !has_wv && (GetAsyncKeyState(VK_SHIFT) & 0x8000)) {
+        RECT crc;
+        GetClientRect(hwnd, &crc);
+        HBRUSH overlay = CreateSolidBrush(RGB(30, 30, 30));
+        BLENDFUNCTION bf = {AC_SRC_OVER, 0, 200, 0};
+        HDC memdc = CreateCompatibleDC(hdc);
+        HBITMAP bmp = CreateCompatibleBitmap(hdc, crc.right, crc.bottom);
+        HBITMAP oldbmp = (HBITMAP)SelectObject(memdc, bmp);
+        FillRect(memdc, &crc, overlay);
+        DeleteObject(overlay);
+        GdiAlphaBlend(hdc, 0, 0, crc.right, crc.bottom, memdc, 0, 0, crc.right, crc.bottom, bf);
+        SelectObject(memdc, oldbmp);
+        DeleteObject(bmp);
+        DeleteDC(memdc);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(170, 170, 170));
+        HFONT hf = create_dialog_font(10, FALSE);
+        HFONT oldf = (HFONT)SelectObject(hdc, hf);
+        DrawTextW(hdc, tr("webview.drag_hint"), -1, &crc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, oldf);
+        DeleteObject(hf);
+    }
 }
 
 static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
@@ -646,11 +674,12 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
     }
     if (result->click_action == CLICK_DIALOG) {
         if (result->dialog.item_count > 0) {
+            RECT wr; GetWindowRect(hwnd, &wr);
+            logger_write(LOG_INFO, "refresh_dialog: before memcpy, window at %d,%d, script spec x=%d y=%d",
+                wr.left, wr.top, result->dialog.x, result->dialog.y);
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
-            if (state->spec.x >= 0 && state->spec.y >= 0) {
-                SetWindowPos(hwnd, NULL, state->spec.x, state->spec.y, 0, 0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-            }
+            state->spec.x = wr.left;
+            state->spec.y = wr.top;
         }
         InvalidateRect(hwnd, NULL, TRUE);
     }
@@ -721,6 +750,10 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
 
     switch (msg) {
     case WM_SETCURSOR: {
+        if (state && state->spec.borderless && (GetKeyState(VK_SHIFT) & 0x8000)) {
+            SetCursor(LoadCursor(NULL, state->dragging ? IDC_HAND : IDC_HAND));
+            return TRUE;
+        }
         if ((HWND)wp != hwnd) {
             WCHAR cls[16];
             GetClassNameW((HWND)wp, cls, 16);
@@ -788,22 +821,54 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                     return 0;
                 }
             }
-            /* Toggle webview visibility for Shift+drag (only when mouse over dialog) */
-            static BOOL s_shift_was_down = FALSE;
-            BOOL shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-            BOOL mouse_over = FALSE;
-            if (shift_down) {
-                POINT pt; GetCursorPos(&pt);
-                RECT wr; GetWindowRect(hwnd, &wr);
-                mouse_over = PtInRect(&wr, pt);
+            /* Toggle drag overlay (only when mouse is over this dialog + Shift held) */
+            POINT pt2; GetCursorPos(&pt2);
+            RECT wr2; GetWindowRect(hwnd, &wr2);
+            BOOL mouse_over = PtInRect(&wr2, pt2);
+            if (mouse_over) {
+                BOOL shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+                BOOL should_hide = shift_down;
+                if (should_hide != state->shift_hiding_webview) {
+                    state->shift_hiding_webview = should_hide;
+                for (int i = 0; i < DIALOG_MAX_ITEMS; i++) {
+                    if (!state->webviews[i]) continue;
+                    if (should_hide) {
+                        char js[2048];
+                        char hint[128];
+                        WideCharToMultiByte(CP_UTF8, 0, tr("webview.drag_hint"), -1, hint, sizeof(hint), NULL, NULL);
+                        snprintf(js, sizeof(js),
+                            "(function(){"
+                            "if(document.getElementById('__tp_drag'))return;"
+                            "var d=document.createElement('div');d.id='__tp_drag';"
+                            "d.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;"
+                            "background:rgba(30,30,30,0.85);z-index:999999;display:flex;"
+                            "align-items:center;justify-content:center;cursor:grab;user-select:none;';"
+                            "d.innerHTML='<span style=\"color:#aaa;font:14px sans-serif;pointer-events:none\">"
+                            "%s</span>';"
+                            "var lx,ly,moving=false;"
+                            "d.onmousedown=function(e){lx=e.screenX;ly=e.screenY;moving=true;d.style.cursor=\"grabbing\";};"
+                            "d.onmousemove=function(e){if(!moving)return;var dx=e.screenX-lx,dy=e.screenY-ly;"
+                            "lx=e.screenX;ly=e.screenY;window.chrome.webview.postMessage('__taskpin_move_delta__:'+dx+':'+dy);};"
+                            "d.onmouseup=function(){moving=false;d.style.cursor=\"grab\";};"
+                            "d.onwheel=function(e){e.preventDefault();var delta=e.deltaY>0?-20:20;"
+                            "window.chrome.webview.postMessage('__taskpin_resize__:'+delta);};"
+                            "document.body.appendChild(d);"
+                            "})()", hint);
+                        webview_eval(state->webviews[i], js);
+                    } else
+                        webview_eval(state->webviews[i],
+                            "(function(){var d=document.getElementById('__tp_drag');if(d)d.remove();})()");
+                }
+                InvalidateRect(hwnd, NULL, TRUE);
             }
-            BOOL should_hide = shift_down && mouse_over;
-            if (should_hide != s_shift_was_down) {
-                s_shift_was_down = should_hide;
-                if (should_hide)
-                    webview_hide_all();
-                else
-                    webview_show_all();
+            } else if (state->shift_hiding_webview) {
+                state->shift_hiding_webview = FALSE;
+                for (int i = 0; i < DIALOG_MAX_ITEMS; i++) {
+                    if (!state->webviews[i]) continue;
+                    webview_eval(state->webviews[i],
+                        "(function(){var d=document.getElementById('__tp_drag');if(d)d.remove();})()");
+                }
+                InvalidateRect(hwnd, NULL, TRUE);
             }
         }
         if (wp == IDT_DIALOG_REFRESH && state) {
@@ -1013,15 +1078,60 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         return 0;
     }
 
+    case WM_MOVE:
+        if (state) {
+            RECT wr; GetWindowRect(hwnd, &wr);
+            state->spec.x = wr.left;
+            state->spec.y = wr.top;
+            logger_write(LOG_INFO, "WM_MOVE: spec updated to %d,%d", wr.left, wr.top);
+        }
+        return 0;
+
     case WM_SIZE:
         if (state && !webview_is_dragging()) InvalidateRect(hwnd, NULL, TRUE);
         return 0;
 
+    case WM_LBUTTONDOWN:
+        if (state && state->spec.borderless && (GetKeyState(VK_SHIFT) & 0x8000)) {
+            state->dragging = TRUE;
+            state->drag_start.x = GET_X_LPARAM(lp);
+            state->drag_start.y = GET_Y_LPARAM(lp);
+            SetCapture(hwnd);
+            return 0;
+        }
+        break;
+
+    case WM_MOUSEMOVE:
+        if (state && state->dragging) {
+            POINT cur = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            int dx = cur.x - state->drag_start.x;
+            int dy = cur.y - state->drag_start.y;
+            RECT wr; GetWindowRect(hwnd, &wr);
+            int nx = wr.left + dx;
+            int ny = wr.top + dy;
+            SetWindowPos(hwnd, NULL, nx, ny, 0, 0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            state->spec.x = nx;
+            state->spec.y = ny;
+            return 0;
+        }
+        break;
+
+    case WM_LBUTTONUP:
+        if (state && state->dragging) {
+            state->dragging = FALSE;
+            ReleaseCapture();
+            return 0;
+        }
+        break;
+
+    case WM_CAPTURECHANGED:
+        if (state) state->dragging = FALSE;
+        break;
+
     case WM_NCHITTEST: {
         if (!state) break;
-        if (state->spec.borderless && (GetKeyState(VK_SHIFT) & 0x8000))
-            return HTCAPTION;
-        if (state->spec.clickthrough)
+        if (state->spec.clickthrough && !(GetKeyState(VK_SHIFT) & 0x8000))
             return HTTRANSPARENT;
         break;
     }
