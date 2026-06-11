@@ -1031,16 +1031,21 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             item->type = DI_TABLE;
             lua_pop(ls, 1);
 
+            DialogTableData *td = (DialogTableData *)HeapAlloc(
+                GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DialogTableData));
+            if (!td) { lua_pop(ls, 1); continue; }
+            item->table = td;
+
             /* Parse columns */
             lua_getfield(ls, -1, "columns");
             if (lua_istable(ls, -1)) {
                 int nc = (int)lua_rawlen(ls, -1);
                 if (nc > DIALOG_MAX_COLS) nc = DIALOG_MAX_COLS;
-                item->col_count = nc;
+                td->col_count = nc;
                 for (int c = 1; c <= nc; c++) {
                     lua_rawgeti(ls, -1, c);
                     const char *cs = lua_tostring(ls, -1);
-                    if (cs) MultiByteToWideChar(CP_UTF8, 0, cs, -1, item->columns[c-1], 64);
+                    if (cs) MultiByteToWideChar(CP_UTF8, 0, cs, -1, td->columns[c-1], 64);
                     lua_pop(ls, 1);
                 }
             }
@@ -1050,10 +1055,10 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             lua_getfield(ls, -1, "col_widths");
             if (lua_istable(ls, -1)) {
                 int nw = (int)lua_rawlen(ls, -1);
-                if (nw > item->col_count) nw = item->col_count;
+                if (nw > td->col_count) nw = td->col_count;
                 for (int c = 1; c <= nw; c++) {
                     lua_rawgeti(ls, -1, c);
-                    item->col_widths[c-1] = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
+                    td->col_widths[c-1] = lua_isnil(ls, -1) ? 0 : (int)lua_tointeger(ls, -1);
                     lua_pop(ls, 1);
                 }
             }
@@ -1066,7 +1071,7 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
 
             /* Word wrap */
             lua_getfield(ls, -1, "wrap");
-            item->word_wrap = lua_toboolean(ls, -1);
+            td->word_wrap = lua_toboolean(ls, -1);
             lua_pop(ls, 1);
 
             /* Parse rows */
@@ -1074,34 +1079,34 @@ static void parse_dialog_spec(lua_State *ls, int idx, DialogSpec *spec) {
             if (lua_istable(ls, -1)) {
                 int nr = (int)lua_rawlen(ls, -1);
                 if (nr > DIALOG_MAX_ROWS) nr = DIALOG_MAX_ROWS;
-                item->row_count = nr;
+                td->row_count = nr;
                 for (int r = 1; r <= nr; r++) {
                     lua_rawgeti(ls, -1, r);
                     if (lua_istable(ls, -1)) {
                         int rc = (int)lua_rawlen(ls, -1);
-                        if (rc > item->col_count) rc = item->col_count;
+                        if (rc > td->col_count) rc = td->col_count;
                         for (int c = 1; c <= rc; c++) {
                             lua_rawgeti(ls, -1, c);
                             const char *cv = lua_tostring(ls, -1);
-                            if (cv) MultiByteToWideChar(CP_UTF8, 0, cv, -1, item->cells[r-1][c-1], 64);
+                            if (cv) MultiByteToWideChar(CP_UTF8, 0, cv, -1, td->cells[r-1][c-1], 64);
                             lua_pop(ls, 1);
                         }
                         /* Check for url field in row table */
                         lua_getfield(ls, -1, "url");
                         const char *rurl = lua_tostring(ls, -1);
-                        if (rurl) strncpy(item->row_urls[r-1], rurl, 255);
+                        if (rurl) strncpy(td->row_urls[r-1], rurl, 255);
                         lua_pop(ls, 1);
                         lua_getfield(ls, -1, "cmd");
                         const char *rcmd = lua_tostring(ls, -1);
-                        if (rcmd) strncpy(item->row_cmds[r-1], rcmd, 255);
+                        if (rcmd) strncpy(td->row_cmds[r-1], rcmd, 255);
                         lua_pop(ls, 1);
                         lua_getfield(ls, -1, "lua");
                         const char *rlua = lua_tostring(ls, -1);
-                        if (rlua) strncpy(item->row_luas[r-1], rlua, 255);
+                        if (rlua) strncpy(td->row_luas[r-1], rlua, 255);
                         lua_pop(ls, 1);
                         lua_getfield(ls, -1, "btn_text");
                         const char *rbt = lua_tostring(ls, -1);
-                        if (rbt) MultiByteToWideChar(CP_UTF8, 0, rbt, -1, item->row_btn_text[r-1], 32);
+                        if (rbt) MultiByteToWideChar(CP_UTF8, 0, rbt, -1, td->row_btn_text[r-1], 32);
                         lua_pop(ls, 1);
                     }
                     lua_pop(ls, 1);
@@ -1258,6 +1263,48 @@ static int l_dialog_is_open(lua_State *ls) {
     (void)ls;
     lua_pushboolean(ls, script_dialog_is_open(g_current_lua_path));
     return 1;
+}
+
+/* --- set_bar_text / set_bar_lua --- */
+
+extern void bar_update_display(const WCHAR *lua_path, const WCHAR *text, const DisplayContent *rich);
+
+static int l_set_bar_text(lua_State *ls) {
+    const char *text = luaL_checkstring(ls, 1);
+    WCHAR wtext[2048];
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 2048);
+    bar_update_display(g_current_lua_path, wtext, NULL);
+    return 0;
+}
+
+static int l_set_bar_lua(lua_State *ls) {
+    const char *code = luaL_checkstring(ls, 1);
+    char wrapped[4096];
+    snprintf(wrapped, sizeof(wrapped), "return (function()\n%s\nend)()", code);
+    if (luaL_dostring(ls, wrapped) == LUA_OK) {
+        int nresults = lua_gettop(ls);
+        if (nresults >= 1 && lua_istable(ls, -1)) {
+            DisplayContent rich;
+            parse_rich_result(ls, -1, &rich);
+            WCHAR plain[2048] = {0};
+            for (int i = 0; i < rich.count; i++)
+                lstrcatW(plain, rich.spans[i].text);
+            bar_update_display(g_current_lua_path, plain, &rich);
+        } else if (nresults >= 1) {
+            const char *s = lua_tostring(ls, -1);
+            if (s) {
+                WCHAR wtext[2048];
+                MultiByteToWideChar(CP_UTF8, 0, s, -1, wtext, 2048);
+                bar_update_display(g_current_lua_path, wtext, NULL);
+            }
+        }
+        lua_settop(ls, 0);
+    } else {
+        const char *err = lua_tostring(ls, -1);
+        if (err) logger_write(LOG_ERROR, "set_bar_lua: %s", err);
+        lua_pop(ls, 1);
+    }
+    return 0;
 }
 
 /* --- Animation Lua bindings (anim.*) --- */
@@ -1719,6 +1766,14 @@ void script_init(void) {
 
     /* Register sys.* system info API */
     sysinfo_register_lua(L);
+
+    /* Append set_bar_text/set_bar_lua to sys table */
+    lua_getglobal(L, "sys");
+    lua_pushcfunction(L, l_set_bar_text);
+    lua_setfield(L, -2, "set_bar_text");
+    lua_pushcfunction(L, l_set_bar_lua);
+    lua_setfield(L, -2, "set_bar_lua");
+    lua_pop(L, 1);
 
     /* Register websocket API */
     ws_init();

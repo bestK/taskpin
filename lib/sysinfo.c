@@ -1571,5 +1571,8 @@ void sysinfo_register_lua(void *lua_state) {
     lua_setfield(ls, -2, "is_admin");
     lua_pushcfunction(ls, l_sys_elevate);
     lua_setfield(ls, -2, "elevate");
+
+    /* set_bar_text / set_bar_lua are registered externally in scripting.c */
+
     lua_setglobal(ls, "sys");
 }

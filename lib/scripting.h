@@ -59,22 +59,27 @@ typedef struct {
 typedef enum { DI_TEXT, DI_HR, DI_TABLE, DI_IMG, DI_BUTTON, DI_WEBVIEW } DialogItemType;
 
 typedef struct {
-    DialogItemType type;
-    WCHAR text[256];
-    COLORREF color;      /* 0xFFFFFFFF = use default (text/button fg color) */
-    COLORREF bg_color;   /* 0xFFFFFFFF = use default (button bg) */
-    int font_size;       /* 0 = use default */
-    BOOL bold;
     int col_count;
     int row_count;
     WCHAR columns[DIALOG_MAX_COLS][64];
-    int col_widths[DIALOG_MAX_COLS];  /* per-column width in px, 0 = auto */
+    int col_widths[DIALOG_MAX_COLS];
     WCHAR cells[DIALOG_MAX_ROWS][DIALOG_MAX_COLS][64];
     COLORREF row_colors[DIALOG_MAX_ROWS];
     char row_urls[DIALOG_MAX_ROWS][256];
     char row_cmds[DIALOG_MAX_ROWS][256];
     char row_luas[DIALOG_MAX_ROWS][256];
     WCHAR row_btn_text[DIALOG_MAX_ROWS][32];
+    BOOL word_wrap;
+} DialogTableData;
+
+typedef struct {
+    DialogItemType type;
+    WCHAR text[256];
+    COLORREF color;      /* 0xFFFFFFFF = use default (text/button fg color) */
+    COLORREF bg_color;   /* 0xFFFFFFFF = use default (button bg) */
+    int font_size;       /* 0 = use default */
+    BOOL bold;
+    DialogTableData *table;  /* heap-allocated, only for DI_TABLE */
     /* image fields (for DI_IMG standalone or DI_TEXT inline icon) */
     char img_source[512];
     int src_x, src_y, src_w, src_h;  /* sprite sheet crop region (0 = use full image) */
@@ -85,7 +90,6 @@ typedef struct {
     char cmd[512];
     char lua_code[512];
     int align;  /* ALIGN_LEFT=0, ALIGN_CENTER, ALIGN_RIGHT, ALIGN_INLINE */
-    BOOL word_wrap;  /* TRUE = auto wrap text in table cells */
 } DialogItem;
 
 enum { ALIGN_LEFT = 0, ALIGN_CENTER, ALIGN_RIGHT, ALIGN_INLINE };
@@ -105,6 +109,15 @@ typedef struct {
     DialogItem items[DIALOG_MAX_ITEMS];
     int item_count;
 } DialogSpec;
+
+static inline void dialog_spec_free_tables(DialogSpec *spec) {
+    for (int i = 0; i < spec->item_count; i++) {
+        if (spec->items[i].table) {
+            HeapFree(GetProcessHeap(), 0, spec->items[i].table);
+            spec->items[i].table = NULL;
+        }
+    }
+}
 
 /* ─── Script result ─── */
 
