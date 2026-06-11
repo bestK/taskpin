@@ -1362,3 +1362,245 @@ if col.hit then
     if col.direction == "top" then L.vy = math.abs(L.vy) end
 end
 ```
+
+---
+
+## Dialog 控制函数
+
+### open_dialog()
+
+打开当前脚本声明的 dialog。
+
+```lua
+open_dialog()
+```
+
+也可以传入自定义 dialog 配置：
+
+```lua
+open_dialog({
+    width = 400,
+    height = 300,
+    title = "自定义对话框",
+    borderless = true,
+    webview = "path/to/page.html"
+})
+```
+
+### close_dialog()
+
+关闭当前脚本的 dialog。
+
+```lua
+close_dialog()
+```
+
+### dialog_is_open()
+
+检查当前脚本的 dialog 是否已打开。
+
+```lua
+if dialog_is_open() then
+    -- dialog 已打开
+end
+```
+
+### render 回调模式
+
+`dialog()` 函数支持 `render` 回调，仅在 dialog 打开时才会执行渲染逻辑，节省资源：
+
+```lua
+dialog({
+    width = 400,
+    height = 300,
+    render = function()
+        return {
+            {type = "label", text = "当前时间: " .. os.date("%H:%M:%S")}
+        }
+    end
+})
+```
+
+当 dialog 未打开时，`render` 回调不会被调用，避免不必要的计算。
+
+---
+
+## sys.set_bar_text / sys.set_bar_lua
+
+### sys.set_bar_text(text)
+
+从 WebView 中更新当前脚本的 taskbar 显示文本（纯文本）。
+
+```lua
+sys.set_bar_text("BTC: $68,000")
+```
+
+### sys.set_bar_lua(code)
+
+从 WebView 中更新当前脚本的 taskbar 显示内容（Lua 表达式）。支持富文本 span 格式。
+
+```lua
+sys.set_bar_lua('{{text="BTC ", color="AAAAAA"}, {text="$68,000", color="00FF00"}}')
+```
+
+该函数会将传入的 Lua 代码保存，在下次脚本刷新周期时作为 bar 显示内容。适用于 WebView 页面需要实时更新 taskbar 的场景。
+
+**HTML 中调用示例：**
+
+```javascript
+// 在 WebView HTML 中通过 JS bridge 调用
+taskpin.sys.set_bar_lua('{{text="BTC ", color="AAAAAA"}, {text="$68,000", color="00FF00"}}')
+taskpin.sys.set_bar_text("BTC: $68,000")
+```
+
+---
+
+## 动画特效模块 (animation.*)
+
+提供多种动画效果函数，可作用于文字、图片等 dialog 元素。所有动画函数返回一个 table，包含当前帧的动画状态值。
+
+### animation.blink(id, interval)
+
+闪烁效果，在可见/不可见之间切换。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| interval | number | 闪烁间隔(秒) |
+
+返回: `{visible = true/false}`
+
+```lua
+local a = animation.blink("my_blink", 0.5)
+if a.visible then
+    -- 显示内容
+end
+```
+
+### animation.fade(id, duration, min, max)
+
+淡入淡出效果，alpha 值在 min 和 max 之间循环。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| duration | number | 一个周期时长(秒) |
+| min | number | 最小透明度 (0-255) |
+| max | number | 最大透明度 (0-255) |
+
+返回: `{alpha = number}`
+
+```lua
+local a = animation.fade("my_fade", 2.0, 50, 255)
+-- a.alpha 为当前透明度值
+```
+
+### animation.scale(id, duration, min_scale, max_scale)
+
+缩放效果。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| duration | number | 一个周期时长(秒) |
+| min_scale | number | 最小缩放比例 |
+| max_scale | number | 最大缩放比例 |
+
+返回: `{scale = number}`
+
+### animation.pulse(id, speed)
+
+脉冲效果，快速放大后恢复。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| speed | number | 脉冲速度 |
+
+返回: `{scale = number}`
+
+### animation.fly(id, duration, from_x, from_y, to_x, to_y)
+
+飞入/飞出位移动画。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| duration | number | 动画时长(秒) |
+| from_x | number | 起始 X |
+| from_y | number | 起始 Y |
+| to_x | number | 终止 X |
+| to_y | number | 终止 Y |
+
+返回: `{x = number, y = number, progress = number}`
+
+### animation.color(id, duration, from_color, to_color)
+
+颜色渐变动画。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| duration | number | 一个周期时长(秒) |
+| from_color | string | 起始颜色 (hex, 如 "FF0000") |
+| to_color | string | 终止颜色 (hex, 如 "00FF00") |
+
+返回: `{color = "RRGGBB"}`
+
+### animation.bounce(id, height, speed)
+
+弹跳效果。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| height | number | 弹跳高度(像素) |
+| speed | number | 弹跳速度 |
+
+返回: `{y = number}`
+
+### animation.typewriter(id, text, char_delay)
+
+打字机效果，逐字显示文本。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| id | string | 动画实例唯一标识 |
+| text | string | 要显示的完整文本 |
+| char_delay | number | 每个字符的延迟(秒) |
+
+返回: `{text = string, done = boolean}`
+
+### animation.reset(id)
+
+重置指定动画到初始状态。
+
+```lua
+animation.reset("my_blink")
+```
+
+### 完整示例
+
+```lua
+local blink = animation.blink("alert", 0.5)
+local fade = animation.fade("title", 2.0, 100, 255)
+local fly = animation.fly("entry", 1.0, -200, 0, 0, 0)
+
+dialog({
+    width = 400,
+    height = 300,
+    render = function()
+        local items = {}
+        if blink.visible then
+            table.insert(items, {
+                type = "label",
+                text = "⚠ 警告",
+                color = "FF0000",
+                alpha = fade.alpha,
+                x = fly.x, y = fly.y
+            })
+        end
+        return items
+    end
+})
+```

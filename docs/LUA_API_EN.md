@@ -1093,3 +1093,245 @@ Declare metadata in the script file header using `-- @xxx` comments. TaskPin rec
 
 local resp = http.get("http://" .. args.server .. ":" .. args.port .. "/status")
 ```
+
+---
+
+## Dialog Control Functions
+
+### open_dialog()
+
+Open the dialog declared by the current script.
+
+```lua
+open_dialog()
+```
+
+You can also pass a custom dialog configuration:
+
+```lua
+open_dialog({
+    width = 400,
+    height = 300,
+    title = "Custom Dialog",
+    borderless = true,
+    webview = "path/to/page.html"
+})
+```
+
+### close_dialog()
+
+Close the current script's dialog.
+
+```lua
+close_dialog()
+```
+
+### dialog_is_open()
+
+Check whether the current script's dialog is open.
+
+```lua
+if dialog_is_open() then
+    -- dialog is open
+end
+```
+
+### render Callback Pattern
+
+The `dialog()` function supports a `render` callback that only executes rendering logic when the dialog is open, saving resources:
+
+```lua
+dialog({
+    width = 400,
+    height = 300,
+    render = function()
+        return {
+            {type = "label", text = "Current time: " .. os.date("%H:%M:%S")}
+        }
+    end
+})
+```
+
+When the dialog is not open, the `render` callback is not called, avoiding unnecessary computation.
+
+---
+
+## sys.set_bar_text / sys.set_bar_lua
+
+### sys.set_bar_text(text)
+
+Update the current script's taskbar display text from a WebView (plain text).
+
+```lua
+sys.set_bar_text("BTC: $68,000")
+```
+
+### sys.set_bar_lua(code)
+
+Update the current script's taskbar display from a WebView using a Lua expression. Supports rich text span format.
+
+```lua
+sys.set_bar_lua('{{text="BTC ", color="AAAAAA"}, {text="$68,000", color="00FF00"}}')
+```
+
+This function saves the provided Lua code and uses it as the bar display content on the next script refresh cycle. Ideal for WebView pages that need to update the taskbar in real-time.
+
+**Example from HTML:**
+
+```javascript
+// Call via JS bridge in WebView HTML
+taskpin.sys.set_bar_lua('{{text="BTC ", color="AAAAAA"}, {text="$68,000", color="00FF00"}}')
+taskpin.sys.set_bar_text("BTC: $68,000")
+```
+
+---
+
+## Animation Module (animation.*)
+
+Provides multiple animation effect functions for dialog elements (text, images, etc.). All animation functions return a table containing the current frame's animation state.
+
+### animation.blink(id, interval)
+
+Blink effect, toggles between visible and invisible.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| interval | number | Blink interval (seconds) |
+
+Returns: `{visible = true/false}`
+
+```lua
+local a = animation.blink("my_blink", 0.5)
+if a.visible then
+    -- show content
+end
+```
+
+### animation.fade(id, duration, min, max)
+
+Fade in/out effect, alpha cycles between min and max.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| duration | number | One cycle duration (seconds) |
+| min | number | Minimum opacity (0-255) |
+| max | number | Maximum opacity (0-255) |
+
+Returns: `{alpha = number}`
+
+```lua
+local a = animation.fade("my_fade", 2.0, 50, 255)
+-- a.alpha is the current opacity value
+```
+
+### animation.scale(id, duration, min_scale, max_scale)
+
+Scale effect.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| duration | number | One cycle duration (seconds) |
+| min_scale | number | Minimum scale factor |
+| max_scale | number | Maximum scale factor |
+
+Returns: `{scale = number}`
+
+### animation.pulse(id, speed)
+
+Pulse effect, quickly enlarges then restores.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| speed | number | Pulse speed |
+
+Returns: `{scale = number}`
+
+### animation.fly(id, duration, from_x, from_y, to_x, to_y)
+
+Fly in/out displacement animation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| duration | number | Animation duration (seconds) |
+| from_x | number | Start X position |
+| from_y | number | Start Y position |
+| to_x | number | End X position |
+| to_y | number | End Y position |
+
+Returns: `{x = number, y = number, progress = number}`
+
+### animation.color(id, duration, from_color, to_color)
+
+Color gradient animation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| duration | number | One cycle duration (seconds) |
+| from_color | string | Start color (hex, e.g. "FF0000") |
+| to_color | string | End color (hex, e.g. "00FF00") |
+
+Returns: `{color = "RRGGBB"}`
+
+### animation.bounce(id, height, speed)
+
+Bounce effect.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| height | number | Bounce height (pixels) |
+| speed | number | Bounce speed |
+
+Returns: `{y = number}`
+
+### animation.typewriter(id, text, char_delay)
+
+Typewriter effect, reveals text character by character.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Unique animation instance identifier |
+| text | string | Full text to display |
+| char_delay | number | Delay per character (seconds) |
+
+Returns: `{text = string, done = boolean}`
+
+### animation.reset(id)
+
+Reset the specified animation to its initial state.
+
+```lua
+animation.reset("my_blink")
+```
+
+### Full Example
+
+```lua
+local blink = animation.blink("alert", 0.5)
+local fade = animation.fade("title", 2.0, 100, 255)
+local fly = animation.fly("entry", 1.0, -200, 0, 0, 0)
+
+dialog({
+    width = 400,
+    height = 300,
+    render = function()
+        local items = {}
+        if blink.visible then
+            table.insert(items, {
+                type = "label",
+                text = "⚠ Warning",
+                color = "FF0000",
+                alpha = fade.alpha,
+                x = fly.x, y = fly.y
+            })
+        end
+        return items
+    end
+})
+```
