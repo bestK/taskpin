@@ -8,6 +8,7 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <windowsx.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
