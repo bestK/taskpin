@@ -1306,6 +1306,123 @@ static int l_set_bar_lua(lua_State *ls) {
     return 0;
 }
 
+/* --- sys.get_config / sys.set_config --- */
+
+static int find_current_item(void) {
+    for (int i = 0; i < g_cfg.count; i++) {
+        if (lstrcmpiW(g_cfg.items[i].lua_path, g_current_lua_path) == 0)
+            return i;
+    }
+    return -1;
+}
+
+static int l_get_self_conf(lua_State *ls) {
+    int idx = find_current_item();
+    if (idx < 0) { lua_pushnil(ls); return 1; }
+    PinItem *it = &g_cfg.items[idx];
+
+    lua_newtable(ls);
+
+    char buf[CFG_MAX_NAME];
+    WideCharToMultiByte(CP_UTF8, 0, it->name, -1, buf, sizeof(buf), NULL, NULL);
+    lua_pushstring(ls, buf);
+    lua_setfield(ls, -2, "name");
+
+    lua_pushinteger(ls, (lua_Integer)it->interval_ms);
+    lua_setfield(ls, -2, "interval");
+
+    lua_pushboolean(ls, it->pinned);
+    lua_setfield(ls, -2, "pinned");
+
+    lua_pushinteger(ls, it->bar_width);
+    lua_setfield(ls, -2, "bar_width");
+
+    lua_pushboolean(ls, it->realtime);
+    lua_setfield(ls, -2, "realtime");
+
+    lua_pushinteger(ls, it->bar_x);
+    lua_setfield(ls, -2, "bar_x");
+
+    lua_pushinteger(ls, it->bar_y);
+    lua_setfield(ls, -2, "bar_y");
+
+    /* params as key-value table */
+    lua_newtable(ls);
+    for (int i = 0; i < it->param_count; i++) {
+        if (it->params[i].key[0]) {
+            char k8[CFG_MAX_PARAM_KEY], v8[CFG_MAX_PARAM_VAL];
+            WideCharToMultiByte(CP_UTF8, 0, it->params[i].key, -1, k8, sizeof(k8), NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, it->params[i].value, -1, v8, sizeof(v8), NULL, NULL);
+            lua_pushstring(ls, v8);
+            lua_setfield(ls, -2, k8);
+        }
+    }
+    lua_setfield(ls, -2, "params");
+
+    return 1;
+}
+
+static int l_set_self_conf(lua_State *ls) {
+    luaL_checktype(ls, 1, LUA_TTABLE);
+    int idx = find_current_item();
+    if (idx < 0) { lua_pushboolean(ls, FALSE); return 1; }
+    PinItem *it = &g_cfg.items[idx];
+
+    lua_getfield(ls, 1, "name");
+    if (!lua_isnil(ls, -1)) {
+        const char *s = lua_tostring(ls, -1);
+        if (s) MultiByteToWideChar(CP_UTF8, 0, s, -1, it->name, CFG_MAX_NAME);
+    }
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "interval");
+    if (!lua_isnil(ls, -1)) it->interval_ms = (DWORD)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "pinned");
+    if (!lua_isnil(ls, -1)) it->pinned = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "bar_width");
+    if (!lua_isnil(ls, -1)) it->bar_width = (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "realtime");
+    if (!lua_isnil(ls, -1)) it->realtime = lua_toboolean(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "bar_x");
+    if (!lua_isnil(ls, -1)) it->bar_x = (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "bar_y");
+    if (!lua_isnil(ls, -1)) it->bar_y = (int)lua_tointeger(ls, -1);
+    lua_pop(ls, 1);
+
+    lua_getfield(ls, 1, "params");
+    if (lua_istable(ls, -1)) {
+        it->param_count = 0;
+        lua_pushnil(ls);
+        while (lua_next(ls, -2) != 0 && it->param_count < CFG_MAX_PARAMS) {
+            const char *k = lua_tostring(ls, -2);
+            const char *v = lua_tostring(ls, -1);
+            if (k && v) {
+                MultiByteToWideChar(CP_UTF8, 0, k, -1,
+                    it->params[it->param_count].key, CFG_MAX_PARAM_KEY);
+                MultiByteToWideChar(CP_UTF8, 0, v, -1,
+                    it->params[it->param_count].value, CFG_MAX_PARAM_VAL);
+                it->param_count++;
+            }
+            lua_pop(ls, 1);
+        }
+    }
+    lua_pop(ls, 1);
+
+    config_save(&g_cfg);
+    lua_pushboolean(ls, TRUE);
+    return 1;
+}
+
 /* --- Animation Lua bindings (anim.*) --- */
 
 #define ANIM_REGISTRY_KEY "taskpin_anim_starts"
@@ -1766,12 +1883,16 @@ void script_init(void) {
     /* Register sys.* system info API */
     sysinfo_register_lua(L);
 
-    /* Append set_bar_text/set_bar_lua to sys table */
+    /* Append set_bar_text/set_bar_lua/get_config/set_config to sys table */
     lua_getglobal(L, "sys");
     lua_pushcfunction(L, l_set_bar_text);
     lua_setfield(L, -2, "set_bar_text");
     lua_pushcfunction(L, l_set_bar_lua);
     lua_setfield(L, -2, "set_bar_lua");
+    lua_pushcfunction(L, l_get_self_conf);
+    lua_setfield(L, -2, "get_self_conf");
+    lua_pushcfunction(L, l_set_self_conf);
+    lua_setfield(L, -2, "set_self_conf");
     lua_pop(L, 1);
 
     /* Register websocket API */
