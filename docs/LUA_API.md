@@ -1455,6 +1455,62 @@ taskpin.sys.set_bar_text("BTC: $68,000")
 
 ---
 
+## sys.get_self_conf / sys.set_self_conf
+
+### sys.get_self_conf()
+
+获取当前脚本自身的配置信息，返回一个 table。
+
+```lua
+local conf = sys.get_self_conf()
+print(conf.name)       -- 脚本显示名称
+print(conf.interval)   -- 刷新间隔 (ms)
+print(conf.pinned)     -- 是否固定显示
+print(conf.bar_width)  -- bar 宽度 (0=默认)
+print(conf.realtime)   -- 是否实时模式
+print(conf.bar_x)      -- bar x 坐标 (-1=自动)
+print(conf.bar_y)      -- bar y 坐标 (-1=自动)
+print(conf.params.key) -- @param 参数值
+```
+
+**返回字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | string | 脚本显示名称 |
+| interval | number | 刷新间隔（毫秒） |
+| pinned | boolean | 是否固定在 taskbar |
+| bar_width | number | bar 宽度，0 表示使用全局默认 |
+| realtime | boolean | 是否为实时模式 |
+| bar_x | number | bar x 坐标，-1 表示自动 |
+| bar_y | number | bar y 坐标，-1 表示自动 |
+| params | table | @param 声明的键值对 |
+
+### sys.set_self_conf(table)
+
+更新当前脚本自身的配置并持久化保存。只需传入要修改的字段，未传入的字段保持不变。
+
+```lua
+-- 修改刷新间隔为 5 秒
+sys.set_self_conf({ interval = 5000 })
+
+-- 修改多个字段
+sys.set_self_conf({
+    name = "我的脚本",
+    bar_width = 200,
+    pinned = true
+})
+
+-- 更新 params
+sys.set_self_conf({
+    params = { city = "shanghai", unit = "metric" }
+})
+```
+
+**返回值：** `true` 成功，`false` 失败（未找到当前脚本配置）。
+
+---
+
 ## 动画特效模块 (animation.*)
 
 提供多种动画效果函数，可作用于文字、图片等 dialog 元素。所有动画函数返回一个 table，包含当前帧的动画状态值。

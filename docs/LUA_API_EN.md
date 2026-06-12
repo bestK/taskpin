@@ -1186,6 +1186,62 @@ taskpin.sys.set_bar_text("BTC: $68,000")
 
 ---
 
+## sys.get_self_conf / sys.set_self_conf
+
+### sys.get_self_conf()
+
+Get the current script's own configuration. Returns a table.
+
+```lua
+local conf = sys.get_self_conf()
+print(conf.name)       -- display name
+print(conf.interval)   -- refresh interval (ms)
+print(conf.pinned)     -- whether pinned to taskbar
+print(conf.bar_width)  -- bar width (0=default)
+print(conf.realtime)   -- realtime mode
+print(conf.bar_x)      -- bar x position (-1=auto)
+print(conf.bar_y)      -- bar y position (-1=auto)
+print(conf.params.key) -- @param values
+```
+
+**Return fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| name | string | Script display name |
+| interval | number | Refresh interval in milliseconds |
+| pinned | boolean | Whether pinned to taskbar |
+| bar_width | number | Bar width, 0 for global default |
+| realtime | boolean | Whether in realtime mode |
+| bar_x | number | Bar x position, -1 for auto |
+| bar_y | number | Bar y position, -1 for auto |
+| params | table | Key-value pairs from @param declarations |
+
+### sys.set_self_conf(table)
+
+Update the current script's configuration and persist to disk. Only pass fields you want to change; unspecified fields remain unchanged.
+
+```lua
+-- Change refresh interval to 5 seconds
+sys.set_self_conf({ interval = 5000 })
+
+-- Update multiple fields
+sys.set_self_conf({
+    name = "My Script",
+    bar_width = 200,
+    pinned = true
+})
+
+-- Update params
+sys.set_self_conf({
+    params = { city = "shanghai", unit = "metric" }
+})
+```
+
+**Returns:** `true` on success, `false` if the current script's config item was not found.
+
+---
+
 ## Animation Module (animation.*)
 
 Provides multiple animation effect functions for dialog elements (text, images, etc.). All animation functions return a table containing the current frame's animation state.
