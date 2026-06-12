@@ -675,13 +675,11 @@ static void refresh_dialog(HWND hwnd, ScriptDialogState *state) {
     if (result->click_action == CLICK_DIALOG) {
         if (result->dialog.item_count > 0) {
             RECT wr; GetWindowRect(hwnd, &wr);
-            logger_write(LOG_INFO, "refresh_dialog: before memcpy, window at %d,%d, script spec x=%d y=%d",
-                wr.left, wr.top, result->dialog.x, result->dialog.y);
             memcpy(&state->spec, &result->dialog, sizeof(DialogSpec));
             state->spec.x = wr.left;
             state->spec.y = wr.top;
         }
-        InvalidateRect(hwnd, NULL, TRUE);
+        InvalidateRect(hwnd, NULL, FALSE);
     }
     HeapFree(GetProcessHeap(), 0, result);
 }
@@ -780,11 +778,25 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         return 0;
     }
 
+    case WM_ERASEBKGND:
+        return 1;
+
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
         if (state) {
-            paint_dialog(hwnd, hdc, state);
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            int cw = rc.right - rc.left;
+            int ch = rc.bottom - rc.top;
+            HDC memdc = CreateCompatibleDC(hdc);
+            HBITMAP membmp = CreateCompatibleBitmap(hdc, cw, ch);
+            HBITMAP oldbmp = (HBITMAP)SelectObject(memdc, membmp);
+            paint_dialog(hwnd, memdc, state);
+            BitBlt(hdc, 0, 0, cw, ch, memdc, 0, 0, SRCCOPY);
+            SelectObject(memdc, oldbmp);
+            DeleteObject(membmp);
+            DeleteDC(memdc);
             update_scrollbar(hwnd, state);
         }
         EndPaint(hwnd, &ps);
@@ -1083,7 +1095,6 @@ static LRESULT CALLBACK dialog_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             RECT wr; GetWindowRect(hwnd, &wr);
             state->spec.x = wr.left;
             state->spec.y = wr.top;
-            logger_write(LOG_INFO, "WM_MOVE: spec updated to %d,%d", wr.left, wr.top);
         }
         return 0;
 
