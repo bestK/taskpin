@@ -1956,8 +1956,19 @@ BOOL script_exec(const char *lua_code, const char *response_raw, ScriptResult *r
 
     /* Wrap code so multiple return values work */
     char wrapped[4096];
-    snprintf(wrapped, sizeof(wrapped),
-        "return (function()\n%s\nend)()", lua_code);
+    /* In Lua 5.4, function calls used as statements discard return values,
+       so we need an explicit "return" inside the wrapper function */
+    const char *p = lua_code;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    BOOL has_return = (strncmp(p, "return", 6) == 0 &&
+        (p[6] == ' ' || p[6] == '\t' || p[6] == '\n' || p[6] == '\r' || p[6] == '\0' || p[6] == ';'));
+    if (has_return) {
+        snprintf(wrapped, sizeof(wrapped),
+            "return (function()\n%s\nend)()", lua_code);
+    } else {
+        snprintf(wrapped, sizeof(wrapped),
+            "return (function()\nreturn %s\nend)()", lua_code);
+    }
 
     if (luaL_dostring(L, wrapped) != LUA_OK) {
         const char *err = lua_tostring(L, -1);

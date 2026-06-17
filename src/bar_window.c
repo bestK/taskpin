@@ -597,17 +597,31 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     char lua_code[CFG_MAX_EXPR * 3];
                     WideCharToMultiByte(CP_UTF8, 0, it->field_expr, -1,
                         lua_code, sizeof(lua_code), NULL, NULL);
-                    if (script_exec(lua_code, ctx->result, &bar->script_result)) {
-                        lstrcpynW(bar->display, bar->script_result.display, FETCH_BUF_SIZE);
-                        bar->rich = bar->script_result.rich;
-                        handled = TRUE;
-                    } else {
-                        extract_fields(ctx->result, it->field_expr, bar->display, FETCH_BUF_SIZE);
-                        bar->rich.count = 0;
-                        bar->script_result.clickable = it->click_enabled;
-                        if (it->click_enabled)
-                            extract_fields(ctx->result, it->click_url, bar->script_result.click_url, 1024);
-                        handled = TRUE;
+                    /* Try DeepSeek-style: substitute $.path with JSON values, then run Lua */
+                    if (strstr(lua_code, "$.")) {
+                        WCHAR substituted[FETCH_BUF_SIZE];
+                        extract_fields(ctx->result, it->field_expr, substituted, FETCH_BUF_SIZE);
+                        char sub8[CFG_MAX_EXPR * 3];
+                        WideCharToMultiByte(CP_UTF8, 0, substituted, -1, sub8, sizeof(sub8), NULL, NULL);
+                        if (script_exec(sub8, ctx->result, &bar->script_result)) {
+                            lstrcpynW(bar->display, bar->script_result.display, FETCH_BUF_SIZE);
+                            bar->rich = bar->script_result.rich;
+                            handled = TRUE;
+                        }
+                    }
+                    if (!handled) {
+                        if (script_exec(lua_code, ctx->result, &bar->script_result)) {
+                            lstrcpynW(bar->display, bar->script_result.display, FETCH_BUF_SIZE);
+                            bar->rich = bar->script_result.rich;
+                            handled = TRUE;
+                        } else {
+                            extract_fields(ctx->result, it->field_expr, bar->display, FETCH_BUF_SIZE);
+                            bar->rich.count = 0;
+                            bar->script_result.clickable = it->click_enabled;
+                            if (it->click_enabled)
+                                extract_fields(ctx->result, it->click_url, bar->script_result.click_url, 1024);
+                            handled = TRUE;
+                        }
                     }
                 }
             }

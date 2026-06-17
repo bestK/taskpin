@@ -486,11 +486,7 @@ static void edit_load_response(EditDlgState *st) {
         }
     }
 
-    WCHAR expr[CFG_MAX_EXPR];
-    GetWindowTextW(st->hExpr, expr, CFG_MAX_EXPR);
-    WCHAR preview[FETCH_BUF_SIZE];
-    extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
-    SetWindowTextW(st->hPreview, preview);
+    edit_update_preview(st);
 }
 
 static void edit_update_preview(EditDlgState *st) {
@@ -506,10 +502,24 @@ static void edit_update_preview(EditDlgState *st) {
         ScriptResult *sr = (ScriptResult *)HeapAlloc(
             GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ScriptResult));
         if (sr) {
-            if (script_exec(lua_code, st->cached_response, sr)) {
-                lstrcpynW(preview, sr->display, FETCH_BUF_SIZE);
-            } else {
-                extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+            BOOL handled = FALSE;
+            /* Try DeepSeek-style: substitute $.path with JSON values, then run Lua */
+            if (strstr(lua_code, "$.")) {
+                WCHAR substituted[FETCH_BUF_SIZE];
+                extract_fields(st->cached_response, expr, substituted, FETCH_BUF_SIZE);
+                char sub8[CFG_MAX_EXPR * 3];
+                WideCharToMultiByte(CP_UTF8, 0, substituted, -1, sub8, sizeof(sub8), NULL, NULL);
+                if (script_exec(sub8, st->cached_response, sr)) {
+                    lstrcpynW(preview, sr->display, FETCH_BUF_SIZE);
+                    handled = TRUE;
+                }
+            }
+            if (!handled) {
+                if (script_exec(lua_code, st->cached_response, sr)) {
+                    lstrcpynW(preview, sr->display, FETCH_BUF_SIZE);
+                } else {
+                    extract_fields(st->cached_response, expr, preview, FETCH_BUF_SIZE);
+                }
             }
             HeapFree(GetProcessHeap(), 0, sr);
         }

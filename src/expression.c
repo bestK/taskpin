@@ -1,6 +1,13 @@
 #include "ui.h"
 #include "cjson_utils.h"
 
+static int is_dollar_path_char(char c) {
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') ||
+           c == '_' || c == '.' || c == '[' || c == ']';
+}
+
 void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size) {
     out[0] = L'\0';
     if (!expr || !expr[0]) {
@@ -21,8 +28,7 @@ void extract_fields(const char *raw, const WCHAR *expr, WCHAR *out, int out_size
         if (*p == '$' && *(p + 1) == '.') {
             const char *start = p;
             p += 2;
-            while (*p && *p != ' ' && *p != '\t' && *p != ',' &&
-                   *p != '\n' && *p != '\r') p++;
+            while (*p && is_dollar_path_char(*p)) p++;
             int pathlen = (int)(p - start);
             char path[512];
             if (pathlen >= 512) pathlen = 511;
