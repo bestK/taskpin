@@ -1350,7 +1350,7 @@ static int l_get_self_conf(lua_State *ls) {
     lua_newtable(ls);
     for (int i = 0; i < it->param_count; i++) {
         if (it->params[i].key[0]) {
-            char k8[CFG_MAX_PARAM_KEY], v8[CFG_MAX_PARAM_VAL];
+            char k8[CFG_MAX_PARAM_KEY], v8[CFG_MAX_PARAM_VAL * 3];
             WideCharToMultiByte(CP_UTF8, 0, it->params[i].key, -1, k8, sizeof(k8), NULL, NULL);
             WideCharToMultiByte(CP_UTF8, 0, it->params[i].value, -1, v8, sizeof(v8), NULL, NULL);
             lua_pushstring(ls, v8);
@@ -2089,7 +2089,7 @@ static BOOL script_exec_file_ex(const WCHAR *lua_path, const ParamEntry *params,
     lua_newtable(L);
     for (int i = 0; i < param_count; i++) {
         if (params[i].key[0]) {
-            char k8[CFG_MAX_PARAM_KEY], v8[CFG_MAX_PARAM_VAL];
+            char k8[CFG_MAX_PARAM_KEY], v8[CFG_MAX_PARAM_VAL * 3];
             WideCharToMultiByte(CP_UTF8, 0, params[i].key, -1, k8, sizeof(k8), NULL, NULL);
             WideCharToMultiByte(CP_UTF8, 0, params[i].value, -1, v8, sizeof(v8), NULL, NULL);
             lua_pushstring(L, v8);

@@ -310,6 +310,10 @@ static void config_load_ini(TaskPinConfig *cfg) {
 
 void config_load(TaskPinConfig *cfg) {
     memset(cfg, 0, sizeof(TaskPinConfig));
+    for (int i = 0; i < CFG_MAX_ITEMS; i++) {
+        cfg->items[i].dlg_x = -1;
+        cfg->items[i].dlg_y = -1;
+    }
 
     /* Try config.json first */
     WCHAR json_path[CFG_MAX_PATH];
