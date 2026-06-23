@@ -63,12 +63,12 @@ if billing then
     local plan = sub.planName or "未知"
     local state = sub.status or "unknown"
     local limit = (win.limitMicros or 0) / 1000000
-    local used = (win.usedMicros or 0) / 1000000
+    local left = (win.leftMicros or 0) / 1000000
     local percent = 0
-    if limit > 0 then percent = used * 100 / limit end
+    if limit > 0 then percent = left * 100 / limit end
     local bcolor = "#4CAF50"
     if state ~= "active" then bcolor = "#F44336"
-    elseif percent >= 90 then bcolor = "#FF9800" end
+    elseif percent <= 10 then bcolor = "#FF9800" end
     bar_parts[#bar_parts + 1] = font(string.format("%s %.1f%%", plan, percent), bcolor, 9)
 else
     bar_parts[#bar_parts + 1] = font("计费: 请求失败", "#F44336", 9)
