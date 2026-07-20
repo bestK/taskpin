@@ -37,24 +37,28 @@ struct ItemsListView: View {
 
     private var listContent: some View {
         VStack(spacing: 0) {
+            listHeader
+
             if configManager.config.items.isEmpty {
-                emptyView
+                EmptyState(
+                    icon: "square.stack.3d.up.slash",
+                    title: "No signals yet",
+                    message: "Add a Lua script or URL endpoint to pin live data to the menu bar.",
+                    actionTitle: "New signal",
+                    action: { startAdd() }
+                )
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(spacing: 6) {
+                    LazyVStack(spacing: TP.sSM) {
                         ForEach(configManager.config.items) { item in
                             itemRow(item)
-                                .transition(.asymmetric(
-                                    insertion: .scale(scale: 0.95).combined(with: .opacity),
-                                    removal: .scale(scale: 0.95).combined(with: .opacity)
-                                ))
                         }
                     }
-                    .padding(12)
+                    .padding(TP.sLG)
                 }
             }
 
-            Divider().opacity(0.5)
+            Rectangle().fill(TP.surfacePressed).frame(height: 1)
             bottomToolbar
         }
         .alert("Delete \"\(itemToDelete?.name ?? "")\"?", isPresented: $showDeleteAlert) {
@@ -73,56 +77,81 @@ struct ItemsListView: View {
         }
     }
 
-    private func itemRow(_ item: PinItem) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: item.type == .lua ? "puzzlepiece.fill" : "globe")
-                .font(.system(size: 14))
-                .foregroundColor(item.pinned ? .primary : .secondary)
-                .frame(width: 24)
+    private var listHeader: some View {
+        HStack {
+            SectionLabel(text: "All signals")
+            Spacer()
+            Text("\(configManager.config.items.count)")
+                .font(.tpBody(12, weight: .medium))
+                .foregroundColor(TP.ink)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(TP.canvasSoft)
+                .clipShape(Capsule())
+        }
+        .padding(.horizontal, TP.sLG)
+        .padding(.top, TP.sLG)
+        .padding(.bottom, TP.sSM)
+    }
 
-            VStack(alignment: .leading, spacing: 3) {
+    private func itemRow(_ item: PinItem) -> some View {
+        HStack(spacing: TP.sMD) {
+            // Left accent bar for pinned
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(item.pinned ? TP.primary : TP.mute)
+                .frame(width: 3, height: 36)
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(item.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.tpBody(13, weight: .medium))
+                    .foregroundColor(TP.ink)
                     .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    Label(item.type == .lua ? "Lua" : "URL", systemImage: item.type == .lua ? "doc" : "link")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                HStack(spacing: TP.sSM) {
+                    Chip(
+                        text: item.type == .lua ? "Lua" : "URL",
+                        active: false,
+                        icon: item.type == .lua ? "doc.text" : "link"
+                    )
 
-                    Label("\(item.intervalMs / 1000)s", systemImage: "clock")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                    Text("\(item.intervalMs / 1000)s")
+                        .font(.tpCaption(11))
+                        .foregroundColor(TP.body)
 
                     if let state = projectManager.itemStates[item.id] {
                         if let err = state.lastError {
-                            Label(err, systemImage: "exclamationmark.triangle")
-                                .font(.system(size: 9))
-                                .foregroundColor(.orange)
+                            Text(err)
+                                .font(.tpCaption(11))
+                                .foregroundColor(TP.danger)
+                                .lineLimit(1)
                         } else if !state.statusText.isEmpty {
                             Text(state.statusText)
-                                .font(.system(size: 9))
-                                .foregroundColor(state.statusColor)
+                                .font(.tpCaption(11))
+                                .foregroundColor(TP.body)
                                 .lineLimit(1)
                         }
                     }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            Toggle("", isOn: Binding(
-                get: { item.pinned },
-                set: { newVal in
-                    var updated = item
-                    updated.pinned = newVal
-                    configManager.updateItem(updated)
-                    projectManager.restartAll()
-                }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .labelsHidden()
+            // Pin toggle as pill
+            Button {
+                var updated = item
+                updated.pinned.toggle()
+                configManager.updateItem(updated)
+                projectManager.restartAll()
+            } label: {
+                Text(item.pinned ? "Live" : "Idle")
+                    .font(.tpBody(11, weight: .medium))
+                    .foregroundColor(item.pinned ? TP.onPrimary : TP.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(item.pinned ? TP.primary : TP.canvasSoft)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -130,9 +159,12 @@ struct ItemsListView: View {
                     isAdding = false
                 }
             } label: {
-                Image(systemName: "pencil.circle")
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                Image(systemName: "pencil")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TP.ink)
+                    .frame(width: 28, height: 28)
+                    .background(TP.canvasSoft)
+                    .clipShape(Circle())
             }
             .buttonStyle(.plain)
 
@@ -140,23 +172,25 @@ struct ItemsListView: View {
                 itemToDelete = item
                 showDeleteAlert = true
             } label: {
-                Image(systemName: "trash.circle")
-                    .font(.system(size: 14))
-                    .foregroundColor(.red.opacity(0.6))
+                Image(systemName: "trash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TP.danger)
+                    .frame(width: 28, height: 28)
+                    .background(TP.dangerSoft)
+                    .clipShape(Circle())
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, TP.sMD)
+        .padding(.vertical, TP.sMD)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(hoveredId == item.id ? Color.primary.opacity(0.08) : Color.primary.opacity(0.03))
+            RoundedRectangle(cornerRadius: TP.radiusXL, style: .continuous)
+                .fill(hoveredId == item.id ? TP.canvasSofter : TP.canvas)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.primary.opacity(hoveredId == item.id ? 0.1 : 0.05), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: TP.radiusXL, style: .continuous)
+                .stroke(TP.surfacePressed, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
         .onHover { isHovered in
             withAnimation(.easeInOut(duration: 0.1)) {
                 hoveredId = isHovered ? item.id : nil
@@ -166,65 +200,27 @@ struct ItemsListView: View {
     }
 
     private var bottomToolbar: some View {
-        HStack(spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    editingItem = PinItem()
-                    isAdding = true
-                }
-            } label: {
-                Label("Add Item", systemImage: "plus.circle.fill")
-                    .font(.system(size: 11, weight: .medium))
+        HStack(spacing: TP.sMD) {
+            PillButton(title: "New signal", icon: "plus", kind: .primary, compact: true) {
+                startAdd()
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.primary)
 
             Spacer()
 
-            let pinnedCount = configManager.config.items.filter { $0.pinned }.count
-            Text("\(configManager.config.items.count) items, \(pinnedCount) pinned")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+            let pinnedCount = configManager.config.items.filter(\.pinned).count
+            Text("\(configManager.config.items.count) total · \(pinnedCount) live")
+                .font(.tpCaption(11))
+                .foregroundColor(TP.body)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, TP.sLG)
+        .padding(.vertical, TP.sMD)
+        .background(TP.canvas)
     }
 
-    private var emptyView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "tray.2")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.linearGradient(
-                    colors: [.accentColor.opacity(0.6), .purple.opacity(0.4)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                ))
-
-            VStack(spacing: 4) {
-                Text("No Items Yet")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.primary.opacity(0.8))
-                Text("Add a Lua script or URL to monitor")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    editingItem = PinItem()
-                    isAdding = true
-                }
-            } label: {
-                Label("Create First Item", systemImage: "plus")
-                    .font(.system(size: 11, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Color.accentColor.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.primary)
+    private func startAdd() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            editingItem = PinItem()
+            isAdding = true
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-

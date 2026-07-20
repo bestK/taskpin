@@ -31,18 +31,20 @@ struct TaskPinApp: App {
         _ = SharedState.shared
     }
 
-    enum AppTab: String, CaseIterable {
+    enum AppTab: String, CaseIterable, Hashable, Identifiable {
         case status = "Status"
         case items = "Items"
-        case settings = "Settings"
         case market = "Market"
+        case settings = "Settings"
+
+        var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .status: return "gauge.open.with.lines.needle.33percent"
-            case .items: return "list.bullet.rectangle"
-            case .settings: return "gearshape"
+            case .status: return "dot.radiowaves.left.and.right"
+            case .items: return "square.stack.3d.up"
             case .market: return "bag"
+            case .settings: return "slider.horizontal.3"
             }
         }
     }
@@ -52,8 +54,12 @@ struct TaskPinApp: App {
     var body: some Scene {
         MenuBarExtra {
             VStack(spacing: 0) {
+                header
                 tabBar
-                Divider().opacity(0.5)
+                Rectangle()
+                    .fill(TP.surfacePressed)
+                    .frame(height: 1)
+
                 Group {
                     switch selectedTab {
                     case .status:
@@ -68,46 +74,79 @@ struct TaskPinApp: App {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(width: 440, height: 520)
-            .background(.ultraThinMaterial)
+            .frame(width: 460, height: 560)
+            .background(TP.canvas)
         } label: {
             Image(systemName: "pin.fill")
-                .font(.system(size: 11))
+                .font(.system(size: 11, weight: .semibold))
         }
         .menuBarExtraStyle(.window)
     }
 
-    @State private var hoveredTab: AppTab? = nil
+    private var header: some View {
+        HStack(spacing: TP.sMD) {
+            ZStack {
+                RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous)
+                    .fill(TP.primary)
+                    .frame(width: 28, height: 28)
+                Text("TP")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(TP.onPrimary)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("TaskPin")
+                    .font(.tpDisplay(15))
+                    .foregroundColor(TP.ink)
+                Text("Pin live signals to your menu bar")
+                    .font(.tpCaption(11))
+                    .foregroundColor(TP.body)
+            }
+
+            Spacer()
+
+            let live = state.configManager.config.items.filter(\.pinned).count
+            Chip(text: "\(live) live", active: live > 0, icon: live > 0 ? "circle.fill" : nil)
+        }
+        .padding(.horizontal, TP.sLG)
+        .padding(.top, TP.sLG)
+        .padding(.bottom, TP.sSM)
+    }
 
     private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(AppTab.allCases, id: \.self) { tab in
-                let isSelected = selectedTab == tab
-                let isHovered = hoveredTab == tab
-
-                VStack(spacing: 3) {
-                    Image(systemName: tab.icon)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    Text(tab.rawValue)
-                        .font(.system(size: 9, weight: isSelected ? .medium : .regular))
-                }
-                .foregroundColor(isSelected ? .primary : (isHovered ? .primary : .secondary))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.primary.opacity(0.1) : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8))
-                .onTapGesture { selectedTab = tab }
-                .onHover { h in
-                    withAnimation(.easeInOut(duration: 0.1)) { hoveredTab = h ? tab : nil }
-                    if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                }
+        HStack(spacing: TP.sXS) {
+            ForEach(AppTab.allCases) { tab in
+                tabButton(tab)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.horizontal, TP.sLG)
+        .padding(.bottom, TP.sMD)
+    }
+
+    private func tabButton(_ tab: AppTab) -> some View {
+        let selected = selectedTab == tab
+        return Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedTab = tab
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                Text(tab.rawValue)
+                    .font(.tpBody(12, weight: selected ? .medium : .regular))
+            }
+            .foregroundColor(selected ? TP.onPrimary : TP.ink)
+            .padding(.horizontal, TP.sMD)
+            .padding(.vertical, TP.sSM)
+            .frame(maxWidth: .infinity)
+            .background(selected ? TP.primary : TP.canvasSoft)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 }

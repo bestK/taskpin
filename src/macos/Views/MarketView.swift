@@ -18,9 +18,13 @@ struct MarketView: View {
     @State private var selectedSourceIndex: Int = 0
     @State private var newSource = ""
     @State private var searchText = ""
+
     private var filteredPlugins: [PluginInfo] {
         if searchText.isEmpty { return plugins }
-        return plugins.filter { $0.name.localizedCaseInsensitiveContains(searchText) || $0.description.localizedCaseInsensitiveContains(searchText) }
+        return plugins.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+                || $0.description.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     private func isInstalled(_ plugin: PluginInfo) -> Bool {
@@ -31,77 +35,114 @@ struct MarketView: View {
     var body: some View {
         VStack(spacing: 0) {
             sourceBar
-            Divider().opacity(0.5)
+            Rectangle().fill(TP.surfacePressed).frame(height: 1)
             searchBar
-            Divider().opacity(0.3)
+            Rectangle().fill(TP.surfacePressed.opacity(0.6)).frame(height: 1)
             contentArea
-            if !status.isEmpty { statusBar }
+            if !status.isEmpty {
+                Rectangle().fill(TP.surfacePressed).frame(height: 1)
+                statusBar
+            }
         }
+        .background(TP.canvas)
         .onAppear { fetchPlugins() }
     }
 
     private var sourceBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: TP.sSM) {
             if !configManager.config.sources.isEmpty {
                 Picker("", selection: $selectedSourceIndex) {
                     ForEach(Array(configManager.config.sources.enumerated()), id: \.offset) { idx, src in
                         Text(src).tag(idx)
                     }
                 }
-                .frame(maxWidth: 160).controlSize(.small).labelsHidden()
+                .frame(maxWidth: 170)
+                .controlSize(.small)
+                .labelsHidden()
                 .onChange(of: selectedSourceIndex) { fetchPlugins() }
             }
 
-            TextField("user/repo", text: $newSource)
-                .textFieldStyle(.plain)
-                .font(.system(size: 10))
-                .padding(.horizontal, 6).padding(.vertical, 3)
-                .background(Color.black.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .frame(maxWidth: 120)
+            SoftField(placeholder: "user/repo", text: $newSource)
+                .frame(maxWidth: 130)
                 .onSubmit { addSource() }
 
-            Button { addSource() } label: { Image(systemName: "plus.circle.fill").font(.system(size: 12)) }
-                .buttonStyle(.plain).foregroundColor(.accentColor).disabled(newSource.isEmpty)
+            Button { addSource() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(TP.onPrimary)
+                    .frame(width: 28, height: 28)
+                    .background(newSource.isEmpty ? TP.mute : TP.primary)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(newSource.isEmpty)
 
             if !configManager.config.sources.isEmpty {
-                Button { removeSource() } label: { Image(systemName: "minus.circle").font(.system(size: 12)) }
-                    .buttonStyle(.plain).foregroundColor(.red.opacity(0.7))
+                Button { removeSource() } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(TP.ink)
+                        .frame(width: 28, height: 28)
+                        .background(TP.canvasSoft)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
             }
 
             Spacer()
 
-            if loading { ProgressView().controlSize(.small) }
-            Button { fetchPlugins() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }
-                .buttonStyle(.plain).foregroundColor(.secondary).disabled(loading)
+            if loading {
+                ProgressView().controlSize(.small)
+            }
+
+            Button { fetchPlugins() } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TP.ink)
+                    .frame(width: 28, height: 28)
+                    .background(TP.canvasSoft)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(loading)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, TP.sLG)
+        .padding(.vertical, TP.sMD)
     }
 
     private var searchBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundColor(.secondary)
+        HStack(spacing: TP.sSM) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(TP.body)
             TextField("Search plugins...", text: $searchText)
-                .textFieldStyle(.plain).font(.system(size: 11))
+                .textFieldStyle(.plain)
+                .font(.tpBody(13))
+                .foregroundColor(TP.ink)
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, TP.sLG)
+        .padding(.vertical, TP.sMD)
+        .background(TP.canvasSoft.opacity(0.5))
     }
 
     private var contentArea: some View {
         Group {
             if filteredPlugins.isEmpty && !loading {
-                VStack(spacing: 12) {
-                    Image(systemName: "bag").font(.system(size: 32, weight: .light))
-                        .foregroundStyle(.linearGradient(colors: [.purple.opacity(0.5), .blue.opacity(0.4)], startPoint: .top, endPoint: .bottom))
-                    Text(plugins.isEmpty ? "No plugins loaded" : "No results")
-                        .font(.system(size: 12, weight: .medium)).foregroundColor(.secondary)
-                    Text("Select a source and refresh").font(.system(size: 10)).foregroundColor(.secondary.opacity(0.7))
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyState(
+                    icon: "bag",
+                    title: plugins.isEmpty ? "No plugins loaded" : "No results",
+                    message: plugins.isEmpty
+                        ? "Select a source and refresh to browse community scripts."
+                        : "Try a different search term."
+                )
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(spacing: 6) {
-                        ForEach(filteredPlugins) { plugin in pluginCard(plugin) }
-                    }.padding(12)
+                    LazyVStack(spacing: TP.sSM) {
+                        ForEach(filteredPlugins) { plugin in
+                            pluginCard(plugin)
+                        }
+                    }
+                    .padding(TP.sLG)
                 }
             }
         }
@@ -109,60 +150,93 @@ struct MarketView: View {
 
     private func pluginCard(_ plugin: PluginInfo) -> some View {
         let installed = isInstalled(plugin)
-        return HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.15))
-                .frame(width: 32, height: 32)
-                .overlay(Image(systemName: "puzzlepiece.fill").font(.system(size: 14)).foregroundColor(.accentColor.opacity(0.7)))
+        return HStack(spacing: TP.sMD) {
+            ZStack {
+                RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous)
+                    .fill(TP.primary)
+                    .frame(width: 36, height: 36)
+                Image(systemName: "puzzlepiece.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(TP.onPrimary)
+            }
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(plugin.name).font(.system(size: 12, weight: .medium))
-                    Text("v\(plugin.version)").font(.system(size: 9)).foregroundColor(.secondary)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.1)).clipShape(Capsule())
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(plugin.name)
+                        .font(.tpBody(13, weight: .medium))
+                        .foregroundColor(TP.ink)
+                    Text("v\(plugin.version)")
+                        .font(.tpCaption(10))
+                        .foregroundColor(TP.body)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(TP.canvasSoft)
+                        .clipShape(Capsule())
                 }
-                Text(plugin.description).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                Text(plugin.description)
+                    .font(.tpCaption(11))
+                    .foregroundColor(TP.body)
+                    .lineLimit(1)
                 if !plugin.author.isEmpty {
-                    Text("by \(plugin.author)").font(.system(size: 9)).foregroundColor(.secondary.opacity(0.7))
+                    Text("by \(plugin.author)")
+                        .font(.tpCaption(10))
+                        .foregroundColor(TP.mute)
                 }
             }
-            Spacer()
+
+            Spacer(minLength: 4)
 
             if installed {
-                Label("Installed", systemImage: "checkmark.circle.fill").font(.system(size: 10)).foregroundColor(.green)
+                Chip(text: "Installed", active: true, icon: "checkmark")
             } else {
-                Button("Install") { downloadPlugin(plugin) }.buttonStyle(.bordered).controlSize(.small)
+                PillButton(title: "Install", kind: .primary, compact: true) {
+                    downloadPlugin(plugin)
+                }
             }
         }
-        .padding(10)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        .padding(TP.sMD)
+        .background(TP.canvas)
+        .clipShape(RoundedRectangle(cornerRadius: TP.radiusXL, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TP.radiusXL, style: .continuous)
+                .stroke(TP.surfacePressed, lineWidth: 1)
+        )
     }
 
     @ViewBuilder
     private var statusBar: some View {
-        Divider().opacity(0.3)
-        Text(status).font(.system(size: 10)).foregroundColor(.secondary).padding(.horizontal, 12).padding(.vertical, 5)
+        Text(status)
+            .font(.tpCaption(11))
+            .foregroundColor(TP.body)
+            .padding(.horizontal, TP.sLG)
+            .padding(.vertical, TP.sSM)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(TP.canvasSoft.opacity(0.5))
     }
 
     private func addSource() {
         let src = newSource.trimmingCharacters(in: .whitespaces)
         guard !src.isEmpty, !configManager.config.sources.contains(src) else { return }
-        configManager.config.sources.append(src); configManager.save(); newSource = ""
-        selectedSourceIndex = configManager.config.sources.count - 1; fetchPlugins()
+        configManager.config.sources.append(src)
+        configManager.save()
+        newSource = ""
+        selectedSourceIndex = configManager.config.sources.count - 1
+        fetchPlugins()
     }
 
     private func removeSource() {
         guard selectedSourceIndex < configManager.config.sources.count else { return }
-        configManager.config.sources.remove(at: selectedSourceIndex); configManager.save()
+        configManager.config.sources.remove(at: selectedSourceIndex)
+        configManager.save()
         selectedSourceIndex = max(0, selectedSourceIndex - 1)
     }
 
     private func fetchPlugins() {
-        guard !configManager.config.sources.isEmpty, selectedSourceIndex < configManager.config.sources.count else { return }
+        guard !configManager.config.sources.isEmpty,
+              selectedSourceIndex < configManager.config.sources.count else { return }
         let source = configManager.config.sources[selectedSourceIndex]
-        loading = true; status = ""
+        loading = true
+        status = ""
 
         let useProxy = Locale.current.region?.identifier == "CN"
         let prefix = useProxy ? "https://gh-proxy.com/" : ""
@@ -179,8 +253,13 @@ struct MarketView: View {
             }
             let items = scripts.compactMap { s -> PluginInfo? in
                 guard let name = s["name"] as? String, let file = s["file"] as? String else { return nil }
-                return PluginInfo(name: name, file: file, description: s["description"] as? String ?? "",
-                                  author: s["author"] as? String ?? "", version: s["version"] as? String ?? "1.0")
+                return PluginInfo(
+                    name: name,
+                    file: file,
+                    description: s["description"] as? String ?? "",
+                    author: s["author"] as? String ?? "",
+                    version: s["version"] as? String ?? "1.0"
+                )
             }
             DispatchQueue.main.async { plugins = items }
         }.resume()
@@ -196,13 +275,19 @@ struct MarketView: View {
 
         status = "Downloading \(plugin.name)..."
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data = data else { DispatchQueue.main.async { status = "Download failed" }; return }
+            guard let data = data else {
+                DispatchQueue.main.async { status = "Download failed" }
+                return
+            }
             let dest = configManager.scriptsDir.appendingPathComponent(plugin.file)
             try? data.write(to: dest)
             DispatchQueue.main.async {
                 status = "Installed \(plugin.name)"
                 var newItem = PinItem()
-                newItem.type = .lua; newItem.name = plugin.name; newItem.luaPath = dest.path; newItem.pinned = true
+                newItem.type = .lua
+                newItem.name = plugin.name
+                newItem.luaPath = dest.path
+                newItem.pinned = true
                 configManager.addItem(newItem)
                 projectManager.startAll()
             }
