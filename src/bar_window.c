@@ -508,6 +508,5 @@ void bars_destroy_all(void) {
         }
     }
     g_bar_count = 0;
-    if (g_main_hwnd) DestroyWindow(g_main_hwnd);
     if (g_font) { DeleteObject(g_font); g_font = NULL; }
 }

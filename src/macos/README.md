@@ -32,6 +32,7 @@ src/macos/
 | 功能 | Windows (Win32) | macOS (SwiftUI) |
 |------|----------------|-----------------|
 | 显示位置 | 任务栏嵌入 | 菜单栏 (MenuBarExtra) |
+| 管理窗口 | Dear ImGui + DirectX 11 | SwiftUI |
 | 弹出面板 | GDI 自绘窗口 | NSPopover + SwiftUI |
 | HTTP | WinHTTP | URLSession |
 | 系统监控 | Win32 API | sysctl / IOKit |

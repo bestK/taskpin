@@ -141,37 +141,47 @@ struct LiveDialogPopoverView: View {
     var body: some View {
         let items = projectManager.itemStates[itemId]?.dialogItems ?? []
         ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: TP.sSM) {
                 ForEach(items) { item in
                     dialogItemView(item)
                 }
             }
-            .padding(14)
+            .padding(TP.sLG)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(TP.canvas)
     }
 
     @ViewBuilder
     private func dialogItemView(_ item: DialogItemModel) -> some View {
         switch item.kind {
         case .text:
-            HStack(spacing: 6) {
+            HStack(spacing: TP.sSM) {
                 if let img = item.image {
-                    Image(nsImage: img).resizable().frame(width: CGFloat(item.imageWidth), height: CGFloat(item.imageHeight))
+                    Image(nsImage: img)
+                        .resizable()
+                        .frame(width: CGFloat(item.imageWidth), height: CGFloat(item.imageHeight))
                 }
                 Text(item.text)
                     .font(.system(size: CGFloat(item.fontSize), weight: item.bold ? .bold : .regular))
                     .foregroundColor(item.color)
             }
         case .hr:
-            Divider().padding(.vertical, 2)
+            Rectangle()
+                .fill(TP.surfacePressed)
+                .frame(height: 1)
+                .padding(.vertical, TP.sXS)
         case .button:
-            Button(item.text) { projectManager.handleButtonClick(item) }
-                .buttonStyle(.bordered).controlSize(.small)
+            PillButton(title: item.text, kind: .primary, compact: true) {
+                projectManager.handleButtonClick(item)
+            }
         case .image:
             if let img = item.image {
-                Image(nsImage: img).resizable().aspectRatio(contentMode: .fit)
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: CGFloat(item.imageWidth), height: CGFloat(item.imageHeight))
+                    .clipShape(RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous))
             }
         case .table:
             TableItemView(item: item)

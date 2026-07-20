@@ -6,7 +6,7 @@
 
 <p align="center">
   Pin anything to your Windows taskbar.<br>
-  Pure C + Lua scripted, single file 450KB, zero dependencies.
+  C/C++ + Lua scripted, single file 450KB, zero runtime dependencies.
 </p>
 
 <p align="center">
@@ -62,7 +62,8 @@ return bar, true, dialog({
 | **Rich text + images** | Multi-color text, PNG/GIF animation, alignment, two-line display |
 | **Popup dialogs** | Click to expand detail panels with images, tables, HUD overlays |
 | **Multiple bars** | Pin multiple scripts side by side, each refreshes independently |
-| **Zero dependencies** | Pure C + Win32 API + Lua 5.4 statically linked, single file ~450KB |
+| **Native Windows UI** | Dear ImGui management window with DirectX 11, taskbar integration stays native |
+| **Zero runtime dependencies** | Dear ImGui and Lua 5.4 are bundled or statically linked, single file ~450KB |
 | **Auto update** | Silent version check, download, replace, and restart |
 
 ## Quick Start
@@ -132,7 +133,7 @@ return font(temp .. "°C " .. desc, "#4FC3F7", 9), true, dialog({
 ## Build
 
 ```bash
-# MinGW-w64 + GNU Make
+# MinGW-w64 + GNU Make + DirectX 11 SDK libraries
 make
 ```
 

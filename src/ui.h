@@ -23,6 +23,7 @@
 #define IDT_SCROLL         2
 #define IDT_BORDER         3
 #define IDT_ANIM           4
+#define IDT_UI_FRAME       5
 #define SCROLL_SPEED       2
 #define SCROLL_INTERVAL    50
 #define ANIM_INTERVAL      80
@@ -31,14 +32,6 @@
 #define IDM_SHOW    3001
 #define IDM_EXIT    3002
 #define IDM_UNPIN   3003
-
-/* Main window control IDs */
-#define IDB_ADD     4001
-#define IDB_DEL     4002
-#define IDB_SELECT  4003
-#define IDB_SETTINGS 4004
-#define IDB_MARKET  4005
-#define IDC_LIST    4010
 
 /* Edit dialog control IDs */
 #define IDE_NAME    5001
@@ -83,7 +76,6 @@ extern int g_bar_count;
 extern TaskPinConfig g_cfg;
 extern HFONT g_font;
 extern HWND g_main_hwnd;
-extern HWND g_listview;
 extern HINSTANCE g_hinst;
 
 /* expression.c */
@@ -98,7 +90,11 @@ LRESULT CALLBACK bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 /* main_window.c */
 void listview_populate(void);
 void show_main_window(void);
-LRESULT CALLBACK main_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
+/* modern_ui.cpp */
+void modern_ui_show(void);
+void modern_ui_refresh(void);
+void modern_ui_shutdown(void);
 
 /* edit_dialog.c */
 void show_edit_dialog(HWND parent, int item_idx);

@@ -4,7 +4,6 @@
 TaskPinConfig g_cfg;
 HFONT g_font;
 HWND g_main_hwnd = NULL;
-HWND g_listview  = NULL;
 HINSTANCE g_hinst;
 
 BarInstance g_bars[MAX_BARS];
@@ -40,13 +39,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
     wc.style         = CS_DBLCLKS;
     RegisterClassExW(&wc);
 
-    wc.lpfnWndProc   = main_wnd_proc;
-    wc.lpszClassName = L"TaskPinMainClass";
-    wc.style         = 0;
-    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-    RegisterClassExW(&wc);
-
     bars_create_all();
+    modern_ui_show();
 
     HANDLE hUpd = CreateThread(NULL, 0, check_update_thread, NULL, 0, NULL);
     if (hUpd) CloseHandle(hUpd);
@@ -56,6 +50,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR cmdLine, int nShow)
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    modern_ui_shutdown();
     script_shutdown();
     return (int)msg.wParam;
 }

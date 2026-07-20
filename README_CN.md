@@ -6,7 +6,7 @@
 
 <p align="center">
   把任何信息钉在 Windows 任务栏上。<br>
-  纯 C + Lua 脚本驱动，单文件 450KB，零依赖。
+  C/C++ + Lua 脚本驱动，单文件 450KB，零运行时依赖。
 </p>
 
 <p align="center">
@@ -62,7 +62,8 @@ return bar, true, dialog({
 | **富文本 + 图片** | 多色文字、PNG/GIF 动画、左右对齐、双行显示 |
 | **弹出对话框** | 点击展开详情面板，支持图文混排、表格、HUD 悬浮窗 |
 | **多 Bar 并排** | 同时 Pin 多个脚本，各自独立刷新 |
-| **零依赖** | 纯 C + Win32 API + Lua 5.4 静态链接，单文件 ~450KB |
+| **原生 Windows UI** | 使用 Dear ImGui + DirectX 11 的现代管理窗口，任务栏条保持原生实现 |
+| **零运行时依赖** | Dear ImGui 和 Lua 5.4 随程序构建或静态链接，单文件约 450KB |
 | **自动更新** | 静默检测新版本，下载替换重启 |
 
 ## 快速开始
@@ -132,7 +133,7 @@ return font(temp .. "°C " .. desc, "#4FC3F7", 9), true, dialog({
 ## 编译
 
 ```bash
-# MinGW-w64 + GNU Make
+# MinGW-w64 + GNU Make + DirectX 11 SDK 库
 make
 ```
 

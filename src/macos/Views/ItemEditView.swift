@@ -22,7 +22,12 @@ struct ItemEditView: View {
                     }
                     let parts = String(trimmed.dropFirst("-- @param ".count)).components(separatedBy: " ")
                     guard parts.count >= 2 else { continue }
-                    params.append(ParamEntry(key: parts[0], value: "", label: parts.count >= 3 ? parts[2...].joined(separator: " ") : parts[0], paramType: parts[1]))
+                    params.append(ParamEntry(
+                        key: parts[0],
+                        value: "",
+                        label: parts.count >= 3 ? parts[2...].joined(separator: " ") : parts[0],
+                        paramType: parts[1]
+                    ))
                 }
                 if !params.isEmpty { parsed.params = params }
             }
@@ -36,14 +41,17 @@ struct ItemEditView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.5)
+            Rectangle().fill(TP.surfacePressed).frame(height: 1)
             formContent
-            Divider().opacity(0.5)
+            Rectangle().fill(TP.surfacePressed).frame(height: 1)
             footer
         }
-        .fileImporter(isPresented: $showFilePicker,
-                      allowedContentTypes: [.init(filenameExtension: "lua")!],
-                      allowsMultipleSelection: false) { result in
+        .background(TP.canvas)
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.init(filenameExtension: "lua")!],
+            allowsMultipleSelection: false
+        ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 item.luaPath = url.path
                 parseParams(from: url.path)
@@ -72,129 +80,269 @@ struct ItemEditView: View {
     }
 
     private var header: some View {
-        HStack {
-            Image(systemName: item.type == .lua ? "puzzlepiece.fill" : "globe")
-                .font(.system(size: 14))
-                .foregroundColor(.accentColor)
-            Text(item.name.isEmpty ? "New Item" : item.name)
-                .font(.system(size: 13, weight: .semibold))
+        HStack(spacing: TP.sMD) {
+            Button {
+                onCancel()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(TP.ink)
+                    .frame(width: 28, height: 28)
+                    .background(TP.canvasSoft)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name.isEmpty ? "New signal" : item.name)
+                    .font(.tpDisplay(15))
+                    .foregroundColor(TP.ink)
+                Text(item.type == .lua ? "Lua script" : "HTTP endpoint")
+                    .font(.tpCaption(11))
+                    .foregroundColor(TP.body)
+            }
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, TP.sLG)
+        .padding(.vertical, TP.sMD)
     }
 
     private var formContent: some View {
         ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: TP.sLG) {
                 generalCard
                 sourceCard
                 if item.type == .url { clickCard }
                 testResultCard
             }
-            .padding(16)
+            .padding(TP.sLG)
         }
     }
 
     private var generalCard: some View {
-        CardView {
-            FormRow("Name") { TextField("Item name", text: $item.name).textFieldStyle(.plain).font(.system(size: 12)) }
-            Divider().opacity(0.3)
-            FormRow("Type") {
-                Picker("", selection: $item.type) {
-                    Text("Lua").tag(PinItemType.lua)
-                    Text("URL").tag(PinItemType.url)
-                }.pickerStyle(.segmented).frame(maxWidth: 160).labelsHidden()
-            }
-            Divider().opacity(0.3)
-            FormRow("Interval") {
-                HStack(spacing: 4) {
-                    TextField("", value: $item.intervalMs, format: .number).textFieldStyle(.plain).font(.system(size: 12)).frame(width: 60)
-                    Text("ms").font(.system(size: 10)).foregroundColor(.secondary)
+        SoftCard {
+            VStack(alignment: .leading, spacing: TP.sMD) {
+                SectionLabel(text: "General")
+
+                VStack(alignment: .leading, spacing: TP.sXS) {
+                    Text("Name")
+                        .font(.tpBody(12, weight: .medium))
+                        .foregroundColor(TP.body)
+                    SoftField(placeholder: "Signal name", text: $item.name)
+                }
+
+                HStack(spacing: TP.sMD) {
+                    VStack(alignment: .leading, spacing: TP.sXS) {
+                        Text("Type")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(TP.body)
+                        HStack(spacing: TP.sXS) {
+                            typePill("Lua", selected: item.type == .lua) { item.type = .lua }
+                            typePill("URL", selected: item.type == .url) { item.type = .url }
+                        }
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .leading, spacing: TP.sXS) {
+                        Text("Interval (ms)")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(TP.body)
+                        SoftField(
+                            placeholder: "5000",
+                            text: Binding(
+                                get: { String(item.intervalMs) },
+                                set: { item.intervalMs = Int($0) ?? item.intervalMs }
+                            )
+                        )
+                        .frame(width: 110)
+                    }
+                }
+
+                HStack {
+                    Text("Pin to menu bar")
+                        .font(.tpBody(12, weight: .medium))
+                        .foregroundColor(TP.body)
+                    Spacer()
+                    Button {
+                        item.pinned.toggle()
+                    } label: {
+                        Text(item.pinned ? "Live" : "Idle")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(item.pinned ? TP.onPrimary : TP.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(item.pinned ? TP.primary : TP.canvas)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            Divider().opacity(0.3)
-            FormRow("Pinned") { Toggle("", isOn: $item.pinned).toggleStyle(.switch).controlSize(.mini).labelsHidden() }
         }
+    }
+
+    private func typePill(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.tpBody(12, weight: .medium))
+                .foregroundColor(selected ? TP.onPrimary : TP.ink)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(selected ? TP.primary : TP.canvas)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private var sourceCard: some View {
         if item.type == .lua {
-            CardView {
-                FormRow("Script") {
-                    HStack(spacing: 6) {
-                        Text(item.luaPath.isEmpty ? "No file" : (item.luaPath as NSString).lastPathComponent)
-                            .font(.system(size: 11)).foregroundColor(item.luaPath.isEmpty ? .secondary : .primary).lineLimit(1)
+            SoftCard {
+                VStack(alignment: .leading, spacing: TP.sMD) {
+                    SectionLabel(text: "Script")
+
+                    HStack(spacing: TP.sSM) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(TP.body)
+                        Text(item.luaPath.isEmpty ? "No file selected" : (item.luaPath as NSString).lastPathComponent)
+                            .font(.tpBody(12))
+                            .foregroundColor(item.luaPath.isEmpty ? TP.mute : TP.ink)
+                            .lineLimit(1)
                         Spacer()
-                        Button("Browse") { showFilePicker = true }.controlSize(.small)
+                        PillButton(title: "Browse", kind: .secondary, compact: true) {
+                            showFilePicker = true
+                        }
                     }
-                }
-                if !item.params.isEmpty {
-                    Divider().opacity(0.3)
-                    ForEach($item.params) { $param in
-                        FormRow(param.label.isEmpty ? param.key : param.label) {
-                            if param.paramType == "file" {
-                                HStack(spacing: 6) {
-                                    Text(param.value.isEmpty ? "No file" : (param.value as NSString).lastPathComponent)
-                                        .font(.system(size: 11)).foregroundColor(param.value.isEmpty ? .secondary : .primary).lineLimit(1)
-                                    Spacer()
-                                    Button("Browse") {
-                                        let panel = NSOpenPanel()
-                                        panel.canChooseFiles = true
-                                        panel.canChooseDirectories = false
-                                        if panel.runModal() == .OK, let url = panel.url {
-                                            param.value = url.path
+                    .padding(TP.sMD)
+                    .background(TP.canvas)
+                    .clipShape(RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous))
+
+                    if !item.params.isEmpty {
+                        SectionLabel(text: "Parameters")
+                        ForEach($item.params) { $param in
+                            VStack(alignment: .leading, spacing: TP.sXS) {
+                                Text(param.label.isEmpty ? param.key : param.label)
+                                    .font(.tpBody(12, weight: .medium))
+                                    .foregroundColor(TP.body)
+                                if param.paramType == "file" {
+                                    HStack {
+                                        Text(param.value.isEmpty ? "No file" : (param.value as NSString).lastPathComponent)
+                                            .font(.tpBody(12))
+                                            .foregroundColor(param.value.isEmpty ? TP.mute : TP.ink)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        PillButton(title: "Browse", kind: .secondary, compact: true) {
+                                            let panel = NSOpenPanel()
+                                            panel.canChooseFiles = true
+                                            panel.canChooseDirectories = false
+                                            if panel.runModal() == .OK, let url = panel.url {
+                                                param.value = url.path
+                                            }
                                         }
-                                    }.controlSize(.small)
+                                    }
+                                    .padding(TP.sMD)
+                                    .background(TP.canvas)
+                                    .clipShape(RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous))
+                                } else {
+                                    SoftField(placeholder: "value", text: $param.value)
                                 }
-                            } else {
-                                TextField("value", text: $param.value).textFieldStyle(.plain).font(.system(size: 11))
                             }
                         }
                     }
-                }
-                Divider().opacity(0.3)
-                HStack {
-                    Spacer()
-                    Button { runTest() } label: {
-                        Label(isTesting ? "Running..." : "Test", systemImage: "play.fill").font(.system(size: 10, weight: .medium))
-                    }.controlSize(.small).disabled(item.luaPath.isEmpty || isTesting)
+
+                    HStack {
+                        Spacer()
+                        PillButton(
+                            title: isTesting ? "Running..." : "Test",
+                            icon: "play.fill",
+                            kind: .primary,
+                            compact: true
+                        ) {
+                            runTest()
+                        }
+                        .disabled(item.luaPath.isEmpty || isTesting)
+                        .opacity(item.luaPath.isEmpty || isTesting ? 0.5 : 1)
+                    }
                 }
             }
         } else {
-            CardView {
-                FormRow("URL") { TextField("https://...", text: $item.url).textFieldStyle(.plain).font(.system(size: 11)) }
-                Divider().opacity(0.3)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Headers").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
-                    TextEditor(text: $item.reqHeaders).font(.system(size: 10, design: .monospaced)).frame(height: 40)
-                        .scrollContentBackground(.hidden).padding(4).background(Color.black.opacity(0.03)).clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-                Divider().opacity(0.3)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Expression").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
-                    TextEditor(text: $item.fieldExpr).font(.system(size: 10, design: .monospaced)).frame(height: 40)
-                        .scrollContentBackground(.hidden).padding(4).background(Color.black.opacity(0.03)).clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-                Divider().opacity(0.3)
-                HStack {
-                    Spacer()
-                    Button { runTest() } label: {
-                        Label(isTesting ? "Testing..." : "Test", systemImage: "paperplane.fill").font(.system(size: 10, weight: .medium))
-                    }.controlSize(.small).disabled(item.url.isEmpty || isTesting)
+            SoftCard {
+                VStack(alignment: .leading, spacing: TP.sMD) {
+                    SectionLabel(text: "Endpoint")
+
+                    VStack(alignment: .leading, spacing: TP.sXS) {
+                        Text("URL")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(TP.body)
+                        SoftField(placeholder: "https://...", text: $item.url)
+                    }
+
+                    VStack(alignment: .leading, spacing: TP.sXS) {
+                        Text("Headers")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(TP.body)
+                        TextEditor(text: $item.reqHeaders)
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(height: 48)
+                            .scrollContentBackground(.hidden)
+                            .padding(TP.sSM)
+                            .background(TP.canvas)
+                            .clipShape(RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous))
+                    }
+
+                    VStack(alignment: .leading, spacing: TP.sXS) {
+                        Text("Expression")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(TP.body)
+                        TextEditor(text: $item.fieldExpr)
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(height: 48)
+                            .scrollContentBackground(.hidden)
+                            .padding(TP.sSM)
+                            .background(TP.canvas)
+                            .clipShape(RoundedRectangle(cornerRadius: TP.radiusMD, style: .continuous))
+                    }
+
+                    HStack {
+                        Spacer()
+                        PillButton(
+                            title: isTesting ? "Testing..." : "Test",
+                            icon: "paperplane.fill",
+                            kind: .primary,
+                            compact: true
+                        ) {
+                            runTest()
+                        }
+                        .disabled(item.url.isEmpty || isTesting)
+                        .opacity(item.url.isEmpty || isTesting ? 0.5 : 1)
+                    }
                 }
             }
         }
     }
 
     private var clickCard: some View {
-        CardView {
-            FormRow("Click URL") {
-                HStack(spacing: 6) {
-                    Toggle("", isOn: $item.clickEnabled).toggleStyle(.switch).controlSize(.mini).labelsHidden()
-                    TextField("https://...", text: $item.clickUrl).textFieldStyle(.plain).font(.system(size: 11))
-                        .disabled(!item.clickEnabled).opacity(item.clickEnabled ? 1 : 0.5)
+        SoftCard {
+            VStack(alignment: .leading, spacing: TP.sMD) {
+                SectionLabel(text: "Click action")
+                HStack(spacing: TP.sSM) {
+                    Button {
+                        item.clickEnabled.toggle()
+                    } label: {
+                        Text(item.clickEnabled ? "On" : "Off")
+                            .font(.tpBody(12, weight: .medium))
+                            .foregroundColor(item.clickEnabled ? TP.onPrimary : TP.ink)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(item.clickEnabled ? TP.primary : TP.canvas)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    SoftField(placeholder: "https://...", text: $item.clickUrl)
+                        .disabled(!item.clickEnabled)
+                        .opacity(item.clickEnabled ? 1 : 0.5)
                 }
             }
         }
@@ -203,69 +351,73 @@ struct ItemEditView: View {
     @ViewBuilder
     private var testResultCard: some View {
         if !testResult.isEmpty {
-            Text(testResult)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.secondary)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            SoftCard(fill: TP.canvas) {
+                VStack(alignment: .leading, spacing: TP.sXS) {
+                    SectionLabel(text: "Test result")
+                    Text(testResult)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(TP.body)
+                        .textSelection(.enabled)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: TP.radiusXL, style: .continuous)
+                    .stroke(TP.surfacePressed, lineWidth: 1)
+            )
         }
     }
 
     private var footer: some View {
-        HStack(spacing: 10) {
-            Button("Cancel") { onCancel() }.controlSize(.small)
+        HStack(spacing: TP.sMD) {
+            PillButton(title: "Cancel", kind: .subtle, compact: true) {
+                onCancel()
+            }
             Spacer()
-            Button { onSave(item) } label: { Text("Save").font(.system(size: 11, weight: .medium)) }
-                .controlSize(.small).buttonStyle(.borderedProminent).disabled(item.name.isEmpty || (item.type == .lua && item.luaPath.isEmpty) || (item.type == .url && item.url.isEmpty))
+            PillButton(title: "Save", kind: .primary, compact: true) {
+                onSave(item)
+            }
+            .disabled(!canSave)
+            .opacity(canSave ? 1 : 0.45)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, TP.sLG)
+        .padding(.vertical, TP.sMD)
+        .background(TP.canvas)
+    }
+
+    private var canSave: Bool {
+        !item.name.isEmpty
+            && (item.type == .lua ? !item.luaPath.isEmpty : !item.url.isEmpty)
     }
 
     private func runTest() {
-        isTesting = true; testResult = ""
+        isTesting = true
+        testResult = ""
         if item.type == .lua {
             guard !item.luaPath.isEmpty else { isTesting = false; return }
             LuaExecutor.shared.executeFile(path: item.luaPath, argsJson: nil) { result in
                 isTesting = false
-                testResult = result?.statusText.isEmpty == false ? result!.statusText : (result == nil ? "Error" : "(no output)")
+                testResult = result?.statusText.isEmpty == false
+                    ? result!.statusText
+                    : (result == nil ? "Error" : "(no output)")
             }
         } else {
-            guard let url = URL(string: item.url) else { isTesting = false; testResult = "Invalid URL"; return }
+            guard let url = URL(string: item.url) else {
+                isTesting = false
+                testResult = "Invalid URL"
+                return
+            }
             URLSession.shared.dataTask(with: url) { data, _, err in
                 DispatchQueue.main.async {
                     isTesting = false
-                    if let err = err { testResult = "Error: \(err.localizedDescription)" }
-                    else if let data = data, let s = String(data: data, encoding: .utf8) { testResult = String(s.prefix(300)) }
-                    else { testResult = "Empty response" }
+                    if let err = err {
+                        testResult = "Error: \(err.localizedDescription)"
+                    } else if let data = data, let s = String(data: data, encoding: .utf8) {
+                        testResult = String(s.prefix(300))
+                    } else {
+                        testResult = "Empty response"
+                    }
                 }
             }.resume()
-        }
-    }
-}
-
-private struct CardView<Content: View>: View {
-    @ViewBuilder let content: Content
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) { content }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
-    }
-}
-
-private struct FormRow<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
-    init(_ label: String, @ViewBuilder content: () -> Content) { self.label = label; self.content = content() }
-    var body: some View {
-        HStack(spacing: 0) {
-            Text(label).font(.system(size: 11)).foregroundColor(.secondary).frame(width: 70, alignment: .leading)
-            content
         }
     }
 }
