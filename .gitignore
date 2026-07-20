@@ -15,3 +15,10 @@ scripts/.build/
 *.swiftdeps
 *.swiftdeps~
 .vscode/
+webview2_data/
+config.json
+config.ini.bak
+crash.log
+imgui.ini
+WebView2Loader.dll
+scripts/*.lua

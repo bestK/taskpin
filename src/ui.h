@@ -14,6 +14,7 @@
 #include "appbar.h"
 #include "fetcher.h"
 #include "json.h"
+#include "i18n.h"
 #include "scripting.h"
 #include "script_dialog.h"
 #include "update.h"
