@@ -17,6 +17,7 @@ jobs:
 
       - name: Sign and Package
         run: |
+          VERSION=$(cat version.txt)
           codesign --force --deep -s - .build/release/TaskPin
           mkdir -p dist/TaskPin.app/Contents/MacOS
           mkdir -p dist/TaskPin.app/Contents/Resources
@@ -25,7 +26,7 @@ jobs:
           if [ -f src/macos/Resources/AppIcon.icns ]; then
             cp src/macos/Resources/AppIcon.icns dist/TaskPin.app/Contents/Resources/
           fi
-          cat > dist/TaskPin.app/Contents/Info.plist << 'PLIST'
+          cat > dist/TaskPin.app/Contents/Info.plist << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -37,9 +38,9 @@ jobs:
             <key>CFBundleName</key>
             <string>TaskPin</string>
             <key>CFBundleVersion</key>
-            <string>0.0.1</string>
+            <string>$VERSION</string>
             <key>CFBundleShortVersionString</key>
-            <string>0.0.1</string>
+            <string>$VERSION</string>
             <key>LSMinimumSystemVersion</key>
             <string>14.0</string>
             <key>LSUIElement</key>
