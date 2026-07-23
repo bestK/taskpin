@@ -96,6 +96,7 @@ jobs:
         run: |
           mkdir -p dist
           cp taskpin.exe dist/
+          cp taskpin.exe dist/taskpin-x64.exe
           cp -r examples dist/
           cp -r lang dist/
           cp -r scripts dist/ 2>/dev/null || true
@@ -105,7 +106,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: taskpin-windows
-          path: TaskPin-windows.zip
+          path: |
+            TaskPin-windows.zip
+            dist/taskpin-x64.exe
 
   release:
     needs: [build-macos, build-windows]
@@ -141,6 +144,7 @@ jobs:
         run: |
           cp artifacts/macos/TaskPin-macos.zip .
           cp artifacts/windows/TaskPin-windows.zip .
+          cp artifacts/windows/dist/taskpin-x64.exe .
 
       - name: Delete existing release
         env:
@@ -155,4 +159,5 @@ jobs:
           files: |
             TaskPin-macos.zip
             TaskPin-windows.zip
+            taskpin-x64.exe
           generate_release_notes: true
