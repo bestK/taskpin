@@ -73,8 +73,40 @@ jobs:
           name: taskpin-macos
           path: TaskPin-macos.zip
 
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2/MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc make
+
+      - name: Build
+        run: make clean && make -j$(nproc)
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp taskpin.exe dist/
+          cp -r examples dist/
+          cp -r lang dist/
+          cp -r scripts dist/ 2>/dev/null || true
+          cd dist && zip -r ../TaskPin-windows.zip taskpin.exe examples lang scripts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskpin-windows
+          path: TaskPin-windows.zip
+
   release:
-    needs: build-macos
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -87,11 +119,21 @@ jobs:
           name: taskpin-macos
           path: artifacts/macos
 
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: taskpin-windows
+          path: artifacts/windows
+
       - name: Prepare release files
-        run: cp artifacts/macos/TaskPin-macos.zip .
+        run: |
+          cp artifacts/macos/TaskPin-macos.zip .
+          cp artifacts/windows/TaskPin-windows.zip .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: TaskPin-macos.zip
+          files: |
+            TaskPin-macos.zip
+            TaskPin-windows.zip
           generate_release_notes: true
