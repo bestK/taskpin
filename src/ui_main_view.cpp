@@ -13,6 +13,9 @@ extern "C" {
 #include "ui_views.h"
 #include "ui_common.h"
 
+/* ---- static state for confirm modal ---- */
+static bool s_confirm_open = false;
+
 enum MainAction {
     MAIN_ACT_NONE = 0,
     MAIN_ACT_ADD,
@@ -180,17 +183,25 @@ void ui_main_view_draw(int *selected_item) {
     }
 
     if (g_confirm_delete) {
-        ImGui::OpenPopup("##delete_confirm");
+        s_confirm_open = true;
         g_confirm_delete = false;
     }
-    if (ImGui::BeginPopupModal("##delete_confirm", NULL,
-            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+    {
         char name[CFG_MAX_NAME * 3] = "";
-        if (*selected_item >= 0 && *selected_item < g_cfg.count)
-            ui_wide_to_utf8(g_cfg.items[*selected_item].name, name, sizeof(name));
-        ImGui::Text("%s \"%s\"?", tr8("main.delete"), name[0] ? name : "");
-        ui_section_gap();
-        int r = ui_ok_cancel(tr8("edit.ok"), tr8("edit.cancel"));
+        if (*selected_item >= 0 && *selected_item < g_cfg.count) {
+            PinItem *it = &g_cfg.items[*selected_item];
+            ui_wide_to_utf8(it->name, name, sizeof(name));
+            if (!name[0]) {
+                WCHAR *src = it->type == ITEM_TYPE_LUA ? it->lua_path : it->url;
+                if (src[0]) {
+                    WCHAR *slash = wcsrchr(src, L'\\');
+                    if (!slash) slash = wcsrchr(src, L'/');
+                    ui_wide_to_utf8(slash ? slash + 1 : src, name, sizeof(name));
+                }
+            }
+        }
+        int r = Theme::ConfirmModal(tr8("main.delete"),
+            tr8("confirm.delete_desc"), name[0] ? name : NULL, &s_confirm_open);
         if (r == 1) {
             if (*selected_item >= 0 && *selected_item < g_cfg.count) {
                 BOOL was_pinned = g_cfg.items[*selected_item].pinned;
@@ -202,11 +213,7 @@ void ui_main_view_draw(int *selected_item) {
                 config_save(&g_cfg);
                 if (was_pinned) g_need_rebuild_bars = true;
             }
-            ImGui::CloseCurrentPopup();
-        } else if (r == 2) {
-            ImGui::CloseCurrentPopup();
         }
-        ImGui::EndPopup();
     }
 }
 

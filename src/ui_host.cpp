@@ -22,7 +22,7 @@ UiWindow *ui_host_window(void) {
 /* Host uses its own paint/timer path (not modal). */
 static void host_render(void) {
     if (!g_host_created) return;
-    const float clear[4] = {kBg.x, kBg.y, kBg.z, kBg.w};
+    const float clear[4] = {Theme::BgBase.x, Theme::BgBase.y, Theme::BgBase.z, Theme::BgBase.w};
     /* Main list is edge-to-edge: zero content padding. */
     if (ui_window_begin_frame(&g_host, 0.0f, 0.0f)) {
         ui_main_view_draw(&g_selected_item);
@@ -57,8 +57,8 @@ static LRESULT CALLBACK host_subclass_proc(HWND hwnd, UINT msg, WPARAM wp, LPARA
         return 0;
     case WM_GETMINMAXINFO: {
         MINMAXINFO *m = reinterpret_cast<MINMAXINFO *>(lp);
-        m->ptMinTrackSize.x = 640;
-        m->ptMinTrackSize.y = 320;
+        m->ptMinTrackSize.x = 700;
+        m->ptMinTrackSize.y = 400;
         return 0;
     }
     case WM_DESTROY:
@@ -75,7 +75,7 @@ static bool create_host(void) {
     ImGui_ImplWin32_EnableDpiAwareness();
 
     if (!ui_window_create(&g_host, NULL, L"TaskPinUiHostClass",
-            ui_title("main.window_title", L"TaskPin"), 720, 380, NULL))
+            ui_title("main.window_title", L"TaskPin"), 900, 550, NULL))
         return false;
 
     g_main_hwnd = g_host.hwnd;

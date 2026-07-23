@@ -32,7 +32,7 @@ IMGUI_SRCS = third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp \
              third_party/imgui/backends/imgui_impl_win32.cpp \
              third_party/imgui/backends/imgui_impl_dx11.cpp
 LIB_SRCS = $(LIB_DIR)/appbar.c $(LIB_DIR)/fetcher.c $(LIB_DIR)/config.c \
-           $(LIB_DIR)/json.c $(LIB_DIR)/scripting.c $(LIB_DIR)/base64.c \
+           $(LIB_DIR)/json.c $(LIB_DIR)/cJSON.c $(LIB_DIR)/scripting.c $(LIB_DIR)/base64.c \
            $(LIB_DIR)/update.c $(LIB_DIR)/httputil.c $(LIB_DIR)/sysinfo.c \
            $(LIB_DIR)/script_dialog.c $(LIB_DIR)/image.c $(LIB_DIR)/i18n.c
 LUA_SRCS = $(wildcard $(LUA_DIR)/*.c)

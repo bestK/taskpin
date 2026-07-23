@@ -330,7 +330,7 @@ static void draw_edit(UiWindow *w) {
     if (s->type == ITEM_TYPE_URL) {
         bool load_click = false;
         ui_field_text_with_button(tr8("edit.url"), s->url, sizeof(s->url),
-            tr8("edit.load"), &load_click, lw, UI_BTN_W_SM + 10.0f);
+            tr8("edit.load"), &load_click, lw, 60.0f);
         if (load_click) s->pending_load = true;
 
         ui_field_multiline(tr8("edit.headers"), s->headers, sizeof(s->headers),
@@ -340,7 +340,7 @@ static void draw_edit(UiWindow *w) {
         ImGui::TextUnformatted(tr8("edit.response_structure"));
         ImGui::BeginChild("tree", ImVec2(0, 130), true);
         if (s->tree_count == 0)
-            ImGui::TextColored(kMuted, "%s", tr8("edit.load"));
+            ImGui::TextColored(Theme::TextSecondary, "%s", tr8("edit.load"));
         else
             draw_json_tree_node(s, 0);
         ImGui::EndChild();
@@ -478,7 +478,7 @@ void ui_edit_show(HWND parent, UiWindow *share_device, int item_index, int *sele
         ? ui_title("edit.title_edit", L"Edit Item")
         : ui_title("edit.title_add", L"Add Item");
     if (!ui_window_create(&win, parent, L"TaskPinEditClass", title,
-            660, 600, share_device))
+            900, 720, share_device))
         return;
     win.user = &state;
     ui_window_run_modal(&win, parent, draw_edit);

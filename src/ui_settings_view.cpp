@@ -123,7 +123,7 @@ void ui_settings_show(HWND parent, UiWindow *share_device) {
 
     UiWindow win = {};
     if (!ui_window_create(&win, parent, L"TaskPinSettingsClass",
-            ui_title("settings.title", L"Settings"), 400, 360, share_device))
+            ui_title("settings.title", L"Settings"), 480, 440, share_device))
         return;
     win.user = &state;
     ui_window_run_modal(&win, parent, draw_settings);

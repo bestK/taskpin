@@ -9,6 +9,7 @@
   "main.col_bg": "BG",
   "main.add": "Add",
   "main.delete": "Delete",
+  "confirm.delete_desc": "This action cannot be undone. Delete the following item?",
   "main.pin": "Pin",
   "main.unpin": "Unpin",
   "main.settings": "Settings",

@@ -9,6 +9,7 @@
   "main.col_bg": "背景",
   "main.add": "添加",
   "main.delete": "删除",
+  "confirm.delete_desc": "此操作不可撤销，确定要删除以下项目吗？",
   "main.pin": "固定",
   "main.unpin": "取消固定",
   "main.settings": "设置",

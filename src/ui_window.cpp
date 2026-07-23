@@ -51,7 +51,7 @@ static void set_light_mode(HWND hwnd) {
         &enabled, sizeof(enabled));
 }
 
-/* Style lives in ui_common.h → ui_apply_style() */
+/* Style is applied via Theme::Apply() at end of ui_window_create() */
 
 static LRESULT CALLBACK ui_window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     UiWindow *w = reinterpret_cast<UiWindow *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -210,15 +210,15 @@ bool ui_window_create(UiWindow *w, HWND parent, const WCHAR *class_name,
 
     /*
      * Font: Microsoft YaHei for Chinese UI, Segoe UI as Latin fallback.
-     * Keep raster settings mild — heavy Multiply / SimHei looks crude.
+     * Use full Chinese range for complete coverage.
      */
     ImFontConfig cfg;
     cfg.OversampleH = 2;
     cfg.OversampleV = 1;
     cfg.PixelSnapH = true;
-    cfg.RasterizerMultiply = 1.12f;
-    const ImWchar *ranges = io.Fonts->GetGlyphRangesChineseSimplifiedCommon();
-    const float font_size = 14.5f;
+    cfg.RasterizerMultiply = 1.1f;
+    const ImWchar *ranges = io.Fonts->GetGlyphRangesChineseFull();
+    const float font_size = 14.0f;
 
     /* Primary: YaHei (standard Windows Chinese UI face). */
     bool font_ok = false;
@@ -255,7 +255,7 @@ bool ui_window_create(UiWindow *w, HWND parent, const WCHAR *class_name,
     if (!font_ok)
         io.Fonts->AddFontDefault();
 
-    ui_apply_style();
+    Theme::Apply();
     ImGui_ImplWin32_Init(w->hwnd);
     ImGui_ImplDX11_Init(w->device, w->context);
     ImGui::SetCurrentContext(prev);
@@ -299,7 +299,8 @@ bool ui_window_begin_frame(UiWindow *w, float pad_x, float pad_y) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad_x, pad_y));
     ImGui::Begin("##content", NULL,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     return true;
 }
 
@@ -329,7 +330,7 @@ void ui_window_run_modal(UiWindow *w, HWND parent,
     SetForegroundWindow(w->hwnd);
     SetTimer(w->hwnd, IDT_UI_FRAME, 16, NULL);
 
-    const float clear[4] = {kBg.x, kBg.y, kBg.z, kBg.w};
+    const float clear[4] = {Theme::BgBase.x, Theme::BgBase.y, Theme::BgBase.z, Theme::BgBase.w};
     MSG msg;
     while (!w->done && GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);

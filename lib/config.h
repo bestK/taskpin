@@ -10,7 +10,7 @@
 #define CFG_MAX_ITEMS 64
 #define CFG_MAX_PARAMS 16
 #define CFG_MAX_PARAM_KEY 64
-#define CFG_MAX_PARAM_VAL 256
+#define CFG_MAX_PARAM_VAL 2048
 #define CFG_MAX_SOURCES 8
 
 #define ITEM_TYPE_URL  0
@@ -42,6 +42,11 @@ typedef struct {
     int   bar_x;                     /* -1 = auto position */
     int   bar_y;                     /* -1 = auto position */
     COLORREF bar_bg_color;           /* 0xFFFFFFFF = use global default */
+    int   dlg_x;                     /* dialog position, -1 = center */
+    int   dlg_y;
+    int   dlg_w;                     /* dialog size, 0 = use script default */
+    int   dlg_h;
+    BOOL  realtime;                  /* TRUE = execute synchronously in GUI thread */
 } PinItem;
 
 typedef struct {
@@ -54,6 +59,7 @@ typedef struct {
     COLORREF font_color;
     COLORREF bg_color;  /* background, use 0xFFFFFFFF for transparent */
     BOOL  scroll_enabled; /* auto-scroll long text, default TRUE */
+    int   log_level;      /* 0=off, 1=error, 2=info, 3=debug */
     /* Plugin market sources (GitHub repos like "user/repo") */
     WCHAR sources[CFG_MAX_SOURCES][CFG_MAX_NAME];
     int   source_count;

@@ -341,7 +341,7 @@ static void draw_market(UiWindow *w) {
     }
     ImGui::SameLine(0, UI_GAP);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextColored(kMuted, "%s", s->status);
+    ImGui::TextColored(Theme::TextSecondary, "%s", s->status);
 
     float close_x = ImGui::GetWindowWidth() - UI_BTN_W - UI_PAD;
     if (close_x > ImGui::GetCursorPosX() + UI_GAP) {
