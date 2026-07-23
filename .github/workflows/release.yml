@@ -115,6 +115,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(cat version.txt)
+            echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
@@ -132,9 +142,16 @@ jobs:
           cp artifacts/macos/TaskPin-macos.zip .
           cp artifacts/windows/TaskPin-windows.zip .
 
+      - name: Delete existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete ${{ steps.version.outputs.tag }} --yes 2>/dev/null || true
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           files: |
             TaskPin-macos.zip
             TaskPin-windows.zip
