@@ -22,3 +22,4 @@ crash.log
 imgui.ini
 WebView2Loader.dll
 scripts/*.lua
+taskpin_dbg.log
