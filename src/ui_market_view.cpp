@@ -187,6 +187,73 @@ static void download_selected(MarketState *s) {
     if (f) {
         fwrite(content, 1, strlen(content), f);
         fclose(f);
+
+        /* Add (or update) a list item pointing at the downloaded script so it
+         * shows up in the main window immediately. */
+        int existing = -1;
+        for (int i = 0; i < g_cfg.count; i++) {
+            if (g_cfg.items[i].type == ITEM_TYPE_LUA &&
+                lstrcmpiW(g_cfg.items[i].lua_path, filepath) == 0) {
+                existing = i;
+                break;
+            }
+        }
+
+        if (existing < 0 && g_cfg.count >= CFG_MAX_ITEMS) {
+            set_status(s, tr8("market.download_success"));
+            free(content);
+            return;
+        }
+
+        PinItem *it;
+        if (existing >= 0) {
+            it = &g_cfg.items[existing];
+        } else {
+            it = &g_cfg.items[g_cfg.count];
+            memset(it, 0, sizeof(*it));
+            it->bar_x = -1;
+            it->bar_y = -1;
+            it->bar_bg_color = 0xFFFFFFFF;
+            g_cfg.count++;
+        }
+
+        it->type = ITEM_TYPE_LUA;
+        lstrcpynW(it->lua_path, filepath, CFG_MAX_PATH);
+        /* Name from manifest, fall back to file name. */
+        if (ms->name[0])
+            MultiByteToWideChar(CP_UTF8, 0, ms->name, -1, it->name, CFG_MAX_NAME);
+        else
+            MultiByteToWideChar(CP_UTF8, 0, ms->file, -1, it->name, CFG_MAX_NAME);
+
+        int refresh_ms = script_parse_refresh(it->lua_path);
+        if (refresh_ms < 1000) refresh_ms = 5000;
+        it->interval_ms = (DWORD)refresh_ms;
+
+        /* Seed @param declarations with empty values, preserving any the user
+         * already filled in when re-downloading an existing script. */
+        ScriptParamDecl decls[CFG_MAX_PARAMS];
+        memset(decls, 0, sizeof(decls));
+        int ndecls = script_parse_params(it->lua_path, decls, CFG_MAX_PARAMS);
+        ParamEntry old[CFG_MAX_PARAMS];
+        int old_count = it->param_count;
+        memcpy(old, it->params, sizeof(old));
+        memset(it->params, 0, sizeof(it->params));
+        for (int i = 0; i < ndecls; i++) {
+            MultiByteToWideChar(CP_UTF8, 0, decls[i].key, -1,
+                it->params[i].key, CFG_MAX_PARAM_KEY);
+            MultiByteToWideChar(CP_UTF8, 0, decls[i].label, -1,
+                it->params[i].label, CFG_MAX_NAME);
+            for (int j = 0; j < old_count; j++) {
+                if (lstrcmpW(old[j].key, it->params[i].key) == 0) {
+                    lstrcpynW(it->params[i].value, old[j].value, CFG_MAX_PARAM_VAL);
+                    break;
+                }
+            }
+        }
+        it->param_count = ndecls;
+
+        config_save(&g_cfg);
+        modern_ui_refresh();
         set_status(s, tr8("market.download_success"));
     } else {
         set_status(s, tr8("market.save_failed"));

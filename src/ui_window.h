@@ -17,6 +17,7 @@ struct UiWindow {
     IDXGISwapChain *swap;
     ID3D11RenderTargetView *rtv;
     ImGuiContext *imgui;
+    ImGuiContext *prev_ctx;   /* context active before begin_frame, restored in end_frame */
     bool class_registered;
     bool frame_open;
     bool rendering;

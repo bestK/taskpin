@@ -287,6 +287,7 @@ bool ui_window_begin_frame(UiWindow *w, float pad_x, float pad_y) {
     if (!w || !w->imgui || !w->rtv || w->rendering) return false;
     w->rendering = true;
 
+    w->prev_ctx = ImGui::GetCurrentContext();
     ImGui::SetCurrentContext(w->imgui);
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -316,6 +317,12 @@ void ui_window_end_frame(UiWindow *w, const float clear_rgba[4]) {
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     w->swap->Present(1, 0);
     w->rendering = false;
+
+    /* Restore whatever context was active before begin_frame. A nested render
+     * (e.g. host WM_TIMER firing inside GetOpenFileNameW's message loop) would
+     * otherwise leave GImGui pointing at the wrong context mid-frame. */
+    ImGui::SetCurrentContext(w->prev_ctx);
+    w->prev_ctx = NULL;
 }
 
 void ui_window_run_modal(UiWindow *w, HWND parent,

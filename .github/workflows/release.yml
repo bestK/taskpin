@@ -90,7 +90,7 @@ jobs:
           install: mingw-w64-x86_64-gcc make zip
 
       - name: Build
-        run: make clean && make -j$(nproc)
+        run: make clean && make -j$(nproc) MODE=release
 
       - name: Package
         run: |
@@ -112,20 +112,22 @@ jobs:
 
   release:
     needs: [build-macos, build-windows]
+    # Only publish for tag pushes. workflow_dispatch runs stop after the build
+    # jobs, leaving artifacts for manual inspection — this keeps a manual run
+    # from overwriting a live release with binaries built from a different commit.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve version
-        id: version
+      - name: Verify tag matches version.txt
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            VERSION=$(cat version.txt)
-            echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          VERSION=$(cat version.txt)
+          if [ "${{ github.ref_name }}" != "v${VERSION}" ]; then
+            echo "Tag ${{ github.ref_name }} does not match version.txt (v${VERSION})"
+            exit 1
           fi
 
       - name: Download macOS artifact
@@ -146,16 +148,11 @@ jobs:
           cp artifacts/windows/TaskPin-windows.zip .
           cp artifacts/windows/dist/taskpin-x64.exe .
 
-      - name: Delete existing release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete ${{ steps.version.outputs.tag }} --yes 2>/dev/null || true
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           files: |
             TaskPin-macos.zip
             TaskPin-windows.zip
