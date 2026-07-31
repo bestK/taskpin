@@ -99,7 +99,10 @@ jobs:
           cp taskpin.exe dist/taskpin-x64.exe
           cp -r examples dist/
           cp -r lang dist/
-          cp -r scripts dist/ 2>/dev/null || true
+          # scripts/*.lua is gitignored, so the dir is absent on a fresh
+          # checkout. Ship it empty — it's where market downloads land.
+          mkdir -p dist/scripts
+          cp -r scripts/. dist/scripts/ 2>/dev/null || true
           cd dist && zip -r ../TaskPin-windows.zip taskpin.exe examples lang scripts
 
       - name: Upload artifact
