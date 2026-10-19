@@ -1,0 +1,108 @@
+name: taskpin
+description: >-
+  Pin anything to your taskbar. Lua-scripted live widgets embedded natively in
+  the Windows taskbar (and the macOS menu bar), with a Flutter management UI.
+version: 1.6.8
+publish_to: none
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Aurora design system: tokens + platform-free component library.
+  taskpin_design:
+    path: packages/taskpin_design
+
+  # The C engine's Dart face (dart:ffi bindings + the owning isolate).
+  # Added in Phase 3; the package directory is created then.
+  # The Dart face of the C Lua engine. Pure Dart + dart:ffi, no Flutter
+  # dependency of its own — see packages/taskpin_engine/README.md. The shipped
+  # app also links the same C sources statically into the Windows runner
+  # (windows/CMakeLists.txt), so the DLL this package can load at runtime is a
+  # test convenience, not a shipped artifact.
+  taskpin_engine:
+    path: packages/taskpin_engine
+
+  # State management. Riverpod over Bloc because this app is "N independent
+  # per-item timers feeding a few derived views" — StreamProvider.family plus
+  # compile-time DI models that directly and stays testable without a widget
+  # tree. See docs/FLUTTER_REWRITE_PLAN.md ("状态管理").
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Routing for the manager window (ShellRoute + nav rail).
+  go_router: ^14.6.2
+
+  # Market fetch + auto-update: plain HTTP+JSON, no C benefit, and Dart gets
+  # real TLS/proxy handling for free.
+  http: ^1.2.2
+
+  # Path resolution is done directly from the environment (`%APPDATA%`,
+  # `Platform.resolvedExecutable`) in `lib/core/config/config_repository.dart`.
+  #
+  # `path_provider` is deliberately NOT a dependency: nothing in `lib/` uses it,
+  # and it drags in `path_provider_android` -> `jni_flutter` -> `jni`, whose
+  # Windows CMake project compiles `src/jni_constants.h` and fails without a JDK:
+  #
+  #   error C1083: cannot open include file: 'jni.h'
+  #
+  # That is an Android-only plugin being built into a Windows desktop binary.
+  # Dropping the unused dependency removes it from the Windows plugin list
+  # entirely. Add it back only if a real need appears, and expect to deal with
+  # the jni build on Windows if you do.
+
+  # Phase 6: a script dialog opens as its own top-level window, not a route in
+  # the manager window. It has to outlive navigation, move independently, and be
+  # hideable from the taskbar/Alt+Tab when `borderless`.
+  #
+  # The plugin only handles `window_show` / `window_hide`
+  # (windows/flutter_window_wrapper.h in the package); positioning, opacity,
+  # clickthrough, borderless and drag go over our own `taskpin/window` channel —
+  # see lib/features/dialogs/window_channel.dart and
+  # native/win/dialog_window_styles.cpp.
+  desktop_multi_window: ^0.3.1
+
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+
+  # The pure-Dart test runner. `flutter_test` re-exports the matchers but NOT
+  # `package:test` itself, and the market/update tests are deliberately
+  # Flutter-free (so `dart test` can run them without the Flutter engine).
+  # They import `package:test/test.dart` directly.
+  test: ^1.25.0
+
+  flutter_lints: ^4.0.0
+
+  # NOTE: riverpod_generator / riverpod_lint / custom_lint are deliberately NOT
+  # here. They pin `analyzer ^6`/`^7`, which conflicts with `test` (via
+  # flutter_test's `matcher 0.12.20` pin), and no provider in this codebase uses
+  # the `@riverpod` codegen annotations — they are all hand-written
+  # `NotifierProvider`/`Provider` declarations. If codegen is wanted later,
+  # resolve the analyzer conflict first rather than adding it back blindly.
+
+flutter:
+  uses-material-design: true
+
+  # Required by Flutter's `gen_localizations` build target whenever l10n.yaml
+  # is present. Without it `flutter build windows` aborts with
+  # "Attempted to generate localizations code without having the flutter:
+  # generate flag turned on." The generated AppLocalizations is checked in
+  # under lib/l10n (synthetic-package: false), but the build target still
+  # insists on this flag.
+  generate: true
+
+  # Fonts: see packages/taskpin_design/pubspec.yaml for the decision record.
+  # Inter (UI) + JetBrains Mono (code/metrics) are vendored in Phase 12 once
+  # the size budget is settled; until then the typography tokens name the
+  # families and Flutter falls back to the platform default.

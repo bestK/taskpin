@@ -6,7 +6,7 @@
 
 <p align="center">
   把任何信息钉在 Windows 任务栏上。<br>
-  C/C++ + Lua 脚本驱动，单文件 450KB，零运行时依赖。
+  Flutter 管理界面，原生任务栏条，Lua 脚本驱动。
 </p>
 
 <p align="center">
@@ -62,8 +62,8 @@ return bar, true, dialog({
 | **富文本 + 图片** | 多色文字、PNG/GIF 动画、左右对齐、双行显示 |
 | **弹出对话框** | 点击展开详情面板，支持图文混排、表格、HUD 悬浮窗 |
 | **多 Bar 并排** | 同时 Pin 多个脚本，各自独立刷新 |
-| **原生 Windows UI** | 使用 Dear ImGui + DirectX 11 的现代管理窗口，任务栏条保持原生实现 |
-| **零运行时依赖** | Dear ImGui 和 Lua 5.4 随程序构建或静态链接，单文件约 450KB |
+| **原生任务栏条** | 条本身是嵌入任务栏的原生 Direct2D/DirectWrite 窗口，管理界面用 Flutter |
+| **开箱即用** | 自带运行时，无需额外安装 .NET/Java/Python，Windows 压缩包约 12MB |
 | **自动更新** | 静默检测新版本，下载替换重启 |
 
 ## 快速开始
@@ -133,9 +133,21 @@ return font(temp .. "°C " .. desc, "#4FC3F7", 9), true, dialog({
 ## 编译
 
 ```bash
-# MinGW-w64 + GNU Make + DirectX 11 SDK 库
-make
+# Flutter 3.27+，以及 Windows 桌面工具链（Visual Studio 2022，需勾选
+# "使用 C++ 的桌面开发"）。引擎和任务栏条是静态库，直接链进 runner，
+# 不需要再装别的东西。
+flutter build windows --release
 ```
+
+产物在 `build/windows/x64/runner/Release/`。它**不是**单个文件：`taskpin.exe`
+只是个薄启动器，需要同目录下的 `flutter_windows.dll` 和 `data/`，分发时要整个目录
+一起打包（或用 release 里的 zip）。
+
+本机 `windows/flutter/ephemeral/.plugin_symlinks/` 无法穿越，Flutter 自己生成的
+`generated_plugins.cmake` 会让 CMake 在 configure 阶段直接失败。
+`tool/generate_plugins_cmake.py` 通过直接指向 pub-cache 真实目录绕过它；
+`windows/CMakeLists.txt` 优先使用该文件，缺失时回退到 Flutter 的版本，
+所以 CI（符号链接正常）不需要这个变通。
 
 ## License
 

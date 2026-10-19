@@ -1,0 +1,23 @@
+name: taskpin_engine
+description: >-
+  The Dart face of the TaskPin C engine (native/engine). dart:ffi bindings over
+  the whole taskpin_engine.h ABI plus an isolate that owns the single-threaded
+  Lua state, so the UI isolate never calls FFI directly.
+version: 0.1.0
+publish_to: none
+
+# Deliberately NO Flutter dependency. That is what lets this package be
+# analyzed and tested with plain `dart test` on a box where the Flutter SDK is
+# not usable, and it is why the C engine is exercised through a DLL here (see
+# README: the shipped app links the same code statically).
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  # Utf8 allocation helpers + `calloc`, and nativeFree for the finalizer path.
+  ffi: ^2.1.0
+  # Repo-relative resolution of the DLL and of the golden fixtures.
+  path: ^1.9.0
+
+dev_dependencies:
+  test: ^1.25.0

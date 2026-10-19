@@ -1,0 +1,81 @@
+{
+  "script": "examples/hud_clock.lua",
+  "ok": 1,
+  "error": "",
+  "elapsed_ms": 0,
+  "refresh_ms": 1000,
+  "params": [],
+  "clickable": 1,
+  "click_action": 1,
+  "click_url": "",
+  "display": "14:48",
+  "span_count": 1,
+  "spans": [
+    {
+      "text": "14:48",
+      "color": "#FFFFFF",
+      "font_size": 10,
+      "align": 0,
+      "newline": 0,
+      "is_image": 0,
+      "img_w": 0,
+      "img_h": 0
+    }
+  ],
+  "dialog": {
+    "title": "Clock",
+    "width": 200,
+    "height": 80,
+    "refresh": 1,
+    "borderless": 1,
+    "clickthrough": 1,
+    "opacity": 180,
+    "bg_color": "",
+    "transparent_bg": 0,
+    "item_count": 2,
+    "items": [
+    {
+      "type": "text",
+      "value": "14:48:23",
+      "color": "#FFFFFF",
+      "font_size": 24,
+      "bold": 1,
+      "image": "",
+      "image_width": 0,
+      "image_height": 0,
+      "url": "",
+      "cmd": "",
+      "bg": "",
+      "web_w": 0,
+      "web_h": 0,
+      "col_count": 0,
+      "row_count": 0,
+      "columns": [],
+      "rows": [],
+      "row_urls": [],
+      "row_cmds": []
+    },
+    {
+      "type": "text",
+      "value": "2026-10-16 Friday",
+      "color": "#AAAAAA",
+      "font_size": 10,
+      "bold": 0,
+      "image": "",
+      "image_width": 0,
+      "image_height": 0,
+      "url": "",
+      "cmd": "",
+      "bg": "",
+      "web_w": 0,
+      "web_h": 0,
+      "col_count": 0,
+      "row_count": 0,
+      "columns": [],
+      "rows": [],
+      "row_urls": [],
+      "row_cmds": []
+    }
+    ]
+  }
+}

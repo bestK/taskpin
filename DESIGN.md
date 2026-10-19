@@ -319,6 +319,7 @@ components:
     typography: "{typography.body-sm}"
 
 ---
+> 已废弃：本文件是早期的 Uber 风格分析，不再作为 TaskPin 设计依据。现行规范见 docs/VISUAL_SPEC.md。
 
 
 ## Overview

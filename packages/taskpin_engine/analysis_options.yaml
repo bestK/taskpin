@@ -1,0 +1,45 @@
+# Analysis options for a pure-Dart, FFI-heavy package.
+#
+# `package:flutter_lints` is not used: this package must stay free of any
+# Flutter dependency so it can be analyzed and tested with plain `dart test`.
+# `package:lints` is likewise not a dependency (the brief allows only ffi, path
+# and test), so this file enables the analyzer's own useful diagnostics
+# explicitly instead of pulling a lint set in.
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # A missing import or an unused one is a mistake, not a style choice.
+    unused_import: error
+    unused_local_variable: error
+    dead_code: error
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - avoid_empty_else
+    - avoid_relative_lib_imports
+    - await_only_futures
+    - camel_case_types
+    - cancel_subscriptions
+    - close_sinks
+    - comment_references
+    - directives_ordering
+    - hash_and_equals
+    - implementation_imports
+    - no_adjacent_strings_in_list
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_locals
+    - prefer_relative_imports
+    - prefer_typing_uninitialized_variables
+    # `sort_constructors_first` is deliberately NOT enabled: the model classes in
+    # `src/models.dart` are field-for-field mirrors of the C structs, and putting
+    # the `fromNative` conversion factory above the fields it converts would make
+    # the correspondence to the header much harder to check by eye.
+    - unnecessary_await_in_return
+    - unnecessary_lambdas
+    - use_super_parameters

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The App Sandbox is OFF on purpose.
+
+	  This is a behaviour change from the `flutter create` template, and it is
+	  required, not a preference. TaskPin's whole model is "run a Lua script the
+	  user wrote and read whatever it returns": scripts read files by arbitrary
+	  path, the engine fetches http(s) inside the Lua call frame, the config
+	  lives beside the executable (portable) or in ~/.taskpin/, and the market
+	  writes downloaded scripts into `scripts/`. A sandboxed process can do none
+	  of that without a user-selected-file dance that no script can perform.
+
+	  The previous implementation was a SwiftPM app (Package.swift) and was
+	  therefore never sandboxed, so this restores existing behaviour rather than
+	  changing it. Consequence: the app cannot ship through the Mac App Store and
+	  needs a Developer ID signature + notarisation for a clean Gatekeeper
+	  experience. That is the same trade-off the release workflow already makes
+	  (`codesign -s -` ad-hoc + `xattr -cr` in install.command) and Phase 12
+	  owns making it proper.
+
+	  Keep this in sync with Release.entitlements.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!--
+	  Outbound network, used by the bar's image spans (`http(s)` icon sources,
+	  native/mac/StatusItemView.swift -> BarIconCache) and by the engine's
+	  `http.*` Lua API. Harmless while the sandbox is off, and correct to keep if
+	  it is ever turned back on.
+	-->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

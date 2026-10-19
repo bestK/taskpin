@@ -1,0 +1,60 @@
+{
+  "script": "scripts/webview_demo.lua",
+  "ok": 1,
+  "error": "",
+  "elapsed_ms": 1359,
+  "refresh_ms": 0,
+  "params": [],
+  "clickable": 1,
+  "click_action": 1,
+  "click_url": "",
+  "display": "WebView",
+  "span_count": 1,
+  "spans": [
+    {
+      "text": "WebView",
+      "color": "#4FC3F7",
+      "font_size": 9,
+      "align": 0,
+      "newline": 0,
+      "is_image": 0,
+      "img_w": 0,
+      "img_h": 0
+    }
+  ],
+  "dialog": {
+    "title": "WebView Demo",
+    "width": 580,
+    "height": 460,
+    "refresh": 1000,
+    "borderless": 1,
+    "clickthrough": 0,
+    "opacity": 255,
+    "bg_color": "",
+    "transparent_bg": 1,
+    "item_count": 1,
+    "items": [
+    {
+      "type": "webview",
+      "value": "",
+      "color": "",
+      "font_size": 0,
+      "bold": 0,
+      "image": "",
+      "image_width": 0,
+      "image_height": 0,
+      "url": "https://raw.githubusercontent.com/bestK/taskpin/refs/heads/master/examples/webview_demo.html",
+      "cmd": "",
+      "bg": "",
+      "web_w": 580,
+      "web_h": 460,
+      "col_count": 0,
+      "row_count": 0,
+      "columns": [],
+      "rows": [],
+      "row_urls": [],
+      "row_cmds": []
+    }
+    ]
+  }
+}

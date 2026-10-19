@@ -6,52 +6,183 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Asset names are a frozen contract. `lib/core/update/update_service.dart` (and
+# the C updater it ports) fetches:
+#
+#   releases/latest/download/taskpin-x64.exe     <- Windows, auto-update target
+#   releases/latest/download/TaskPin-windows.zip <- Windows, manual download
+#   releases/latest/download/TaskPin-macos.zip   <- macOS, auto-update + manual
+#
+# Every already-installed copy of TaskPin depends on those three EXACT names.
+# Renaming one silently breaks auto-update for every user, so don't.
+#
+# The app is Flutter now, so the Windows artifact is no longer one file: the
+# .exe is a thin launcher that needs `flutter_windows.dll` and `data/` beside
+# it. `taskpin-x64.exe` stays a copy of the built `taskpin.exe` (same filename
+# contract), but the ZIP carries the whole runtime.
+# ─────────────────────────────────────────────────────────────────────────────
+
 jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # CI runners are normally outside mainland China, so the public pub.dev /
+      # storage.googleapis.com endpoints are used by default. A maintainer can
+      # opt into the China mirrors by setting the repository variables
+      # PUB_HOSTED_URL and FLUTTER_STORAGE_BASE_URL (Settings > Secrets and
+      # variables > Actions > Variables). Nothing is hardcoded.
+      - name: Configure pub mirrors (optional)
+        if: ${{ vars.PUB_HOSTED_URL != '' }}
+        shell: bash
+        run: |
+          echo "PUB_HOSTED_URL=${{ vars.PUB_HOSTED_URL }}" >> "$GITHUB_ENV"
+          echo "FLUTTER_STORAGE_BASE_URL=${{ vars.FLUTTER_STORAGE_BASE_URL }}" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Pinned to the version the release was verified against locally
+          # (3.47.7, stable). `channel: stable` would silently pick up a newer
+          # release and make the artifact non-reproducible; bump this
+          # deliberately when the app has been re-verified.
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: Build (release)
+        run: flutter build windows --release
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REL="build/windows/x64/runner/Release"
+          DIST="dist"
+          rm -rf "$DIST"
+          mkdir -p "$DIST"
+
+          # ── Flutter runtime ──────────────────────────────────────────────
+          # taskpin.exe is only ~67 KB: the Dart AOT snapshot lives in
+          # data/app.so and the engine in flutter_windows.dll. All of it has to
+          # travel together or the app will not start.
+          cp "$REL/taskpin.exe" "$DIST/taskpin.exe"
+          cp "$REL"/*.dll "$DIST/"              # flutter_windows.dll + plugin DLLs
+          if [ -f "$REL/native_assets.json" ]; then
+            cp "$REL/native_assets.json" "$DIST/"
+          fi
+          cp -r "$REL/data" "$DIST/data"
+
+          # ── auto-update asset: filename must not change ──────────────────
+          cp "$REL/taskpin.exe" "$DIST/taskpin-x64.exe"
+
+          # ── MSVC runtime ─────────────────────────────────────────────────
+          # The runner links the dynamic CRT (/MD), so taskpin.exe imports
+          # MSVCP140.dll / VCRUNTIME140.dll / VCRUNTIME140_1.dll. They are in
+          # System32 on this runner and on any box with the VC++ redistributable
+          # installed, but NOT on a clean Windows machine — and TaskPin is a
+          # download-and-run zip. Bundle them so the first launch does not fail
+          # with "VCRUNTIME140.dll was not found".
+          VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+          CRT_DLL="$("$VSWHERE" -latest -products '*' \
+            -find 'VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT/msvcp140.dll' \
+            | head -n 1 || true)"
+          if [ -n "$CRT_DLL" ]; then
+            CRT_DIR="$(dirname "$CRT_DLL")"
+            cp "$CRT_DIR/msvcp140.dll" \
+               "$CRT_DIR/vcruntime140.dll" \
+               "$CRT_DIR/vcruntime140_1.dll" \
+               "$DIST/"
+          else
+            echo "::warning::VC++ redistributables not found; the zip may not run on a clean machine"
+          fi
+
+          # ── support files ────────────────────────────────────────────────
+          cp -r examples "$DIST/examples"
+          cp -r lang "$DIST/lang"
+          # scripts/*.lua is gitignored, so the directory is absent on a fresh
+          # checkout. Ship it anyway — it is where market downloads land.
+          mkdir -p "$DIST/scripts"
+          cp -r scripts/. "$DIST/scripts/" 2>/dev/null || true
+
+          # ── zip ──────────────────────────────────────────────────────────
+          # 7-Zip is present on windows-latest; Git Bash does not ship `zip`.
+          # List the entries explicitly rather than zipping `dist`: it keeps
+          # taskpin-x64.exe (a separate release asset) out of the archive, and
+          # matches the documented shape "single exe + examples/ lang/ scripts/".
+          SEVENZ="7z"
+          command -v 7z >/dev/null 2>&1 || SEVENZ="/c/Program Files/7-Zip/7z.exe"
+          ( cd "$DIST" && "$SEVENZ" a -tzip -mx=9 ../TaskPin-windows.zip \
+              taskpin.exe flutter_windows.dll desktop_multi_window_plugin.dll \
+              native_assets.json msvcp140.dll vcruntime140.dll vcruntime140_1.dll \
+              data examples lang scripts >/dev/null )
+
+          echo "── TaskPin-windows.zip ──"
+          ls -la TaskPin-windows.zip
+          "$SEVENZ" l TaskPin-windows.zip | tail -n 4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskpin-windows
+          path: |
+            TaskPin-windows.zip
+            dist/taskpin-x64.exe
+
   build-macos:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
-        run: swift build -c release
-
-      - name: Sign and Package
+      - name: Configure pub mirrors (optional)
+        if: ${{ vars.PUB_HOSTED_URL != '' }}
         run: |
-          VERSION=$(cat version.txt)
-          codesign --force --deep -s - .build/release/TaskPin
-          mkdir -p dist/TaskPin.app/Contents/MacOS
-          mkdir -p dist/TaskPin.app/Contents/Resources
-          cp .build/release/TaskPin dist/TaskPin.app/Contents/MacOS/
-          cp -r examples dist/
-          if [ -f src/macos/Resources/AppIcon.icns ]; then
-            cp src/macos/Resources/AppIcon.icns dist/TaskPin.app/Contents/Resources/
-          fi
-          cat > dist/TaskPin.app/Contents/Info.plist << PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key>
-            <string>TaskPin</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.bestk.taskpin</string>
-            <key>CFBundleName</key>
-            <string>TaskPin</string>
-            <key>CFBundleVersion</key>
-            <string>$VERSION</string>
-            <key>CFBundleShortVersionString</key>
-            <string>$VERSION</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>14.0</string>
-            <key>LSUIElement</key>
-            <true/>
-            <key>CFBundleIconFile</key>
-            <string>AppIcon</string>
-          </dict>
-          </plist>
-          PLIST
-          codesign --force --deep -s - dist/TaskPin.app
-          cat > dist/install.command << 'SCRIPT'
+          echo "PUB_HOSTED_URL=${{ vars.PUB_HOSTED_URL }}" >> "$GITHUB_ENV"
+          echo "FLUTTER_STORAGE_BASE_URL=${{ vars.FLUTTER_STORAGE_BASE_URL }}" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Keep in lockstep with the Windows job (see the comment there).
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: Build (release)
+        run: flutter build macos --release
+
+      - name: Package
+        run: |
+          set -euo pipefail
+
+          APP="build/macos/Build/Products/Release/taskpin.app"
+          DIST="dist"
+          rm -rf "$DIST"
+          mkdir -p "$DIST"
+
+          # Flutter builds `taskpin.app`; ship it as `TaskPin.app` (the name the
+          # updater's bundle-path derivation and install.command both expect).
+          cp -R "$APP" "$DIST/TaskPin.app"
+
+          # Flutter ad-hoc signs (`CODE_SIGN_IDENTITY = "-"`) during the build.
+          # Re-sign the renamed bundle so the signature stays valid, after
+          # clearing the xattrs that would otherwise make codesign fail with
+          # "resource fork, Finder information, or similar detritus not allowed".
+          xattr -cr "$DIST/TaskPin.app" || true
+          codesign --force --deep -s - "$DIST/TaskPin.app"
+          # Advisory only: an ad-hoc signature is not notarized and Gatekeeper
+          # still requires the user to approve the first launch, which is what
+          # install.command's `xattr -cr` is for. Report a bad signature rather
+          # than blocking the release on it.
+          codesign --verify --deep --strict --verbose=2 "$DIST/TaskPin.app" \
+            || echo "::warning::codesign verification failed (ad-hoc signature; see docs/FLUTTER_REWRITE_PLAN.md risk 10)"
+
+          cp -r examples "$DIST/examples"
+
+          # Preserved verbatim from the pre-Flutter workflow: clear the
+          # quarantine attribute, install into /Applications, launch.
+          cat > "$DIST/install.command" << 'SCRIPT'
           #!/bin/bash
           DIR="$(cd "$(dirname "$0")" && pwd)"
           APP_PATH="$DIR/TaskPin.app"
@@ -66,52 +197,21 @@ jobs:
           open "$DEST"
           echo "Done! You can close this window."
           SCRIPT
-          chmod +x dist/install.command
-          cd dist && zip -r ../TaskPin-macos.zip TaskPin.app examples install.command
+          chmod +x "$DIST/install.command"
+
+          # -y stores symlinks as symlinks: a macOS framework is full of them
+          # (Versions/Current, Resources), and dereferencing them bloats the
+          # archive and can invalidate the code signature.
+          ( cd "$DIST" && zip -r -y ../TaskPin-macos.zip TaskPin.app examples install.command )
+
+          echo "── TaskPin-macos.zip ──"
+          ls -la TaskPin-macos.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: taskpin-macos
           path: TaskPin-macos.zip
-
-  build-windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup MSYS2/MinGW
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          install: mingw-w64-x86_64-gcc make zip
-
-      - name: Build
-        run: make clean && make -j$(nproc) MODE=release
-
-      - name: Package
-        run: |
-          mkdir -p dist
-          cp taskpin.exe dist/
-          cp taskpin.exe dist/taskpin-x64.exe
-          cp -r examples dist/
-          cp -r lang dist/
-          # scripts/*.lua is gitignored, so the dir is absent on a fresh
-          # checkout. Ship it empty — it's where market downloads land.
-          mkdir -p dist/scripts
-          cp -r scripts/. dist/scripts/ 2>/dev/null || true
-          cd dist && zip -r ../TaskPin-windows.zip taskpin.exe examples lang scripts
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: taskpin-windows
-          path: |
-            TaskPin-windows.zip
-            dist/taskpin-x64.exe
 
   release:
     needs: [build-macos, build-windows]

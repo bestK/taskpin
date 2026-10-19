@@ -1,0 +1,40 @@
+{
+	"items":	[{
+			"id":	"3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+			"type":	"lua",
+			"name":	"mac clock",
+			"intervalMs":	1000,
+			"url":	"",
+			"reqHeaders":	"",
+			"fieldExpr":	"",
+			"clickEnabled":	true,
+			"clickUrl":	"https://example.com",
+			"luaPath":	"~/.taskpin/scripts/clock.lua",
+			"params":	[{
+					"id":	"9C8B7A6D-5E4F-3210-9ABC-DEF012345678",
+					"key":	"TZ",
+					"value":	"UTC+8",
+					"label":	"时区",
+					"paramType":	"string"
+				}],
+			"pinned":	true
+		}, {
+			"id":	"3F2504E0-4F89-11D3-9A0C-0305E82C3302",
+			"type":	"url",
+			"name":	"api",
+			"intervalMs":	5000,
+			"url":	"http://localhost:8080/status",
+			"reqHeaders":	"x-api-key:abc",
+			"fieldExpr":	"$.subscriptionTitle $$.currentUsage",
+			"clickEnabled":	false,
+			"clickUrl":	"",
+			"luaPath":	"",
+			"params":	[],
+			"pinned":	false
+		}],
+	"fontSize":	12,
+	"fontColor":	"FF8000",
+	"bgColor":	"1E1E1E",
+	"scrollEnabled":	true,
+	"sources":	["bestK/taskpin-plugins"]
+}

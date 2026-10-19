@@ -1,0 +1,448 @@
+{
+  "@@locale": "en",
+  "mainColName": "Name",
+  "mainColType": "Type",
+  "mainColSource": "Source",
+  "mainColInterval": "Interval",
+  "mainColPin": "Pin",
+  "mainColXy": "X,Y",
+  "mainColWidth": "W",
+  "mainColBg": "BG",
+  "mainAdd": "Add",
+  "mainDelete": "Delete",
+  "confirmDeleteDesc": "This action cannot be undone. Delete the following item?",
+  "mainPin": "Pin",
+  "mainUnpin": "Unpin",
+  "mainSettings": "Settings",
+  "mainMarket": "Market",
+  "mainWindowTitle": "TaskPin - Items",
+  "mainSelectItemFirst": "Please select an item first.",
+  "editTitleEdit": "Edit Item",
+  "editTitleAdd": "Add Item",
+  "editType": "Type:",
+  "editTypeUrl": "URL",
+  "editTypeLua": "Lua File",
+  "editName": "Name:",
+  "editUrl": "URL:",
+  "editLoad": "Load",
+  "editHeaders": "Headers:",
+  "editLuaFile": "Lua File:",
+  "editInterval": "Interval:",
+  "editResponseStructure": "Response structure (click to insert):",
+  "editTemplate": "Template:",
+  "editPreview": "Preview:",
+  "editEnableClickUrl": "Enable click to open URL",
+  "editClickUrl": "Click URL:",
+  "editBarW": "Bar W:",
+  "editBarX": "X:",
+  "editBarY": "Y:",
+  "editBarBg": "BG:",
+  "editOk": "OK",
+  "editCancel": "Cancel",
+  "editParams": "Parameters",
+  "settingsTitle": "Settings",
+  "settingsFontSize": "Font Size (pt):",
+  "settingsFontColor": "Font Color (hex):",
+  "settingsBgColor": "BG Color (hex):",
+  "settingsWidth": "Width (px):",
+  "settingsPosX": "Pos X (-1=auto):",
+  "settingsPosY": "Y:",
+  "settingsAutoStart": "Start with Windows",
+  "settingsAutoScroll": "Auto-scroll long text",
+  "settingsLogLevel": "Log level:",
+  "settingsLogOff": "Off",
+  "settingsLogError": "Error",
+  "settingsLogInfo": "Info",
+  "settingsLogDebug": "Debug",
+  "settingsOk": "OK",
+  "settingsCancel": "Cancel",
+  "marketTitle": "Plugin Market",
+  "marketAdd": "Add",
+  "marketDel": "Del",
+  "marketRefresh": "Refresh",
+  "marketDownload": "Download",
+  "marketInitialStatus": "Select a source and click Refresh",
+  "marketColName": "Name",
+  "marketColDescription": "Description",
+  "marketColAuthor": "Author",
+  "marketColVersion": "Version",
+  "marketFetching": "Fetching...",
+  "marketScriptCount": "%d scripts",
+  "marketSelectScriptFirst": "Please select a script first",
+  "marketDownloading": "Downloading...",
+  "marketDownloadFailed": "Download failed",
+  "marketDownloadSuccess": "Downloaded and added successfully!",
+  "marketSaveFailed": "Save failed",
+  "marketMaxSources": "Maximum 8 sources supported",
+  "marketEnterRepo": "Enter repository in the dropdown\nFormat: user/repo",
+  "marketSourceDeleted": "Source deleted",
+  "marketDownloadScriptFailed": "Failed to download script",
+  "marketInstall": "Install",
+  "marketViewCode": "View Code",
+  "marketCancel": "Cancel",
+  "marketInstallPrompt": "Install this script?",
+  "marketOverwriteConfirm": "Script \"%s\" already exists. Overwrite?",
+  "marketOverwriteTitle": "TaskPin - Overwrite",
+  "barUnpin": "Unpin",
+  "barManageItems": "Manage Items...",
+  "barExit": "Exit",
+  "scriptingVersionRequired": "Requires TaskPin v%s+ (current v%s)",
+  "appAlreadyRunning": "TaskPin is already running.",
+  "webviewDragHint": "Shift + Drag / Scroll",
+  "webviewErrNoRuntime": "[WebView not available - install Microsoft Edge]",
+  "webviewErrDownloadFailed": "[WebView2Loader.dll download failed]\nDownload: https://github.com/bestK/taskpin/raw/master/deps/x64/WebView2Loader.dll\nPlace in: %s",
+  "barCheckUpdate": "Check for Updates",
+  "barUpdateAvailable": "New version v%s available. Download?",
+  "barUpToDate": "Already up to date.",
+  "barUpdateFailed": "Failed to check for updates.",
+  "elevateBlocked": "⚠️ Admin required",
+  "elevateDescDefault": "This script requires administrator privileges",
+  "elevateRestartConfirm": "Restart TaskPin as administrator?",
+  "elevateDialogTitle": "TaskPin - Admin Required",
+  "navProjects": "Projects",
+  "navLogs": "Logs",
+  "projectsSearchHint": "Search projects",
+  "projectsEmptyTitle": "No projects yet",
+  "projectsEmptyAction": "Add project",
+  "projectsNoMatch": "No matching projects",
+  "projectNewName": "New project",
+  "projectFallbackLua": "Lua project {n}",
+  "@projectFallbackLua": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectFallbackUrl": "URL project {n}",
+  "@projectFallbackUrl": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectPinToTaskbar": "Pin to taskbar",
+  "projectMore": "More",
+  "projectCopy": "Duplicate",
+  "projectDeleteTitle": "Delete project?",
+  "projectIntervalMs": "every {n} ms",
+  "@projectIntervalMs": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectIntervalSec": "every {n} s",
+  "@projectIntervalSec": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectIntervalMin": "every {n} min",
+  "@projectIntervalMin": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectIntervalHour": "every {n} h",
+  "@projectIntervalHour": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "statusRunning": "Running",
+  "statusNotPinned": "Not pinned",
+  "statusStale": "Data is stale",
+  "statusError": "Error",
+  "statusScriptUnset": "No script selected",
+  "statusScriptMissing": "Script file not found",
+  "statusUrlUnset": "No address set",
+  "detailRun": "Run",
+  "detailRunning": "Running...",
+  "detailSectionPreview": "Preview",
+  "detailPreviewIdle": "Not run yet",
+  "detailPreviewMeta": "{ms} ms · {time}",
+  "@detailPreviewMeta": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "detailSectionGeneral": "General",
+  "detailName": "Name",
+  "detailType": "Type",
+  "detailInterval": "Refresh interval",
+  "detailSectionSource": "Data source",
+  "detailScriptFile": "Script file",
+  "detailScriptFileDesc": "Path of the Lua script this project runs.",
+  "detailAddress": "Address",
+  "detailHeaders": "Request headers",
+  "detailExpression": "Value expression",
+  "detailSectionParams": "Parameters",
+  "detailParamsError": "Could not read the script header",
+  "detailRetry": "Retry",
+  "detailAppearance": "Appearance",
+  "detailWidth": "Width",
+  "detailBackground": "Background color",
+  "detailPosX": "X",
+  "detailPosY": "Y",
+  "detailClickTitle": "Click action",
+  "detailClickDesc": "What happens when you click the item on the taskbar.",
+  "detailClickNone": "None",
+  "detailClickLink": "Open link",
+  "detailClickDialog": "Show popup",
+  "detailClickUrl": "Link address",
+  "detailPreviewDialog": "Preview popup",
+  "detailNoMultiWindow": "This build cannot open popup windows.",
+  "detailDialogPlacement": "Popup position and size",
+  "detailDialogX": "Popup X",
+  "detailDialogY": "Popup Y",
+  "detailDialogW": "Popup width",
+  "detailDialogH": "Popup height",
+  "detailDeleteTitle": "Delete project",
+  "detailDeleteDesc": "Removes this project and unpins it from the taskbar.",
+  "colorInherit": "Use default",
+  "colorInheritTip": "Uses the default background",
+  "colorPickTip": "Pick a color",
+  "pickerTitle": "Color",
+  "pickerStoredValue": "Stored value",
+  "pickerStoredHint": "AARRGGBB, BGR byte order (Win32 COLORREF)",
+  "pickerUse": "Use color",
+  "pickerSaturation": "Saturation and brightness",
+  "pickerHue": "Hue",
+  "pickerOpacity": "Opacity",
+  "settingsSectionAppearance": "Appearance",
+  "settingsTheme": "App theme",
+  "settingsThemeDesc": "Choose light or dark, or follow the system.",
+  "settingsThemeLight": "Light",
+  "settingsThemeDark": "Dark",
+  "settingsThemeSystem": "Use system setting",
+  "settingsSectionDefaults": "Taskbar defaults",
+  "settingsDefaultWidth": "Default width",
+  "settingsDefaultWidthDesc": "Width used by new projects.",
+  "settingsDefaultPosX": "Default X position",
+  "settingsDefaultPosXDesc": "-1 places the bar automatically.",
+  "settingsDefaultPosY": "Default Y position",
+  "settingsDefaultPosYDesc": "-1 centers the bar vertically.",
+  "settingsFontSizeTitle": "Font size",
+  "settingsFontSizeDesc": "Text size on the taskbar, in pt.",
+  "settingsFontColorTitle": "Text color",
+  "settingsFontColorDesc": "Used when a script sets no color.",
+  "settingsBgColorTitle": "Background",
+  "settingsBgColorDesc": "Used when a project sets no background.",
+  "settingsScrollTitle": "Scroll long text",
+  "settingsScrollDesc": "Scrolls text that is wider than the bar.",
+  "settingsSectionLogging": "Logging",
+  "settingsLogLevelTitle": "Log level",
+  "settingsLogLevelDesc": "How much detail is written to the log file.",
+  "settingsSectionUpdates": "Updates",
+  "settingsVersion": "Current version {version}",
+  "@settingsVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsChecking": "Checking...",
+  "settingsSectionSources": "Plugin sources",
+  "settingsSourcesTitle": "Source list ({n})",
+  "@settingsSourcesTitle": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsSectionAbout": "About",
+  "settingsAboutTitle": "TaskPin {version}",
+  "@settingsAboutTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAboutGithub": "GitHub",
+  "settingsAboutFeedback": "Send feedback",
+  "settingsConfigFile": "Config file",
+  "actionOpen": "Open",
+  "logsEmpty": "No logs yet",
+  "marketSearchHint": "Search plugins",
+  "marketManageSources": "Manage sources",
+  "marketViaProxy": "Using gh-proxy",
+  "marketInstalled": "Installed",
+  "marketNoMatch": "No matching plugins",
+  "marketEmpty": "No plugins in the sources",
+  "marketLoadFailed": "Can't load the plugin list",
+  "marketErrorNetwork": "No network connection.",
+  "marketErrorApi": "GitHub did not return a plugin list.",
+  "marketRetry": "Retry",
+  "marketSourcesTitle": "Plugin sources",
+  "marketSourceHint": "user/repo",
+  "marketSourceInvalid": "Use the format user/repo.",
+  "marketSourceDuplicate": "This source is already in the list.",
+  "marketClose": "Close",
+  "marketItemLimit": "The project list is full. The script was downloaded but not added.",
+  "pageNotFound": "Page not found",
+  "pageGoProjects": "Back to projects",
+  "updateAvailableTitle": "New version available",
+  "updateAvailableMessage": "Version {remote} is available. You are running {current}. Update now?",
+  "@updateAvailableMessage": {
+    "placeholders": {
+      "remote": {
+        "type": "String"
+      },
+      "current": {
+        "type": "String"
+      }
+    }
+  },
+  "updateAvailableDetail": "TaskPin downloads the new build, replaces itself and restarts.",
+  "updateConfirm": "Update",
+  "updateLater": "Later",
+  "projectsStatusRunning": "{n} running",
+  "@projectsStatusRunning": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsStatusError": "{n} error",
+  "@projectsStatusError": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsStatusStopped": "{n} stopped",
+  "@projectsStatusStopped": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsGroupRunning": "Running",
+  "projectsGroupAttention": "Needs attention",
+  "projectsGroupStopped": "Stopped",
+  "projectsPreviewTitle": "Taskbar preview · {n} plugins",
+  "@projectsPreviewTitle": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsErrorBanner": "{n} projects cannot find their script file. It may have been moved or deleted.",
+  "@projectsErrorBanner": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsRelocateAll": "Relocate all",
+  "projectsSearchShortcut": "Ctrl K",
+  "projectRelocate": "Choose file",
+  "projectRelocateTitle": "Choose script",
+  "projectRelocateMessage": "Enter the script path for {name}.",
+  "@projectRelocateMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "projectUpdatedJustNow": "updated just now",
+  "projectUpdatedSec": "updated {n} s ago",
+  "@projectUpdatedSec": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectUpdatedMin": "updated {n} min ago",
+  "@projectUpdatedMin": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectUpdatedHour": "updated {n} h ago",
+  "@projectUpdatedHour": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectUpdatedDay": "updated {n} d ago",
+  "@projectUpdatedDay": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectCopySuffix": " copy",
+  "taskbarShowLabel": "Taskbar",
+  "marketSubtitle": "{total} plugins · {installed} installed · Sources: {sources}",
+  "@marketSubtitle": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "installed": {
+        "type": "int"
+      },
+      "sources": {
+        "type": "String"
+      }
+    }
+  },
+  "marketFilterAll": "All {n}",
+  "@marketFilterAll": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "marketFilterInstalled": "Installed {n}",
+  "@marketFilterInstalled": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "marketFilterNotInstalled": "Not installed {n}",
+  "@marketFilterNotInstalled": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "marketNoDescription": "No description",
+  "marketBarLabel": "Taskbar",
+  "marketSourceSeparator": ", ",
+  "projectsDragHint": "Drag to reorder"
+}

@@ -1,0 +1,10 @@
+# Dart / Flutter package output.
+.dart_tool/
+.packages
+build/
+.flutter-plugins-dependencies
+
+# taskpin_design is a LIBRARY package (a path dependency of the app), so its
+# lockfile is not committed — the app's root pubspec.lock is the one that pins
+# the resolution. This matches the Flutter/Dart convention for packages.
+pubspec.lock

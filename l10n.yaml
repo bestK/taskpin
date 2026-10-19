@@ -1,0 +1,25 @@
+# Flutter gen-l10n configuration.
+#
+# lib/l10n/app_en.arb and app_zh.arb are edited by hand. The legacy keys were
+# migrated from lang/{en-US,zh-CN}.json by tool/migrate_lang.py; new keys are
+# added directly. Regenerate with `flutter gen-l10n`, then run
+# `flutter test test/l10n`.
+#
+# Keys with `{name}` placeholders declare them in an `@key` entry in both ARB
+# files. Five legacy keys use printf-style `%s`/`%d` and are formatted by the
+# call site; test/l10n/l10n_parity_test.dart pins that set.
+
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+
+# Emit into lib/l10n/ rather than into a synthetic package, so the generated
+# Dart is a normal part of the source tree and CI can diff it.
+synthetic-package: false
+
+# Report any key the template has that a translation is missing.
+untranslated-messages-file: l10n_untranslated.json
+
+# Keep the generated API non-nullable and explicit.
+nullable-getter: false

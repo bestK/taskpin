@@ -1,0 +1,448 @@
+{
+  "@@locale": "zh",
+  "mainColName": "名称",
+  "mainColType": "类型",
+  "mainColSource": "来源",
+  "mainColInterval": "刷新间隔",
+  "mainColPin": "固定",
+  "mainColXy": "X,Y",
+  "mainColWidth": "宽",
+  "mainColBg": "背景",
+  "mainAdd": "添加",
+  "mainDelete": "删除",
+  "confirmDeleteDesc": "此操作不可撤销，确定要删除以下项目吗？",
+  "mainPin": "固定",
+  "mainUnpin": "取消固定",
+  "mainSettings": "设置",
+  "mainMarket": "市场",
+  "mainWindowTitle": "TaskPin - 项目管理",
+  "mainSelectItemFirst": "请先选择一个项目",
+  "editTitleEdit": "编辑项目",
+  "editTitleAdd": "添加项目",
+  "editType": "类型：",
+  "editTypeUrl": "URL",
+  "editTypeLua": "Lua 脚本",
+  "editName": "名称：",
+  "editUrl": "URL：",
+  "editLoad": "加载",
+  "editHeaders": "请求头：",
+  "editLuaFile": "Lua 文件：",
+  "editInterval": "刷新间隔：",
+  "editResponseStructure": "响应结构（点击插入）：",
+  "editTemplate": "模板：",
+  "editPreview": "预览：",
+  "editEnableClickUrl": "启用点击打开 URL",
+  "editClickUrl": "点击 URL：",
+  "editBarW": "栏宽：",
+  "editBarX": "X：",
+  "editBarY": "Y：",
+  "editBarBg": "背景：",
+  "editOk": "确定",
+  "editCancel": "取消",
+  "editParams": "参数",
+  "settingsTitle": "设置",
+  "settingsFontSize": "字号 (pt)：",
+  "settingsFontColor": "字体颜色 (hex)：",
+  "settingsBgColor": "背景颜色 (hex)：",
+  "settingsWidth": "宽度 (px)：",
+  "settingsPosX": "X 坐标 (-1=自动)：",
+  "settingsPosY": "Y：",
+  "settingsAutoStart": "开机自启动",
+  "settingsAutoScroll": "长文本自动滚动",
+  "settingsLogLevel": "日志级别：",
+  "settingsLogOff": "关闭",
+  "settingsLogError": "错误",
+  "settingsLogInfo": "信息",
+  "settingsLogDebug": "调试",
+  "settingsOk": "确定",
+  "settingsCancel": "取消",
+  "marketTitle": "插件市场",
+  "marketAdd": "添加",
+  "marketDel": "删除",
+  "marketRefresh": "刷新",
+  "marketDownload": "下载",
+  "marketInitialStatus": "选择源后点击刷新",
+  "marketColName": "名称",
+  "marketColDescription": "描述",
+  "marketColAuthor": "作者",
+  "marketColVersion": "版本",
+  "marketFetching": "正在获取...",
+  "marketScriptCount": "共 %d 个脚本",
+  "marketSelectScriptFirst": "请先选择一个脚本",
+  "marketDownloading": "正在下载...",
+  "marketDownloadFailed": "下载失败",
+  "marketDownloadSuccess": "下载并添加成功！",
+  "marketSaveFailed": "保存失败",
+  "marketMaxSources": "最多支持 8 个源",
+  "marketEnterRepo": "请在下拉框中输入仓库地址\n格式：user/repo",
+  "marketSourceDeleted": "已删除源",
+  "marketDownloadScriptFailed": "脚本下载失败",
+  "marketInstall": "安装",
+  "marketViewCode": "查看代码",
+  "marketCancel": "取消",
+  "marketInstallPrompt": "是否安装此脚本？",
+  "marketOverwriteConfirm": "脚本 \"%s\" 已存在，是否覆盖？",
+  "marketOverwriteTitle": "TaskPin - 覆盖确认",
+  "barUnpin": "取消固定",
+  "barManageItems": "管理项目...",
+  "barExit": "退出",
+  "scriptingVersionRequired": "需要 TaskPin v%s+（当前 v%s）",
+  "appAlreadyRunning": "TaskPin 已在运行中",
+  "webviewDragHint": "Shift + 拖动 / 滚轮缩放",
+  "webviewErrNoRuntime": "[WebView 不可用 - 请安装 Microsoft Edge]",
+  "webviewErrDownloadFailed": "[WebView2Loader.dll 下载失败]\n下载地址: https://gh-proxy.com/https://github.com/bestK/taskpin/raw/master/deps/x64/WebView2Loader.dll\n放置到: %s",
+  "barCheckUpdate": "检查更新",
+  "barUpdateAvailable": "发现新版本 v%s，是否下载？",
+  "barUpToDate": "已是最新版本。",
+  "barUpdateFailed": "检查更新失败。",
+  "elevateBlocked": "⚠️ 需要管理员权限",
+  "elevateDescDefault": "此脚本需要管理员权限",
+  "elevateRestartConfirm": "是否以管理员身份重启 TaskPin？",
+  "elevateDialogTitle": "TaskPin - 需要管理员权限",
+  "navProjects": "项目",
+  "navLogs": "日志",
+  "projectsSearchHint": "搜索项目",
+  "projectsEmptyTitle": "还没有项目",
+  "projectsEmptyAction": "添加项目",
+  "projectsNoMatch": "没有匹配的项目",
+  "projectNewName": "新项目",
+  "projectFallbackLua": "Lua 项目 {n}",
+  "@projectFallbackLua": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectFallbackUrl": "URL 项目 {n}",
+  "@projectFallbackUrl": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectPinToTaskbar": "固定到任务栏",
+  "projectMore": "更多",
+  "projectCopy": "复制",
+  "projectDeleteTitle": "删除项目？",
+  "projectIntervalMs": "每 {n} 毫秒",
+  "@projectIntervalMs": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectIntervalSec": "每 {n} 秒",
+  "@projectIntervalSec": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectIntervalMin": "每 {n} 分钟",
+  "@projectIntervalMin": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectIntervalHour": "每 {n} 小时",
+  "@projectIntervalHour": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "statusRunning": "运行中",
+  "statusNotPinned": "未固定",
+  "statusStale": "数据已过期",
+  "statusError": "出错",
+  "statusScriptUnset": "未选择脚本",
+  "statusScriptMissing": "找不到脚本文件",
+  "statusUrlUnset": "未设置地址",
+  "detailRun": "运行",
+  "detailRunning": "运行中...",
+  "detailSectionPreview": "预览",
+  "detailPreviewIdle": "尚未运行",
+  "detailPreviewMeta": "{ms} 毫秒 · {time}",
+  "@detailPreviewMeta": {
+    "placeholders": {
+      "ms": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "detailSectionGeneral": "常规",
+  "detailName": "名称",
+  "detailType": "类型",
+  "detailInterval": "刷新间隔",
+  "detailSectionSource": "数据源",
+  "detailScriptFile": "脚本文件",
+  "detailScriptFileDesc": "此项目运行的 Lua 脚本路径。",
+  "detailAddress": "地址",
+  "detailHeaders": "请求头",
+  "detailExpression": "取值表达式",
+  "detailSectionParams": "参数",
+  "detailParamsError": "无法读取脚本头",
+  "detailRetry": "重试",
+  "detailAppearance": "外观",
+  "detailWidth": "宽度",
+  "detailBackground": "背景色",
+  "detailPosX": "X",
+  "detailPosY": "Y",
+  "detailClickTitle": "点击行为",
+  "detailClickDesc": "点击任务栏上的项目时执行的操作。",
+  "detailClickNone": "无",
+  "detailClickLink": "打开链接",
+  "detailClickDialog": "弹出窗口",
+  "detailClickUrl": "链接地址",
+  "detailPreviewDialog": "预览弹出窗口",
+  "detailNoMultiWindow": "此版本无法打开弹出窗口。",
+  "detailDialogPlacement": "弹出窗口位置和大小",
+  "detailDialogX": "弹出窗口 X",
+  "detailDialogY": "弹出窗口 Y",
+  "detailDialogW": "弹出窗口宽度",
+  "detailDialogH": "弹出窗口高度",
+  "detailDeleteTitle": "删除项目",
+  "detailDeleteDesc": "删除此项目，并从任务栏移除。",
+  "colorInherit": "使用默认",
+  "colorInheritTip": "使用默认背景",
+  "colorPickTip": "选择颜色",
+  "pickerTitle": "颜色",
+  "pickerStoredValue": "存储值",
+  "pickerStoredHint": "AARRGGBB，BGR 字节序（Win32 COLORREF）",
+  "pickerUse": "使用此颜色",
+  "pickerSaturation": "饱和度和亮度",
+  "pickerHue": "色相",
+  "pickerOpacity": "不透明度",
+  "settingsSectionAppearance": "外观",
+  "settingsTheme": "应用主题",
+  "settingsThemeDesc": "选择浅色或深色，或跟随系统。",
+  "settingsThemeLight": "浅色",
+  "settingsThemeDark": "深色",
+  "settingsThemeSystem": "使用系统设置",
+  "settingsSectionDefaults": "任务栏默认值",
+  "settingsDefaultWidth": "默认宽度",
+  "settingsDefaultWidthDesc": "新项目使用的宽度。",
+  "settingsDefaultPosX": "默认 X 位置",
+  "settingsDefaultPosXDesc": "-1 表示自动放置。",
+  "settingsDefaultPosY": "默认 Y 位置",
+  "settingsDefaultPosYDesc": "-1 表示垂直居中。",
+  "settingsFontSizeTitle": "字号",
+  "settingsFontSizeDesc": "任务栏文字的大小，单位 pt。",
+  "settingsFontColorTitle": "文字颜色",
+  "settingsFontColorDesc": "脚本未指定颜色时使用。",
+  "settingsBgColorTitle": "背景",
+  "settingsBgColorDesc": "项目未设置背景时使用。",
+  "settingsScrollTitle": "文字过长时滚动",
+  "settingsScrollDesc": "文字超出任务栏条宽度时滚动显示。",
+  "settingsSectionLogging": "日志",
+  "settingsLogLevelTitle": "日志级别",
+  "settingsLogLevelDesc": "写入日志文件的详细程度。",
+  "settingsSectionUpdates": "更新",
+  "settingsVersion": "当前版本 {version}",
+  "@settingsVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsChecking": "正在检查...",
+  "settingsSectionSources": "插件来源",
+  "settingsSourcesTitle": "来源列表 ({n})",
+  "@settingsSourcesTitle": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsSectionAbout": "关于",
+  "settingsAboutTitle": "TaskPin {version}",
+  "@settingsAboutTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAboutGithub": "GitHub",
+  "settingsAboutFeedback": "反馈",
+  "settingsConfigFile": "配置文件",
+  "actionOpen": "打开",
+  "logsEmpty": "暂无日志",
+  "marketSearchHint": "搜索插件",
+  "marketManageSources": "管理来源",
+  "marketViaProxy": "已通过 gh-proxy 加速",
+  "marketInstalled": "已安装",
+  "marketNoMatch": "没有匹配的插件",
+  "marketEmpty": "来源中没有插件",
+  "marketLoadFailed": "无法加载插件列表",
+  "marketErrorNetwork": "无法连接网络。",
+  "marketErrorApi": "GitHub 没有返回插件列表。",
+  "marketRetry": "重试",
+  "marketSourcesTitle": "插件来源",
+  "marketSourceHint": "user/repo",
+  "marketSourceInvalid": "格式应为 user/repo。",
+  "marketSourceDuplicate": "该来源已在列表中。",
+  "marketClose": "关闭",
+  "marketItemLimit": "项目数量已达上限。脚本已下载，但未添加到项目。",
+  "pageNotFound": "页面不存在",
+  "pageGoProjects": "返回项目",
+  "updateAvailableTitle": "发现新版本",
+  "updateAvailableMessage": "新版本 {remote} 可用，当前版本为 {current}。现在更新吗？",
+  "@updateAvailableMessage": {
+    "placeholders": {
+      "remote": {
+        "type": "String"
+      },
+      "current": {
+        "type": "String"
+      }
+    }
+  },
+  "updateAvailableDetail": "TaskPin 会下载新版本、替换自身并重启。",
+  "updateConfirm": "更新",
+  "updateLater": "稍后",
+  "projectsStatusRunning": "{n} 运行中",
+  "@projectsStatusRunning": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsStatusError": "{n} 异常",
+  "@projectsStatusError": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsStatusStopped": "{n} 已停止",
+  "@projectsStatusStopped": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsGroupRunning": "运行中",
+  "projectsGroupAttention": "需要处理",
+  "projectsGroupStopped": "已停止",
+  "projectsPreviewTitle": "任务栏预览 · {n} 个插件",
+  "@projectsPreviewTitle": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsErrorBanner": "{n} 个项目找不到脚本文件，可能已被移动或删除。",
+  "@projectsErrorBanner": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectsRelocateAll": "批量重新定位",
+  "projectsSearchShortcut": "Ctrl K",
+  "projectRelocate": "重新选择",
+  "projectRelocateTitle": "重新选择脚本",
+  "projectRelocateMessage": "输入 {name} 的脚本路径。",
+  "@projectRelocateMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "projectUpdatedJustNow": "刚刚更新",
+  "projectUpdatedSec": "{n} 秒前更新",
+  "@projectUpdatedSec": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectUpdatedMin": "{n} 分钟前更新",
+  "@projectUpdatedMin": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectUpdatedHour": "{n} 小时前更新",
+  "@projectUpdatedHour": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectUpdatedDay": "{n} 天前更新",
+  "@projectUpdatedDay": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "projectCopySuffix": " 副本",
+  "taskbarShowLabel": "任务栏显示",
+  "marketSubtitle": "{total} 个插件 · 已安装 {installed} 个 · 来源：{sources}",
+  "@marketSubtitle": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "installed": {
+        "type": "int"
+      },
+      "sources": {
+        "type": "String"
+      }
+    }
+  },
+  "marketFilterAll": "全部 {n}",
+  "@marketFilterAll": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "marketFilterInstalled": "已安装 {n}",
+  "@marketFilterInstalled": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "marketFilterNotInstalled": "未安装 {n}",
+  "@marketFilterNotInstalled": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "marketNoDescription": "暂无描述",
+  "marketBarLabel": "任务栏",
+  "marketSourceSeparator": "、",
+  "projectsDragHint": "拖动调整顺序"
+}

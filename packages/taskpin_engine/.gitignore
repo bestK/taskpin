@@ -1,0 +1,9 @@
+# Build output of tool/build_dll.sh. The DLL is a build artifact, not source:
+# regenerate it with `bash tool/build_dll.sh`. The engine's C sources live in
+# the repository root (native/engine), not in this package.
+native/
+
+# Dart
+.dart_tool/
+.packages
+pubspec.lock

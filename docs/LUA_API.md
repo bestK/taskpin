@@ -94,6 +94,7 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | borderless | boolean | 无标题栏/无边框/无滚动条模式，默认 false |
 | clickthrough | boolean | 鼠标点击穿透（配合 borderless 做 HUD），默认 false |
 | opacity | number | 窗口透明度 0-255（0=全透明，255=不透明），默认 255 |
+| transparent_bg | boolean | 让宿主把弹窗合成到桌面上，而不是填充 `bg_color`，默认 false |
 | content | table | 内容项数组（最多 8 项） |
 
 **borderless 模式**：
@@ -110,6 +111,24 @@ return icon("data:image/png;base64,iVBOR...", 16, 16)
 | `"image"` | source, width, height | 独立图片块 |
 | `"hr"` | — | 水平分隔线 |
 | `"table"` | columns, rows | 表格（最多 6 列 × 24 行） |
+| `"webview"` | url, width, height | 内嵌网页（Windows 用 WebView2，macOS 用 WKWebView） |
+
+**`webview` 项** —— 引擎只解析并透传 `url` / `width` / `height` 给宿主渲染。
+配合 spec 上的 `transparent_bg` 可做无边框悬浮层。真正的渲染在
+WebView2 / WKWebView 阶段落地，在此之前该项会被携带但不绘制。
+
+```lua
+local info = dialog({
+    title = "WebView Demo",
+    width = 580, height = 460,
+    borderless = true,
+    transparent_bg = true,
+    refresh = 1000,
+    content = {
+        { type = "webview", url = "https://example.com", width = 580, height = 460 }
+    }
+})
+```
 
 **图文混排示例**：
 
@@ -340,6 +359,121 @@ local age = os.time() - mtime  -- 距上次修改的秒数
 ```lua
 local newest = sys.find_newest("C:\\logs", ".log")
 -- 返回最近修改的 .log 文件完整路径
+```
+
+---
+
+## 哪个"国家"？—— `sys.country()` 与 `sys.is_china()` 的区别
+
+这是两个不同的问题，答案也可能不同。写脚本前先想清楚你要问哪一个：
+
+| | `sys.country()` / `sys.language()` | `sys.is_china()` |
+|---|---|---|
+| 来源 | **操作系统区域设置** | **网络 geo-IP**（`api.ip.sb/geoip`） |
+| 速度 | 瞬时 | 首次调用最多等一个 HTTP 超时 |
+| 离线 | 始终可用 | 返回 `false` |
+| 会不会不准 | 不会——如实反映设置 | 会——服务可能出错或被墙 |
+| 缓存 | 不缓存（运行期不会变） | 缓存，每进程只查一次 |
+
+真实后果：一个身在中国、但 Windows 设成 `en-US` 的用户，
+`country() == "CN"`、`language() == "en-US"`；而断网时 `is_china()` 会返回
+`false`。想知道机器怎么配置的，用 `country()`；想判断 GitHub 镜像是否有
+用，用 `is_china()`。
+
+---
+
+## sys.country()
+
+从**操作系统区域设置**读取当前电脑的国家/地区
+（`GetUserDefaultGeoName`，失败时回退 `LOCALE_SISO3166CTRYNAME`），
+返回 **ISO 3166-1 alpha-2** 代码。瞬时、离线可用、不走网络。
+读不到时返回 `""`（不会返回 nil）。
+
+```lua
+local cc = sys.country()   -- "CN"、"US"、"JP" ...
+```
+
+## sys.language()
+
+从**操作系统区域设置**读取当前电脑的 UI 语言
+（`GetUserDefaultLocaleName`，失败时回退 `GetUserDefaultUILanguage`）。
+瞬时、离线可用。失败时返回 `""`（不会返回 nil）。
+
+```lua
+local lang = sys.language()   -- "zh-CN"、"en-US" ...
+```
+
+## sys.is_china()
+
+根据**网络 geo-IP 查询**（`api.ip.sb/geoip`，判断
+`country_code == "CN"`）返回当前机器是否在中国。
+
+结果在**进程生命周期内缓存** —— 无论脚本调用多少次，网络请求最多只发
+一次。离线、服务不可达或结果不可解析时返回 `false`（不会超过 HTTP 超时
+而卡住，也不会抛错）。因为它反映的是"网络观测到的位置"而非系统设置，
+需要系统设置时请用 `sys.country()`。
+
+```lua
+if sys.is_china() then
+    -- 这里访问 GitHub 慢/不通，走镜像
+end
+```
+
+## sys.gh_proxy(url)
+
+当 `sys.is_china()` 为真时，把 GitHub URL 改写成 `gh-proxy.com` 镜像地址；
+否则原样返回。它已内联了 `is_china()` 判断，脚本无需自己判断。
+
+只有 GitHub 的域名会被改写（`github.com`、`raw.githubusercontent.com`、
+`api.github.com` 等）。`gh-proxy.com` 只能代理 GitHub，所以其他域名一律原样
+返回；已经是代理地址的 URL 也不会被重复套一层。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| url | string | 要改写的 URL |
+
+**返回值**: string —— 镜像后的 URL，或原样返回的输入。
+
+```lua
+local url = "https://raw.githubusercontent.com/bestK/taskpin/master/examples/x.html"
+url = sys.gh_proxy(url)
+-- 在国内:   "https://gh-proxy.com/https://raw.githubusercontent.com/..."
+-- 其他情况: 原样不变
+```
+
+## sys.watch_keys(name, ...)
+
+声明脚本要监听的按键。键盘监听是**轮询式**的（`GetAsyncKeyState`），
+不是全局钩子 —— 脚本运行时才读一次按键状态，不会往系统里装任何东西。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| name | string | 一个或多个按键名（见下） |
+
+**返回值**: 解析成功的按键名数组。无法识别的名字会被跳过，不会报错。
+
+支持的按键名：`space`、`up`、`down`、`left`、`right`、`enter`/`return`、
+`esc`/`escape`、`tab`、`shift`、`ctrl`、`alt`、`lclick`、`rclick`、`mclick`、
+`a`–`z`、`0`–`9`、`f1`–`f12`。大小写不敏感。
+
+## sys.key_pressed(name)
+
+**电平状态** —— 该键当前是否正被按住。
+
+## sys.key_triggered(name)
+
+**上升沿** —— 在"上一次松开、这一次按下"的那次调用返回 `true`。
+"按一下触发一次"用这个；"按住持续生效"用 `key_pressed`。两者对无法识别的
+按键名都返回 `false`，且不会报错。
+
+边沿状态会跨刷新保留，所以按间隔重复执行的脚本里 `key_triggered` 行为正确。
+
+```lua
+sys.watch_keys("space", "up", "lclick")
+
+local jump = sys.key_triggered("space")
+    or sys.key_triggered("up")
+    or sys.key_triggered("lclick")
 ```
 
 ---

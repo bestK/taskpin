@@ -6,7 +6,7 @@
 
 <p align="center">
   Pin anything to your Windows taskbar.<br>
-  C/C++ + Lua scripted, single file 450KB, zero runtime dependencies.
+  Flutter management UI, native taskbar strip, Lua-scripted widgets.
 </p>
 
 <p align="center">
@@ -62,8 +62,8 @@ return bar, true, dialog({
 | **Rich text + images** | Multi-color text, PNG/GIF animation, alignment, two-line display |
 | **Popup dialogs** | Click to expand detail panels with images, tables, HUD overlays |
 | **Multiple bars** | Pin multiple scripts side by side, each refreshes independently |
-| **Native Windows UI** | Dear ImGui management window with DirectX 11, taskbar integration stays native |
-| **Zero runtime dependencies** | Dear ImGui and Lua 5.4 are bundled or statically linked, single file ~450KB |
+| **Native taskbar strip** | The strip is a native Direct2D/DirectWrite window embedded in the taskbar; the management UI is Flutter |
+| **Self-contained** | Ships its own runtime — no separate installer, no .NET/Java/Python needed; the Windows zip is ~12 MB |
 | **Auto update** | Silent version check, download, replace, and restart |
 
 ## Quick Start
@@ -133,9 +133,22 @@ return font(temp .. "°C " .. desc, "#4FC3F7", 9), true, dialog({
 ## Build
 
 ```bash
-# MinGW-w64 + GNU Make + DirectX 11 SDK libraries
-make
+# Flutter 3.27+ with the Windows desktop toolchain (Visual Studio 2022,
+# "Desktop development with C++"). The native engine and taskbar strip are
+# static libraries linked into the runner, so there is nothing else to install.
+flutter build windows --release
 ```
+
+The built app lives in `build/windows/x64/runner/Release/`. It is not a single
+file: `taskpin.exe` is a thin launcher that needs `flutter_windows.dll` and the
+`data/` directory beside it, so ship the whole directory (or the release zip).
+
+On this development machine `windows/flutter/ephemeral/.plugin_symlinks/` is not
+traversable, which makes Flutter's own `generated_plugins.cmake` fail at CMake
+configure time. `tool/generate_plugins_cmake.py` works around it by pointing
+CMake at the real pub-cache directories; `windows/CMakeLists.txt` prefers that
+file when present and otherwise falls back to Flutter's, so CI (where symlinks
+work) needs no workaround.
 
 ## License
 

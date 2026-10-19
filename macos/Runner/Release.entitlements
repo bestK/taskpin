@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The App Sandbox is OFF on purpose — see DebugProfile.entitlements for the
+	  full reasoning. Short version: TaskPin runs user Lua scripts that read
+	  arbitrary files and make HTTP calls, keeps its config beside the executable,
+	  and downloads plugins into `scripts/`. None of that is possible sandboxed,
+	  and the previous SwiftPM implementation was not sandboxed either.
+
+	  Keep this in sync with DebugProfile.entitlements.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!-- Outbound network: bar image spans + the engine's `http.*`. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

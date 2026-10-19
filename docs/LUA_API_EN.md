@@ -94,6 +94,7 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | borderless | boolean | No title bar / no border / no scrollbar, default false |
 | clickthrough | boolean | Mouse clicks pass through (for HUD overlays), default false |
 | opacity | number | Window opacity 0-255 (0=fully transparent, 255=opaque), default 255 |
+| transparent_bg | boolean | Let the host composite the dialog over the desktop instead of painting `bg_color`, default false |
 | content | table | Array of content items (max 8) |
 
 **Borderless mode**:
@@ -110,6 +111,25 @@ Creates a popup dialog shown on click. Used as the 3rd return value from a scrip
 | `"image"` | source, width, height | Standalone image block |
 | `"hr"` | — | Horizontal separator |
 | `"table"` | columns, rows | Table (max 6 columns × 24 rows) |
+| `"webview"` | url, width, height | Embedded web page (WebView2 on Windows, WKWebView on macOS) |
+
+**`webview` items** — the engine parses the item and carries `url` / `width` /
+`height` through to the host, which renders it. `transparent_bg` on the spec
+combines with it for borderless overlays. Rendering lands with the WebView2 /
+WKWebView phase; until then the item is carried but not drawn.
+
+```lua
+local info = dialog({
+    title = "WebView Demo",
+    width = 580, height = 460,
+    borderless = true,
+    transparent_bg = true,
+    refresh = 1000,
+    content = {
+        { type = "webview", url = "https://example.com", width = 580, height = 460 }
+    }
+})
+```
 
 **Image + text example**:
 
@@ -331,6 +351,128 @@ Recursively searches a directory and returns the path of the most recently modif
 ```lua
 local newest = sys.find_newest("C:\\logs", ".log")
 -- returns full path of the most recently modified .log file
+```
+
+---
+
+## Which country? — `sys.country()` vs `sys.is_china()`
+
+Two different questions, two different answers. Know which one you are asking:
+
+| | `sys.country()` / `sys.language()` | `sys.is_china()` |
+|---|---|---|
+| Source | **OS regional settings** | **network geo-IP** (`api.ip.sb/geoip`) |
+| Speed | instant | up to the HTTP timeout on first call |
+| Offline | always works | returns `false` |
+| Can be wrong | no — reports the setting faithfully | yes — the service can be wrong or blocked |
+| Cached | no (cannot change while running) | yes, once per process |
+
+The real consequence: a user physically in China whose Windows is set to
+`en-US` gets `country() == "CN"` and `language() == "en-US"`, while
+`is_china()` may return `false` if the network is down. Use `country()` when
+you want to know how the machine is configured, and `is_china()` when you
+want to know whether a GitHub mirror is likely to help.
+
+---
+
+## sys.country()
+
+The computer's country/region from the **OS regional settings**
+(`GetUserDefaultGeoName`, falling back to `LOCALE_SISO3166CTRYNAME`). This is
+an **ISO 3166-1 alpha-2** code. Instant and offline — no network. Returns
+`""` if the value cannot be read (never nil).
+
+```lua
+local cc = sys.country()   -- "CN", "US", "JP", ...
+```
+
+## sys.language()
+
+The computer's UI language from the **OS regional settings**
+(`GetUserDefaultLocaleName`, falling back to `GetUserDefaultUILanguage`).
+Instant and offline. Returns `""` on failure (never nil).
+
+```lua
+local lang = sys.language()   -- "zh-CN", "en-US", ...
+```
+
+## sys.is_china()
+
+Returns `true` when the machine appears to be in China, based on a
+**network geo-IP lookup** (`api.ip.sb/geoip`, checking `country_code == "CN"`).
+
+The result is **cached for the life of the process** — the request is made at
+most once, however many times the script calls this. When offline, or when the
+service is unreachable or wrong, it returns `false` (it never blocks past the
+HTTP timeout and never raises). Because it is a network answer, prefer
+`sys.country()` when you need the OS setting rather than the observed location.
+
+```lua
+if sys.is_china() then
+    -- GitHub is slow/unreachable here; mirror it
+end
+```
+
+## sys.gh_proxy(url)
+
+Rewrites a GitHub URL through the `gh-proxy.com` mirror when `sys.is_china()`
+is true, and returns the input unchanged otherwise. It composes with
+`is_china()` — you do not need to test for China yourself.
+
+Only GitHub hosts are rewritten (`github.com`, `raw.githubusercontent.com`,
+`api.github.com`, …). `gh-proxy.com` can only fetch from GitHub, so any other
+host is passed through untouched, and an already-proxied URL is never
+double-wrapped.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| url | string | The URL to rewrite |
+
+**Returns**: string — the mirrored URL, or the input unchanged.
+
+```lua
+local url = "https://raw.githubusercontent.com/bestK/taskpin/master/examples/x.html"
+url = sys.gh_proxy(url)
+-- in China:    "https://gh-proxy.com/https://raw.githubusercontent.com/..."
+-- elsewhere:   unchanged
+```
+
+## sys.watch_keys(name, ...)
+
+Declares the keys the script wants to observe. Keyboard monitoring is
+**polling-based** (`GetAsyncKeyState`), not a global hook — a script asks for
+key state when it runs, and nothing is installed system-wide.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| name | string | One or more key names (see below) |
+
+**Returns**: an array table of the resolved key names. Unknown names are
+skipped rather than raising.
+
+Supported names: `space`, `up`, `down`, `left`, `right`, `enter`/`return`,
+`esc`/`escape`, `tab`, `shift`, `ctrl`, `alt`, `lclick`, `rclick`, `mclick`,
+`a`–`z`, `0`–`9`, `f1`–`f12`. Case-insensitive.
+
+## sys.key_pressed(name)
+
+**Level state** — `true` while the named key is held down right now.
+
+## sys.key_triggered(name)
+
+**Rising edge** — `true` on the first call that observes the key down after it
+was up. Use this for "jump on press" style input; use `key_pressed` for "hold
+to move". Both return `false` for an unknown key name and never raise.
+
+The edge state persists across refreshes, so `key_triggered` behaves correctly
+for a script that is re-run every interval.
+
+```lua
+sys.watch_keys("space", "up", "lclick")
+
+local jump = sys.key_triggered("space")
+    or sys.key_triggered("up")
+    or sys.key_triggered("lclick")
 ```
 
 ---

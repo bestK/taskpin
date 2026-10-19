@@ -1,0 +1,45 @@
+{
+	"version":	1,
+	"experimental_feature_flag":	"keep me at the root",
+	"global":	{
+		"width":	200,
+		"pos_x":	-1,
+		"pos_y":	-1,
+		"font_size":	9,
+		"font_color":	"FFFFFF",
+		"bg_color":	"00000000",
+		"scroll_enabled":	true,
+		"log_level":	3,
+		"future_global_option":	{
+			"nested":	[1, 2, 3]
+		}
+	},
+	"items":	[{
+			"type":	1,
+			"name":	"unknown-keys item",
+			"url":	"",
+			"req_headers":	"",
+			"interval_ms":	5000,
+			"field_expr":	"",
+			"click_enabled":	false,
+			"click_url":	"",
+			"lua_path":	"scripts\\unknown.lua",
+			"pinned":	true,
+			"bar_width":	0,
+			"bar_x":	-1,
+			"bar_y":	-1,
+			"bar_bg_color":	"FFFFFFFF",
+			"dlg_x":	-1,
+			"dlg_y":	-1,
+			"dlg_w":	0,
+			"dlg_h":	0,
+			"future_item_option":	true,
+			"params":	[{
+					"key":	"K",
+					"value":	"V",
+					"label":	"L",
+					"future_param_option":	42
+				}]
+		}],
+	"sources":	["bestK/taskpin-plugins"]
+}
