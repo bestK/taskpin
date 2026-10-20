@@ -66,6 +66,10 @@ bool BarWindow::EmbedInto(const BarTarget& target, int cfg_x, int cfg_y) {
     m_cfg_x = cfg_x;
     m_cfg_y = cfg_y;
 
+    // Now that there IS a taskbar to sample, resolve "follow the taskbar"
+    // before the transparency decision below reads the alpha.
+    ResolveFollowTaskbar();
+
     // Decide transparency from the style before embedding so the ex-style is
     // correct on the first SetWindowPos.
     m_layered = m_style.WantsLayered();
@@ -124,6 +128,8 @@ void BarWindow::SetContent(const SpanContent& content) {
 
 void BarWindow::SetStyle(const BarStyle& style) {
     m_style = style;
+    ResolveFollowTaskbar();
+
     if (m_hwnd && m_style.WantsLayered() != m_layered_at_create) {
         // The layered bit is creation-time only for child windows, so a change
         // requires recreating the window and re-embedding.
@@ -149,6 +155,34 @@ bool BarWindow::ApplyTransparency() {
             m_renderer.Resize(m_width, m_height, m_target.dpi);
     }
     return m_layered;
+}
+
+// FOLLOW THE TASKBAR.
+//
+// `kColorFollowTaskbar` is the sentinel Dart sends when the item has no colour
+// of its own (the `bar_bg_color: "FFFFFFFF"` default, and a global `bg_color`
+// of the same value). Rather than paint a guessed dark grey, sample what the
+// shell actually painted, so the bar sits IN the taskbar instead of on top of
+// it — under a light taskbar, a coloured accent, or Win11 Mica.
+//
+// Called from BOTH SetStyle and EmbedInto, and the second one is the one that
+// matters: the style arrives before the bar has a target (Dart sends
+// `setStyle` then `setSpans`, and the target is only known once the bar is
+// embedded). Sampling in SetStyle alone therefore always saw
+// `m_target.valid() == false` and left the bar white — which is exactly what
+// `transparency: bg=0xFFFFFFFF` in the log was reporting.
+//
+// A failed sample (0) leaves the token default, so a locked-down or remote
+// session still renders.
+void BarWindow::ResolveFollowTaskbar() {
+    if (m_style.bg != kColorFollowTaskbar) return;
+    if (!m_target.valid()) return;
+    const uint32_t sampled = bar_embed_taskbar_background(m_target);
+    if (sampled == 0) return;
+    m_style.bg = sampled;
+    // Hover is the same hue lifted slightly, which is what the shell does when
+    // the pointer is over a taskbar item.
+    m_style.bgHover = LightenArgb(sampled, 0.06f);
 }
 
 bool BarWindow::EnsureRenderer() {

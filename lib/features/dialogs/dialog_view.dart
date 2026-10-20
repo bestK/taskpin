@@ -30,7 +30,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
-import 'dialog_action.dart';
 import 'dialog_controller.dart';
 import 'dialog_spec.dart';
 import 'items/button_item.dart';
@@ -152,10 +151,69 @@ class _DialogViewState extends State<DialogView> {
   ///
   /// C parity (`lib/script_dialog.c:589-613`): the Shift branch returns before
   /// the scroll branch, so a Shift+scroll never scrolls.
-  void _onScroll(PointerScrollEvent event) {
-    if (!widget.controller.spec.borderless) {
-      return;
+  /// The window height we last asked for, so repeated layout passes that
+  /// agree do not issue another resize.
+  double? _requestedHeight;
+
+  /// Grow the window until the content fits.
+  ///
+  /// Driven by `ScrollMetricsNotification`, which fires after layout and knows
+  /// both the viewport and how far the content extends past it.
+  ///
+  /// THE LOOP THIS AVOIDS. `maxScrollExtent` is relative to the CURRENT
+  /// viewport, so `viewport + maxScrollExtent` is the content height only while
+  /// the content overflows. After the window grows, the same content reports
+  /// `maxScrollExtent == 0` and a viewport equal to the new window — summing
+  /// again would keep growing it. So the request is capped: once a value has
+  /// been asked for, a later reading may only make it SMALLER, and only when
+  /// the content genuinely fits (extent 0). That converges in one step.
+  /// Measure on the next frame, when the scroll position has real metrics.
+  void _scheduleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final ScrollPosition p = _scroll.position;
+      _reportContentHeight(
+        viewportHeight: p.viewportDimension,
+        maxScrollExtent: p.maxScrollExtent,
+      );
+    });
+  }
+
+  void _reportContentHeight({
+    required double viewportHeight,
+    required double maxScrollExtent,
+  }) {
+    if (!mounted) return;
+    final DialogSpec spec = widget.controller.spec;
+    final double chrome = spec.borderless ? 0 : _kTitleBarHeight;
+    final double floor = spec.height.toDouble();
+
+    final double? previous = _requestedHeight;
+    double target;
+    if (maxScrollExtent > 0.5) {
+      // Overflowing: the content needs the viewport plus the overflow.
+      target = viewportHeight + maxScrollExtent + chrome;
+    } else if (previous != null) {
+      // Fits: the window is already big enough. Keep what we asked for; the
+      // viewport merely reports back the height we set.
+      target = previous;
+    } else {
+      target = viewportHeight + chrome;
     }
+    if (target < floor) target = floor;
+
+    if (previous != null && (target - previous).abs() < 1.0) return;
+    _requestedHeight = target;
+    unawaited(widget.controller.windowApi.setHeight(target.ceil()));
+  }
+
+  void _onScroll(PointerScrollEvent event) {
+    // Shift+scroll resizes. This used to be gated on `spec.borderless`, but
+    // the window is now ALWAYS borderless at the OS level (the panel draws its
+    // own chrome — see `DialogController.applyWindowEffects`), so the gate was
+    // reading the script's flag and disabling resize for every normal dialog.
+    // Resizing is useful for those most of all: they are the ones with tables
+    // that can overflow.
     if (_shiftDown) {
       applyShiftScrollResize(widget.controller.windowApi, event.scrollDelta.dy);
       return;
@@ -181,8 +239,20 @@ class _DialogViewState extends State<DialogView> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         for (int i = 0; i < spec.items.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(height: TpSpacing.s4),
-          _item(context, spec.items[i]),
+          if (i > 0)
+            SizedBox(
+              height: _verticalSpacing(spec.items[i - 1], spec.items[i]),
+            ),
+          // A button sizes to its label, not to the dialog. `stretch` is right
+          // for text and tables (they should fill the width) but turns a
+          // one-word button into a full-width bar, which reads as a text field.
+          if (spec.items[i].kind == TpDialogItemKind.button)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IntrinsicWidth(child: _item(context, spec.items[i])),
+            )
+          else
+            _item(context, spec.items[i]),
         ],
       ],
     );
@@ -203,22 +273,54 @@ class _DialogViewState extends State<DialogView> {
       );
     }
 
-    Widget content = Padding(
-      // C: PADDING_X 12, PADDING_Y 8 (`lib/script_dialog.c:17-18`).
-      padding: const EdgeInsets.symmetric(
-        horizontal: TpSpacing.s12,
-        vertical: TpSpacing.s8,
+    // FIT THE WINDOW TO THE CONTENT.
+    //
+    // A script's `height` is a guess: `zeeho.lua` says 260 but renders a
+    // seven-row table that needs ~380. The scrollbar is suppressed (noise in a
+    // small panel), so the overflow was unreachable — the dialog looked
+    // clipped with no hint that it could scroll.
+    //
+    // `ScrollMetricsNotification` is the signal to use: after every layout the
+    // scroll position knows `maxScrollExtent`, which is exactly how much taller
+    // the content is than the viewport. Content height = viewport + that.
+    // Reporting only when the number changes keeps this from looping (a resize
+    // changes the viewport, which re-fires the notification).
+    Widget scroll = ScrollConfiguration(
+      behavior: const _NoScrollbarBehavior(),
+      child: SingleChildScrollView(
+        controller: _scroll,
+        // C: PADDING_X 12, PADDING_Y 8 (`lib/script_dialog.c:17-18`).
+        padding: const EdgeInsets.symmetric(
+          horizontal: TpSpacing.s12,
+          vertical: TpSpacing.s8,
+        ),
+        child: body,
       ),
-      child: body,
     );
-
-    content = SingleChildScrollView(controller: _scroll, child: content);
+    scroll = NotificationListener<ScrollMetricsNotification>(
+      onNotification: (ScrollMetricsNotification n) {
+        _scheduleMeasure();
+        return false;
+      },
+      child: scroll,
+    );
+    // The notification only fires when the metrics CHANGE, which is not
+    // guaranteed on the first frame. Measure after every build instead; the
+    // reporter ignores readings that agree with the last request.
+    _scheduleMeasure();
+    Widget content = scroll;
 
     if (!spec.borderless) {
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _titleBar(context, theme, spec),
+          // A title band, not bare text on the dialog's own fill: without a
+          // distinct surface the caption and the first content row read as one
+          // block, and the divider between them looked like a stray line.
+          ColoredBox(
+            color: theme.bg.cardSecondary,
+            child: _titleBar(context, theme, spec),
+          ),
           const TpDivider(),
           Expanded(child: content),
         ],
@@ -228,17 +330,20 @@ class _DialogViewState extends State<DialogView> {
     // The dialog surface. `transparent_bg` means the host composites the window
     // over the desktop, so painting a fill here would defeat it; the C layer
     // has no equivalent and always fills with DIALOG_BG (`:171-173`).
+    // The surface is ALWAYS the floating card, whatever `borderless` says.
+    //
+    // `borderless` used to switch the surface to a square, window-coloured
+    // block because it also removed the OS frame; the two were the same thing
+    // in the C renderer. They are not any more: `DialogController` always
+    // strips the OS frame (the panel draws its own title), so `borderless` now
+    // means only "no title row" and the surface stays a rounded flyout.
     final Widget surface = spec.transparentBg
         ? content
         : DecoratedBox(
             decoration: BoxDecoration(
-              color: spec.borderless ? theme.bg.window : theme.bg.flyout,
-              borderRadius: spec.borderless
-                  ? BorderRadius.zero
-                  : TpRadius.overlay,
-              border: spec.borderless
-                  ? null
-                  : Border.all(color: theme.stroke.divider),
+              color: theme.bg.flyout,
+              borderRadius: TpRadius.overlay,
+              border: Border.all(color: theme.stroke.divider),
             ),
             child: content,
           );
@@ -246,9 +351,11 @@ class _DialogViewState extends State<DialogView> {
     return _DialogShortcuts(
       shiftDown: _shiftDown,
       onEscape: widget.controller.close,
-      onDragStart: widget.controller.spec.borderless
-          ? widget.controller.windowApi.beginDrag
-          : null,
+      // Always enabled: the OS frame is always removed now (see
+      // `DialogController.applyWindowEffects`), so Shift+drag is the only way
+      // to move the dialog. The script's `borderless` flag no longer gates it,
+      // because it no longer gates the frame.
+      onDragStart: widget.controller.windowApi.beginDrag,
       child: MouseRegion(
         onEnter: (_) => _hovering = true,
         onExit: (_) => _hovering = false,
@@ -259,9 +366,7 @@ class _DialogViewState extends State<DialogView> {
             }
           },
           child: ClipRRect(
-            borderRadius: spec.borderless
-                ? BorderRadius.zero
-                : TpRadius.overlay,
+            borderRadius: TpRadius.overlay,
             child: surface,
           ),
         ),
@@ -269,37 +374,110 @@ class _DialogViewState extends State<DialogView> {
     );
   }
 
+  /// Compute deliberate vertical rhythm between adjacent dialog items.
+  ///
+  /// Text-to-text lines stay compact at 4 px, while structured blocks (tables)
+  /// and buttons receive 8 px before them.
+  double _verticalSpacing(DialogItem prev, DialogItem current) {
+    if (current.kind == TpDialogItemKind.table ||
+        current.kind == TpDialogItemKind.button) {
+      return TpSpacing.s8;
+    }
+    if (prev.kind == TpDialogItemKind.table ||
+        prev.kind == TpDialogItemKind.button) {
+      return TpSpacing.s8;
+    }
+    if (current.kind == TpDialogItemKind.image ||
+        current.kind == TpDialogItemKind.webview) {
+      return TpSpacing.s8;
+    }
+    return TpSpacing.s4;
+  }
+
   Widget _titleBar(BuildContext context, TaskPinTheme theme, DialogSpec spec) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TpSpacing.s12,
-        vertical: TpSpacing.s6,
+    // The caption band is the drag handle for a NORMAL dialog.
+    //
+    // The OS frame is always stripped (see
+    // `DialogController.applyWindowEffects`), so there is no system caption to
+    // drag. Shift+drag is the BORDERLESS gesture and stays that way (it is a
+    // feature: a borderless dialog is a bare HUD with no chrome to grab).
+    // Without this branch a normal dialog could not be moved at all — it had
+    // no caption and did not satisfy the Shift requirement.
+    //
+    // `beginDrag` hands the drag to the window manager rather than tracking
+    // the pointer in Dart, which is what lets the window follow the cursor
+    // across the whole desktop instead of only inside its own bounds.
+    final Future<void> Function() drag =
+        widget.controller.windowApi.beginDrag;
+    final Widget band = Padding(
+      // Caption band: 36 px total (28 px close target + 4 px top/bottom padding).
+      // Left inset aligns with content padding (12 px).
+      padding: const EdgeInsets.only(
+        left: TpSpacing.s12,
+        right: TpSpacing.s8,
+        top: TpSpacing.s4,
+        bottom: TpSpacing.s4,
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              spec.title,
-              style: TpTypography.body.toTextStyle().copyWith(
-                color: theme.text.secondary,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (widget.onClose != null)
-            TpFocusRing(
-              radius: TpRadius.control,
-              onTap: widget.onClose,
-              child: Padding(
-                padding: const EdgeInsets.all(TpSpacing.s4),
-                child: Icon(
-                  TpIcons.close,
-                  size: 14,
-                  color: theme.text.tertiary,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 28),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                spec.title,
+                // Window caption reads with strong weight and primary text emphasis.
+                style: TpTypography.bodyStrong.toTextStyle().copyWith(
+                  color: theme.text.primary,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-        ],
+            if (widget.onClose != null)
+              TpHoverBuilder(
+                builder: (BuildContext context, bool hovered) {
+                  return TpFocusRing(
+                    radius: TpRadius.control,
+                    onTap: widget.onClose,
+                    onActivate: widget.onClose,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color:
+                            hovered ? theme.subtle.hover : Colors.transparent,
+                        borderRadius: TpRadius.control,
+                      ),
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: Center(
+                          child: Icon(
+                            TpIcons.close,
+                            size: 14,
+                            color: hovered
+                                ? theme.text.primary
+                                : theme.text.secondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+
+    // Borderless dialogs keep the Shift gesture only; a normal dialog is
+    // dragged by its caption, which is what every desktop window does.
+    if (spec.borderless) {
+      return band;
+    }
+    return GestureDetector(
+      onPanStart: (_) => drag(),
+      behavior: HitTestBehavior.opaque,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.move,
+        child: band,
       ),
     );
   }
@@ -406,3 +584,24 @@ class _DialogShortcuts extends StatelessWidget {
 class _CloseDialogIntent extends Intent {
   const _CloseDialogIntent();
 }
+
+/// Suppresses the desktop scrollbar decoration. Dialogs are compact panels
+/// where a drawn scrollbar introduces visual noise.
+class _NoScrollbarBehavior extends ScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
+}
+
+/// Height of the dialog's own caption band, in logical pixels.
+///
+/// Matches `_titleBar`: 8 px padding above and below plus a 28 px row. The
+/// window's height must include it, or the content would be that much short.
+const double _kTitleBarHeight = 44;

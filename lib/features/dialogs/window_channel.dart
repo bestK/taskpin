@@ -75,6 +75,12 @@ abstract class DialogWindowApi {
   /// `lib/script_dialog.c:621-622`.
   Future<void> beginDrag();
 
+  /// Set the OS window caption.
+  ///
+  /// The window is created by `desktop_multi_window` with an empty title, so
+  /// Windows shows the window class name ("FLUTTERVIEW") until this is called.
+  Future<void> setTitle(String title);
+
   /// Grow the window by a pixel delta, clamped to a usable minimum.
   ///
   /// C parity: Shift+wheel, `step = ±20`, `w<80 -> 80`, `h<40 -> 40`,
@@ -83,8 +89,31 @@ abstract class DialogWindowApi {
   /// platforms agree; the Dart side may pass any delta.
   Future<void> resizeBy(int dx, int dy);
 
+  /// Ask the window to be exactly [height] logical pixels tall.
+  ///
+  /// Used to fit the content: a script's declared height is a guess, and a
+  /// table with more rows than it anticipated would otherwise be clipped with
+  /// no way to reach the rest.
+  Future<void> setHeight(int height);
+
   /// Close the window.
+  /// Close the dialog.
+  ///
+  /// HIDES the window; it does not destroy it.
+  ///
+  /// `DialogWindowHost` reuses one window (and its Flutter engine) for every
+  /// dialog, which is what makes reopening instant. `tp_dialog_close` posts
+  /// `WM_CLOSE`, which destroys the window and takes the engine with it — so
+  /// the next open paid the full cold-start again (create window, boot engine,
+  /// start isolate). `DialogWindowHost.close()` already hides instead, and this
+  /// method is what the dialog's own X button calls.
+  ///
+  /// `DialogWindowHost` is told about the hide so its `_window` stays in sync;
+  /// see `onCloseRequested`.
   Future<void> close();
+
+  /// Show the window again after [close].
+  Future<void> show();
 }
 
 /// The real implementation, over [kDialogWindowChannel].
@@ -150,11 +179,30 @@ class MethodChannelDialogWindowApi implements DialogWindowApi {
   @override
   Future<void> beginDrag() => _invoke('beginDrag');
   @override
+  Future<void> setTitle(String title) =>
+      _invoke('setTitle', <String, dynamic>{'title': title});
+  @override
   Future<void> resizeBy(int dx, int dy) =>
       _invoke('resizeBy', <String, dynamic>{'dx': dx, 'dy': dy});
 
   @override
-  Future<void> close() => _invoke('close');
+  Future<void> setHeight(int height) =>
+      _invoke('setHeight', <String, dynamic>{'height': height});
+
+  @override
+  /// Hide the window, keeping the engine alive for the next dialog.
+  ///
+  /// `hide` rather than `close`: see the interface doc. The native `close`
+  /// posts `WM_CLOSE`, which destroys the window.
+  Future<void> close() => _invoke('hide');
+
+  /// Show the window again after [close] hid it.
+  ///
+  /// Goes through this channel rather than `WindowController.show`: the plugin
+  /// shows the handle it recorded at create time, which is not the root window
+  /// this channel resolves, so a hide/show split across the two left the dialog
+  /// invisible on the second open.
+  Future<void> show() => _invoke('show');
 }
 
 /// A no-op implementation for tests and for platforms without a native half.
@@ -179,9 +227,15 @@ class NoopDialogWindowApi implements DialogWindowApi {
   @override
   Future<void> beginDrag() async {}
   @override
+  Future<void> setTitle(String title) async {}
+  @override
   Future<void> resizeBy(int dx, int dy) async {}
   @override
+  Future<void> setHeight(int height) async {}
+  @override
   Future<void> close() async {}
+  @override
+  Future<void> show() async {}
 }
 
 /// Records calls instead of applying them. Test seam.
@@ -209,9 +263,15 @@ class RecordingDialogWindowApi implements DialogWindowApi {
   @override
   Future<void> beginDrag() async => calls.add('beginDrag');
   @override
+  Future<void> setTitle(String title) async => calls.add('setTitle($title)');
+  @override
   Future<void> resizeBy(int dx, int dy) async => calls.add('resizeBy($dx,$dy)');
   @override
+  Future<void> setHeight(int height) async => calls.add('setHeight($height)');
+  @override
   Future<void> close() async => calls.add('close');
+  @override
+  Future<void> show() async => calls.add('show');
 }
 
 /// The Shift+wheel resize step, in pixels. `lib/script_dialog.c:597`.

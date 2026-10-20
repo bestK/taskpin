@@ -63,17 +63,24 @@ Color? parseDialogColor(String wire) {
 /// Resolve an item's foreground against the theme default.
 ///
 /// The C renderer's default is `RGB(220,220,220)` (`DIALOG_FG`,
-/// `lib/script_dialog.c:11`); the Aurora equivalent of "primary text on the
-/// dialog surface" is `theme.text.primary`, which is what this returns.
-Color dialogForeground(TaskPinTheme theme, String wire) =>
-    parseDialogColor(wire) ?? theme.text.primary;
+/// `lib/script_dialog.c:11`). In TaskPin, body text resolves to `theme.text.primary`,
+/// while label or caption-like text resolves to `theme.text.secondary`.
+/// An explicit script colour wins when provided.
+Color dialogForeground(
+  TaskPinTheme theme,
+  String wire, {
+  bool isLabel = false,
+}) =>
+    parseDialogColor(wire) ??
+    (isLabel ? theme.text.secondary : theme.text.primary);
 
 /// Resolve a button background against the theme default.
 ///
-/// C default is `RGB(50,50,50)` (`lib/script_dialog.c:467`); the Aurora
-/// equivalent is `theme.bg.cardSecondary`.
+/// When the script specifies no explicit background, standard buttons rest on
+/// `theme.control.fill` to fit the Aurora control silhouette. An explicit
+/// script background (`#RRGGBB` or `#RGB`) takes precedence.
 Color dialogButtonBackground(TaskPinTheme theme, String wire) =>
-    parseDialogColor(wire) ?? theme.bg.cardSecondary;
+    parseDialogColor(wire) ?? theme.control.fill;
 
 /// Point size -> logical pixels, matching `create_dialog_font`.
 ///

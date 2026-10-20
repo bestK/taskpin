@@ -72,6 +72,7 @@ class DialogController extends ChangeNotifier {
   /// Order matters: the effects are applied to the window this controller was
   /// built for, so this must run after the window exists.
   Future<void> start() async {
+    await windowApi.setTitle(_spec.title);
     await applyWindowEffects();
     await centerOnPrimaryScreen();
     _startTimer();
@@ -106,8 +107,31 @@ class DialogController extends ChangeNotifier {
   /// window is clickthrough OR translucent (`:84-85`), which is what
   /// [DialogSpec.needsLayered] encodes.
   Future<void> applyWindowEffects() async {
-    await windowApi.setBorderless(_spec.borderless);
-    await windowApi.setTransparentBackground(_spec.transparentBg);
+    // THE WINDOW IS ALWAYS BORDERLESS.
+    //
+    // `DialogView` draws the dialog's own chrome: a rounded surface, the spec's
+    // title, and a close affordance. Leaving the OS caption on top of that
+    // produced two title bars stacked on each other — the system one reading
+    // the same spec title, plus a system close button next to ours.
+    //
+    // The script's `borderless` flag therefore controls only whether the
+    // IN-PANEL title row is drawn (see `DialogView`), not the OS frame. That is
+    // a deliberate departure from the C layer, which had no in-panel chrome to
+    // conflict with and used `borderless` for the OS frame alone.
+    await windowApi.setBorderless(true);
+    // ALWAYS layered, not only for `transparent_bg`.
+    //
+    // The window is borderless and DWM rounds its corners, so the pixels
+    // outside the dialog's own rounded surface must be see-through. A plain
+    // (non-layered) window paints them with whatever Flutter cleared to, which
+    // is the theme's dark scaffold colour — the black square the rounded panel
+    // sat on.
+    //
+    // `setOpacity(255)` right after keeps the dialog itself fully opaque, so
+    // this does not change how a normal dialog looks; it only makes the corner
+    // pixels transparent. A script's own `transparent_bg` / `opacity` still
+    // apply below.
+    await windowApi.setTransparentBackground(true);
     await windowApi.setClickthrough(_spec.clickthrough);
     await windowApi.setOpacity(_spec.needsLayered ? _spec.opacity : 255);
   }
@@ -147,6 +171,9 @@ class DialogController extends ChangeNotifier {
       // translucent at night, say), so they are re-applied, not just the items.
       _spec = next;
       refreshError = null;
+      // A re-run can rename the dialog (a clock that shows the date, say), and
+      // the OS caption is what the user sees in the taskbar hover and Alt+Tab.
+      await windowApi.setTitle(next.title);
       await applyWindowEffects();
       _startTimer();
       notifyListeners();

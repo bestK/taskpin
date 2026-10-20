@@ -140,6 +140,12 @@ public:
     // Apply the transparency decision (opaque child vs layered).
     bool ApplyTransparency();
 
+    /// Resolve `kColorFollowTaskbar` to the taskbar's actual colour.
+    ///
+    /// A no-op unless the style asks for it and a target exists; see the
+    /// definition in bar_window.cpp for why it must run from EmbedInto.
+    void ResolveFollowTaskbar();
+
     // ---- test seam -------------------------------------------------------
     // Exercise the wheel logic without a real mouse/keyboard (Shift is read
     // from GetKeyState in the real path, which cannot be faked from a test).

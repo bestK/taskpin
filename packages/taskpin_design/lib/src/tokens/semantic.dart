@@ -191,10 +191,13 @@ class TpSemanticColors {
     required this.smoke,
     required this.focusInner,
     required this.navActive,
+    required this.navActiveText,
     required this.taskbar,
     required this.taskbarLabel,
     required this.taskbarMuted,
     required this.taskbarPlaceholder,
+    required this.taskbarChip,
+    required this.taskbarChipBorder,
   });
 
   final TpBgColors bg;
@@ -211,8 +214,16 @@ class TpSemanticColors {
   /// Keyboard focus ring inner line. The outer line is [TpTextColors.primary].
   final Color focusInner;
 
-  /// Selected navigation item fill (`nav/active`). Same in both themes.
+  /// Selected navigation item fill (`nav/active`).
   final Color navActive;
+
+  /// Label and icon on [navActive].
+  ///
+  /// Separate from [navActive] because the two themes pick different
+  /// treatments: dark fills the item with the taskbar colour and uses white,
+  /// light tints it and uses a darker accent, so the selected item does not
+  /// become a black block on a light page.
+  final Color navActiveText;
 
   /// Taskbar mock inside the manager window (`bg/taskbar`). Same in both
   /// themes.
@@ -226,6 +237,12 @@ class TpSemanticColors {
 
   /// Drag placeholder square and segment divider on the taskbar mock.
   final Color taskbarPlaceholder;
+
+  /// One pinned plugin inside the taskbar mock.
+  final Color taskbarChip;
+
+  /// 1 px outline on [taskbarChip].
+  final Color taskbarChipBorder;
 
   /// Keyboard focus ring outer line. Equal to `text.primary`.
   Color get focusOuter => text.primary;
@@ -282,10 +299,13 @@ class TpSemantic {
     smoke: TpPrimitives.smoke,
     focusInner: TpPrimitives.darkFocusInner,
     navActive: TpPrimitives.taskbar,
+    navActiveText: TpPrimitives.white,
     taskbar: TpPrimitives.taskbar,
     taskbarLabel: TpPrimitives.taskbarLabel,
     taskbarMuted: TpPrimitives.taskbarMuted,
     taskbarPlaceholder: TpPrimitives.taskbarPlaceholder,
+    taskbarChip: TpPrimitives.taskbarChip,
+    taskbarChipBorder: TpPrimitives.taskbarChipBorder,
   );
 
   static const TpSemanticColors light = TpSemanticColors(
@@ -334,11 +354,14 @@ class TpSemantic {
     ),
     smoke: TpPrimitives.smoke,
     focusInner: TpPrimitives.lightFocusInner,
-    navActive: TpPrimitives.taskbar,
+    navActive: TpPrimitives.lightNavActive,
+    navActiveText: TpPrimitives.lightNavActiveText,
     taskbar: TpPrimitives.taskbar,
     taskbarLabel: TpPrimitives.taskbarLabel,
     taskbarMuted: TpPrimitives.taskbarMuted,
     taskbarPlaceholder: TpPrimitives.taskbarPlaceholder,
+    taskbarChip: TpPrimitives.taskbarChip,
+    taskbarChipBorder: TpPrimitives.taskbarChipBorder,
   );
 
   /// Resolve by brightness flag.

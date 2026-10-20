@@ -27,7 +27,10 @@ class DialogTextItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
-    final Color color = dialogForeground(theme, item.color);
+    final Color? explicitColor = parseDialogColor(item.color);
+    final bool isLabel = _isLabel(item);
+    final Color defaultColor =
+        isLabel ? theme.text.secondary : theme.text.primary;
     final bool hasIcon = item.image.isNotEmpty;
 
     // The C default is 10 pt; a script that asks for a size gets exactly that
@@ -37,21 +40,50 @@ class DialogTextItem extends StatelessWidget {
         ? dialogFontPixels(item.fontSize)
         : TpTypography.body.size;
 
-    final TextStyle style = TpTypography.body.toTextStyle().copyWith(
-      color: color,
+    final TextStyle baseStyle = TpTypography.body.toTextStyle().copyWith(
       fontSize: size,
       fontWeight: item.bold ? FontWeight.w700 : null,
     );
 
-    final Widget text = Text(
-      item.value,
-      style: style,
-      // A dialog is a script-authored layout; wrapping is the script's business,
-      // but overflowing the window would be worse than wrapping. The C renderer
-      // draws a single clipped line; Flutter wrapping is the closer analogue of
-      // "the text is visible" without pixel-clipping mid-glyph.
-      softWrap: true,
-    );
+    // If the script provided no explicit colour, check if this text has a
+    // "Label: Value" pair so the label can step back to `text.secondary` while
+    // the value remains prominent in `text.primary`.
+    final Widget text;
+    final Match? labelValueMatch = explicitColor == null && !isLabel
+        ? _kLabelValuePattern.firstMatch(item.value)
+        : null;
+
+    if (labelValueMatch != null) {
+      final String labelPart = labelValueMatch.group(1)!;
+      final String space = labelValueMatch.group(2)!;
+      final String valuePart = labelValueMatch.group(3)!;
+      text = Text.rich(
+        TextSpan(
+          style: baseStyle,
+          children: <InlineSpan>[
+            TextSpan(
+              text: '$labelPart$space',
+              style: TextStyle(color: theme.text.secondary),
+            ),
+            TextSpan(
+              text: valuePart,
+              style: TextStyle(color: theme.text.primary),
+            ),
+          ],
+        ),
+        softWrap: true,
+      );
+    } else {
+      text = Text(
+        item.value,
+        style: baseStyle.copyWith(color: explicitColor ?? defaultColor),
+        // A dialog is a script-authored layout; wrapping is the script's business,
+        // but overflowing the window would be worse than wrapping. The C renderer
+        // draws a single clipped line; Flutter wrapping is the closer analogue of
+        // "the text is visible" without pixel-clipping mid-glyph.
+        softWrap: true,
+      );
+    }
 
     if (!hasIcon) {
       return text;
@@ -87,5 +119,29 @@ class DialogTextItem extends StatelessWidget {
         Expanded(child: text),
       ],
     );
+  }
+
+  /// Pattern matching a leading field/key label followed by its value, e.g.
+  /// "Status: Active" or "会话: session-1". Does not match timestamps or URLs.
+  static final RegExp _kLabelValuePattern = RegExp(
+    r'^([^\d:\n\r][^:\n\r]{0,31}[:：])(\s*)(.+)$',
+  );
+
+  /// Determine if a text item represents a standalone label or secondary caption.
+  static bool _isLabel(DialogItem item) {
+    final String trimmed = item.value.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+    // Items explicitly punctuated as a label or field key.
+    if (trimmed.endsWith(':') || trimmed.endsWith('：')) {
+      return true;
+    }
+    // Sub-10pt text is intentionally smaller than body size, serving as
+    // secondary caption or footnote metadata.
+    if (item.fontSize > 0 && item.fontSize < kDialogDefaultPointSize) {
+      return true;
+    }
+    return false;
   }
 }

@@ -448,6 +448,11 @@ class NoopBarApi implements BarApi {
 /// Records calls instead of applying them. Test seam.
 class RecordingBarApi implements BarApi {
   final List<String> calls = <String>[];
+
+  /// The last style sent per bar, so a test can assert on colours rather than
+  /// on a formatted string.
+  final Map<int, BarStyleSpec> styles = <int, BarStyleSpec>{};
+
   final StreamController<BarEvent> _events =
       StreamController<BarEvent>.broadcast();
 
@@ -475,8 +480,10 @@ class RecordingBarApi implements BarApi {
   }) async => calls.add('setGeometry($barId,$width,$x,a=$autoIndex)');
 
   @override
-  Future<void> setStyle(int barId, BarStyleSpec style) async =>
-      calls.add('setStyle($barId,${style.state.wireValue})');
+  Future<void> setStyle(int barId, BarStyleSpec style) async {
+    styles[barId] = style;
+    calls.add('setStyle($barId,${style.state.wireValue})');
+  }
 
   @override
   Future<void> remove(int barId) async => calls.add('remove($barId)');

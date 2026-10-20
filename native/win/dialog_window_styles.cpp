@@ -35,7 +35,11 @@
 //
 //   See the self-test at the bottom of this file.
 
+#include "dialog_window_styles.h"
+
 #include <windows.h>
+#include <commctrl.h>
+#include <dwmapi.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -146,6 +150,44 @@ void set_style_bits(HWND hwnd, LONG_PTR bits, bool on) {
   refresh_frame(hwnd);
 }
 
+// ─── frameless-but-resizable ───────────────────────────────────────────────
+//
+// `WS_THICKFRAME` is what makes a window resizable by dragging its edges, but
+// it also makes Windows draw a non-client frame — the white band that appeared
+// around the dialog once resize was restored.
+//
+// The fix is the standard frameless-window recipe: keep the style (so the hit
+// test still reports the resize borders) and answer `WM_NCCALCSIZE` by telling
+// Windows the client area is the WHOLE window. Nothing is drawn, and the
+// invisible border the user grabs is `SM_CXSIZEFRAME` wide.
+//
+// Installed as a subclass rather than by replacing the WndProc: the dialog
+// window belongs to `desktop_multi_window`'s `FlutterWindow`, which has its own
+// message handling we must not disturb.
+constexpr UINT_PTR kFramelessSubclassId = 0xD1A106;
+
+LRESULT CALLBACK FramelessProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                               UINT_PTR, DWORD_PTR) {
+  if (msg == WM_NCCALCSIZE && wp) {
+    // wParam TRUE: lp points at NCCALCSIZE_PARAMS. Leaving the proposed rect
+    // untouched means "the client covers the whole window", and returning 0
+    // without calling DefWindowProc is the documented way to do that.
+    return 0;
+  }
+  return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
+void install_frameless(HWND hwnd) {
+  if (hwnd == nullptr) return;
+  DWORD_PTR existing = 0;
+  if (GetWindowSubclass(hwnd, &FramelessProc, kFramelessSubclassId, &existing)) {
+    return;  // already installed
+  }
+  SetWindowSubclass(hwnd, &FramelessProc, kFramelessSubclassId, 0);
+  refresh_frame(hwnd);
+}
+
+
 }  // namespace
 
 /// Remove the title bar and frame; hide from the taskbar and Alt+Tab.
@@ -159,9 +201,52 @@ void tp_dialog_set_borderless(HWND hwnd, bool borderless) {
   if (hwnd == nullptr) {
     return;
   }
-  set_style_bits(hwnd, WS_CAPTION | WS_THICKFRAME | WS_SYSMENU, !borderless);
+  // Only the CAPTION and the menu go: `WS_THICKFRAME` STAYS.
+  //
+  // `WS_THICKFRAME` without `WS_CAPTION` is what makes a borderless window
+  // resizable by dragging its edges, and it is the style Windows uses for
+  // borderless-but-resizable windows generally. Stripping it (as this did
+  // originally) left the dialog with no caption AND no resize border, so the
+  // only way to change its size was the Shift+scroll path — and that path was
+  // itself gated on the script's `borderless` flag.
+  //
+  // The 1 px DWM frame margin below is what makes the resize border invisible:
+  // the user grabs an edge that is not drawn.
+  set_style_bits(hwnd, WS_CAPTION | WS_SYSMENU, !borderless);
   set_ex_style_bits(hwnd, WS_EX_TOOLWINDOW, borderless);
   set_ex_style_bits(hwnd, WS_EX_APPWINDOW, !borderless);
+  // Strip the frame Windows would draw for WS_THICKFRAME while keeping the
+  // style, so the edges stay draggable. See `FramelessProc`.
+  install_frameless(hwnd);
+
+  // ROUNDED CORNERS AND A SHADOW.
+  //
+  // The dialog paints its own rounded surface (`DialogView` uses
+  // `TpRadius.overlay`), but a plain borderless window is a rectangle, so the
+  // corners were being squared off by the window edge and the panel had no
+  // shadow — it sat flat on the desktop instead of floating.
+  //
+  // Win11 has a first-class answer (`DWMWA_WINDOW_CORNER_PREFERENCE`), applied
+  // here. Win10 ignores the attribute and gets only the shadow, which is the
+  // same fallback the rest of the app uses (see the title bar's note about
+  // Windows 10 having no Mica).
+  //
+  // Round corners only.
+  //
+  // `DwmExtendFrameIntoClientArea` was here to give DWM a frame to hang the
+  // shadow off, but it FIGHTS `WM_NCCALCSIZE` returning 0: DWM treats the 1 px
+  // margin as part of the client area and composites into it, while Flutter
+  // paints the same pixels. The two alternate on every repaint, which is what
+  // made the dialog flicker while scrolling.
+  //
+  // The corner preference alone is enough: Win11 rounds the window without any
+  // frame extension, and the window keeps the shadow DWM gives every top-level
+  // window that has not opted out of it.
+  if (borderless) {
+    const DWORD corner = 2;  // DWMWCP_ROUND
+    DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */,
+                          &corner, sizeof(corner));
+  }
 }
 
 /// Let mouse input fall through to the window beneath.
@@ -275,7 +360,15 @@ void tp_dialog_set_frame(HWND hwnd, int x, int y, int width, int height) {
       top = p.y;
     }
   }
-  SetWindowPos(hwnd, HWND_TOP, left, top, frameW, frameH, SWP_NOACTIVATE);
+  // Restore first: `desktop_multi_window` creates its window with the runner's
+  // default placement, and a window in the maximized state ignores the size in
+  // `SetWindowPos` — the call succeeded and the window stayed at 1936x1056 (the
+  // maximized frame on a 1920x1080 screen) instead of the spec's 360x240.
+  if (IsZoomed(hwnd) || IsIconic(hwnd)) {
+    ShowWindow(hwnd, SW_RESTORE);
+  }
+  SetWindowPos(hwnd, HWND_TOP, left, top, frameW, frameH,
+               SWP_NOACTIVATE | SWP_NOCOPYBITS);
 }
 
 /// Close the window.
@@ -318,6 +411,32 @@ int int_arg(const EncodableMap& args, const char* key, int fallback) {
   return fallback;
 }
 
+/// UTF-8 string arg. Flutter encodes a Dart `String` as UTF-8 bytes in a
+/// `std::string`.
+std::string string_arg(const EncodableMap& args, const char* key) {
+  const auto it = args.find(EncodableValue(key));
+  if (it == args.end()) {
+    return std::string();
+  }
+  if (const auto* s = std::get_if<std::string>(&it->second)) {
+    return *s;
+  }
+  return std::string();
+}
+
+/// UTF-8 -> UTF-16, for the Win32 W APIs.
+std::wstring widen(const std::string& utf8) {
+  if (utf8.empty()) {
+    return std::wstring();
+  }
+  const int n = MultiByteToWideChar(CP_UTF8, 0, utf8.data(),
+                                    static_cast<int>(utf8.size()), nullptr, 0);
+  std::wstring out(static_cast<size_t>(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()),
+                      out.data(), n);
+  return out;
+}
+
 bool bool_arg(const EncodableMap& args, const char* key, bool fallback) {
   const auto it = args.find(EncodableValue(key));
   if (it == args.end()) {
@@ -331,12 +450,22 @@ bool bool_arg(const EncodableMap& args, const char* key, bool fallback) {
 
 /// Resolve the HWND for the engine that is calling.
 ///
-/// A dialog is its own window, so the registrar's view gives the right handle.
-/// `flutter/plugin_registrar_windows.h` exposes the view; the native handle
-/// comes from it. This is the one line that must be checked against the real
-/// Flutter headers when the runner exists.
+/// The registrar's view is the Flutter CHILD window inside the dialog's frame.
+/// Moving or restyling that child does nothing visible: the top-level window
+/// the user sees is its ancestor. `desktop_multi_window` creates the dialog as
+/// `FlutterWindow` (a `Win32Window`) and puts the Flutter view inside it, so
+/// the frame to move is the ROOT.
+///
+/// Using the view handle directly was the bug that made `setFrame` "succeed"
+/// while the window stayed 800x600: every call went to a child that has no
+/// frame of its own.
 HWND hwnd_for(flutter::PluginRegistrarWindows* registrar) {
-  return registrar->GetView()->GetNativeWindow();
+  HWND view = registrar->GetView()->GetNativeWindow();
+  if (view == nullptr) {
+    return nullptr;
+  }
+  HWND root = GetAncestor(view, GA_ROOT);
+  return root != nullptr ? root : view;
 }
 
 class DialogWindowStylesPlugin {
@@ -371,13 +500,88 @@ class DialogWindowStylesPlugin {
             tp_dialog_set_frame(hwnd, int_arg(a, "x", -1), int_arg(a, "y", -1),
                                 int_arg(a, "width", 400),
                                 int_arg(a, "height", 300));
+          } else if (method == "setTitle") {
+            // The window is created by `desktop_multi_window` with an EMPTY
+            // title, so Windows falls back to the window class name and the
+            // caption reads "FLUTTERVIEW". The dialog's own title comes from
+            // the spec, which only Dart knows.
+            const std::wstring title = widen(string_arg(a, "title"));
+            SetWindowTextW(hwnd, title.c_str());
           } else if (method == "beginDrag") {
             tp_dialog_begin_drag(hwnd);
+          } else if (method == "setHeight") {
+            // Grow or shrink the window so the content fits.
+            //
+            // A script declares `height = 260` without knowing how tall its
+            // own table will be; a seven-row table does not fit, and the last
+            // rows were simply unreachable (the scrollbar is suppressed).
+            // Dart measures the rendered content and asks for the height it
+            // actually needs, clamped here to the work area so a runaway
+            // table cannot produce a window taller than the screen.
+            const int want = int_arg(a, "height", -1);
+            if (want > 0) {
+              RECT wr{};
+              if (GetWindowRect(hwnd, &wr)) {
+                RECT client{};
+                GetClientRect(hwnd, &client);
+                const int chrome = (wr.bottom - wr.top) - client.bottom;
+                int height = want + chrome;
+                const int maxH = GetSystemMetrics(SM_CYSCREEN) * 4 / 5;
+                if (height > maxH) height = maxH;
+                if (height > 0 && height != (wr.bottom - wr.top)) {
+                  SetWindowPos(hwnd, nullptr, 0, 0, wr.right - wr.left, height,
+                               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+                }
+              }
+            }
           } else if (method == "resizeBy") {
             tp_dialog_resize_by(hwnd, int_arg(a, "dx", 0),
                                 int_arg(a, "dy", 0));
           } else if (method == "close") {
             tp_dialog_close(hwnd);
+          } else if (method == "hide") {
+            // Hide, do NOT destroy.
+            //
+            // `DialogWindowHost` reuses one window (and its Flutter engine) for
+            // every dialog; that reuse is what makes reopening instant. The
+            // dialog's own X button used to call `close`, which posts
+            // `WM_CLOSE` and tears the engine down — so every reopen paid the
+            // full cold start (native window + engine + Dart isolate).
+            ShowWindow(hwnd, SW_HIDE);
+          } else if (method == "show") {
+            // Show the SAME window the host hid, and RAISE it.
+            //
+            // `desktop_multi_window`'s `window_show` calls `ShowWindow` on the
+            // handle it recorded at create time, which is not the root window
+            // this channel resolves (see `hwnd_for`) — so a dialog hidden here
+            // and shown through the plugin stayed invisible: `ShowWindow`
+            // succeeded, on the wrong HWND, and the second open did nothing.
+            // Hiding and showing both go through this channel so they always
+            // agree on which window they mean.
+            //
+            // RAISING MATTERS AS MUCH AS SHOWING. A second click on a bar
+            // whose dialog is already up must bring it to the front: the user
+            // clicked because they could not see it (another app is covering
+            // it), and "nothing happened" is indistinguishable from "the
+            // dialog never opened". `SW_SHOW` alone does nothing to an
+            // already-visible window, and `SetForegroundWindow` can be refused
+            // by the foreground lock when our process is not the active one.
+            //
+            // So: un-minimise, set topmost, then drop the topmost flag again.
+            // The topmost round-trip is the standard way to raise a window
+            // from a background process — it does not need foreground rights,
+            // and because the flag is removed immediately the dialog does not
+            // stay above everything (that would be wrong for a normal panel).
+            if (IsIconic(hwnd)) {
+              ShowWindow(hwnd, SW_RESTORE);
+            } else {
+              ShowWindow(hwnd, SW_SHOW);
+            }
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetForegroundWindow(hwnd);
           } else {
             result->NotImplemented();
             return;

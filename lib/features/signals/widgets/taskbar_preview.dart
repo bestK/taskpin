@@ -73,8 +73,22 @@ class TaskbarPreviewBar extends StatelessWidget {
             color: theme.taskbarPlaceholder,
           ),
           const SizedBox(width: TpSpacing.s16),
-          Expanded(
+          // Flexible, not Expanded: the placeholders and the tray are fixed
+          // widths, so at a narrow window the plugin row must be allowed to
+          // shrink below its natural size instead of overflowing the strip.
+          Flexible(
             child: Row(
+              // LEFT-aligned, directly after the drag placeholders.
+              //
+              // The placeholders at the start of the strip are the pinned
+              // items' drag handles, and they already mark where the row
+              // begins. Pushing the segments to the right edge (an earlier
+              // attempt at "match the real taskbar, which sits next to the
+              // tray") left a lone plugin floating against the clock with a
+              // wide black gap before it — it read as a missing segment, not
+              // as a taskbar. The tray stays pinned at the far right below,
+              // so the strip still has both ends anchored.
+              mainAxisAlignment: MainAxisAlignment.start,
               children: <Widget>[
                 for (int i = 0; i < segments.length; i++) ...<Widget>[
                   if (i > 0)
@@ -88,7 +102,20 @@ class TaskbarPreviewBar extends StatelessWidget {
                         child: ColoredBox(color: theme.taskbarPlaceholder),
                       ),
                     ),
-                  Flexible(child: _Segment(segment: segments[i])),
+                  // Flexible with a tight cap: the segment sizes to its
+                  // reading up to [kTaskbarSegmentMaxWidth], and may shrink
+                  // below that when the row is narrow. A bare ConstrainedBox
+                  // was measured at its natural width and overflowed the row
+                  // at 560 px windows; a bare Flexible let one segment claim
+                  // the whole strip and draw as a full-width black band.
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: kTaskbarSegmentMaxWidth,
+                      ),
+                      child: _Segment(segment: segments[i]),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -100,6 +127,13 @@ class TaskbarPreviewBar extends StatelessWidget {
     );
   }
 }
+
+/// Widest a single pinned plugin may draw in the preview.
+///
+/// Real bars are 50–800 wide, but the preview is about arrangement, not
+/// resizing, and an unbounded segment swallows the strip. This keeps one
+/// plugin looking like a plugin next to the tray.
+const double kTaskbarSegmentMaxWidth = 260;
 
 /// Vertical room inside a segment: the 56 bar minus 6 above and 6 below.
 const double _kSegmentInnerHeight = TaskbarPreviewBar.height - 12;
@@ -171,40 +205,56 @@ class _Segment extends StatelessWidget {
     final TaskPinTheme theme = TaskPinTheme.of(context);
     final bool empty = segment.content.isEmpty;
 
+    // Each segment gets its own chip so the strip reads as a row of distinct
+    // items rather than as one long dark band with text scattered on it. This
+    // mirrors the real taskbar, where every pinned item is its own child
+    // window with its own edge.
+    final Widget body = empty
+        ? Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s8),
+              child: Text(
+                segment.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TpTypography.caption.toTextStyle(
+                  tabular: true,
+                ).copyWith(color: theme.taskbarMuted),
+              ),
+            ),
+          )
+        // No `width: double.infinity` here: the segment is already bounded by
+        // [kTaskbarSegmentMaxWidth] and by the row's remaining space. An
+        // infinite width inside a bounded parent makes the strip fight the
+        // constraint and overflow at narrow window sizes.
+        : SizedBox(
+            height: _kSegmentInnerHeight,
+            child: TpBarPreviewStrip(
+              content: segment.content,
+              height: _kSegmentInnerHeight,
+              background: theme.taskbarChip,
+              showStateStrip: false,
+            ),
+          );
+
     return TpFocusRing(
       radius: TpRadius.control,
       onTap: segment.onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: TpSpacing.s4,
-          vertical: TpSpacing.s6,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: TpSpacing.s6),
         // The segment is 44 high inside the 56 bar; clipping keeps a long
         // reading from painting outside its own segment.
-        child: ClipRect(
-          child: empty
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    segment.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TpTypography.caption.toTextStyle(
-                      tabular: true,
-                    ).copyWith(color: theme.taskbarMuted),
-                  ),
-                )
-              : SizedBox(
-                  height: _kSegmentInnerHeight,
-                  width: double.infinity,
-                  child: TpBarPreviewStrip(
-                    content: segment.content,
-                    height: _kSegmentInnerHeight,
-                    background: theme.taskbar,
-                    width: double.infinity,
-                    showStateStrip: false,
-                  ),
-                ),
+        child: ClipRRect(
+          borderRadius: TpRadius.control,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.taskbarChip,
+              borderRadius: TpRadius.control,
+              border: Border.all(color: theme.taskbarChipBorder),
+            ),
+            child: body,
+          ),
         ),
       ),
     );
@@ -266,23 +316,34 @@ class TaskbarPreviewHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = context.l10n;
     final TaskPinTheme theme = TaskPinTheme.of(context);
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            l10n.projectsPreviewTitle(count),
-            style: TpTypography.caption
-                .toTextStyle(tabular: true)
-                .copyWith(color: theme.text.secondary),
+    // A fixed 20 px line. Without it the row collapsed to the 16 px text
+    // height, and the 8 px gap below left the two captions visually touching
+    // the strip — which reads as clipped text rather than as a caption.
+    return SizedBox(
+      height: 20,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              l10n.projectsPreviewTitle(count),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TpTypography.caption
+                  .toTextStyle(tabular: true)
+                  .copyWith(color: theme.text.secondary),
+            ),
           ),
-        ),
-        Text(
-          l10n.projectsDragHint,
-          style: TpTypography.caption.toTextStyle().copyWith(
-                color: theme.text.tertiary,
-              ),
-        ),
-      ],
+          const SizedBox(width: TpSpacing.s16),
+          Text(
+            l10n.projectsDragHint,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TpTypography.caption.toTextStyle().copyWith(
+                  color: theme.text.tertiary,
+                ),
+          ),
+        ],
+      ),
     );
   }
 }

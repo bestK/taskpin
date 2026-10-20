@@ -14,8 +14,8 @@ class DialogHrItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      // 6 px above (C: `line_y = y + 6`) and 6 px below, for the 12 px advance.
-      padding: EdgeInsets.symmetric(vertical: TpSpacing.s6),
+      // 4 px above and 4 px below (compact 8 px vertical advance around the 1 px divider).
+      padding: EdgeInsets.symmetric(vertical: TpSpacing.s4),
       child: TpDivider(),
     );
   }

@@ -76,6 +76,23 @@ bool bar_embed_apply_transparency(HWND child, const BarStyle& style);
 // GetDeviceCaps). Dynamically resolved so the module still runs on old Win10.
 UINT bar_embed_dpi_for_window(HWND hwnd);
 
+// --------------------------------------------------- taskbar background -----
+//
+// The colour the taskbar actually paints, as `0xAARRGGBB`, or 0 when it cannot
+// be read.
+//
+// WHY SAMPLE THE SCREEN INSTEAD OF READING A SETTING. Windows has no single
+// "taskbar colour" value: it is the theme accent when `ColorPrevalence` is on,
+// black otherwise, with Mica or acrylic blended over it on Win11, and possibly
+// a user-chosen transparency level on top. `DwmGetColorizationColor` returns
+// the accent, not what the bar looks like; the registry only describes the
+// inputs. Reading the pixel that the shell actually painted is the one answer
+// that covers every version and every combination.
+//
+// The sample point is the taskbar's client area just left of the tray-notify
+// area — deliberately outside our own bars, so a bar can never sample itself.
+uint32_t bar_embed_taskbar_background(const BarTarget& target);
+
 // ------------------------------------------------------- TaskbarWatcher -----
 // Detects taskbar destruction/recreation and asks the host to re-embed.
 // The callback fires on the thread that called Start() (which must pump

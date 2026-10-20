@@ -28,10 +28,13 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
     required this.smoke,
     required this.focusInner,
     required this.navActive,
+    required this.navActiveText,
     required this.taskbar,
     required this.taskbarLabel,
     required this.taskbarMuted,
     required this.taskbarPlaceholder,
+    required this.taskbarChip,
+    required this.taskbarChipBorder,
     required this.barColors,
     required this.barPlatform,
   });
@@ -55,6 +58,9 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
   /// Selected navigation item fill.
   final Color navActive;
 
+  /// Label and icon on [navActive].
+  final Color navActiveText;
+
   /// Taskbar mock inside the manager window.
   final Color taskbar;
 
@@ -66,6 +72,12 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
 
   /// Drag placeholder square and segment divider on the taskbar mock.
   final Color taskbarPlaceholder;
+
+  /// One pinned plugin inside the taskbar mock.
+  final Color taskbarChip;
+
+  /// 1 px outline on [taskbarChip].
+  final Color taskbarChipBorder;
 
   /// Taskbar colour for the preview strip. Follows the theme brightness.
   Color get taskbarPreview => isDark
@@ -106,10 +118,13 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
         smoke: c.smoke,
         focusInner: c.focusInner,
         navActive: c.navActive,
+        navActiveText: c.navActiveText,
         taskbar: c.taskbar,
         taskbarLabel: c.taskbarLabel,
         taskbarMuted: c.taskbarMuted,
         taskbarPlaceholder: c.taskbarPlaceholder,
+        taskbarChip: c.taskbarChip,
+        taskbarChipBorder: c.taskbarChipBorder,
         barColors: const TpBarColors(),
         barPlatform: barPlatform,
       );
@@ -190,10 +205,13 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
     Color? smoke,
     Color? focusInner,
     Color? navActive,
+    Color? navActiveText,
     Color? taskbar,
     Color? taskbarLabel,
     Color? taskbarMuted,
     Color? taskbarPlaceholder,
+    Color? taskbarChip,
+    Color? taskbarChipBorder,
     TpBarColors? barColors,
     TpBarPlatform? barPlatform,
   }) =>
@@ -209,10 +227,13 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
         smoke: smoke ?? this.smoke,
         focusInner: focusInner ?? this.focusInner,
         navActive: navActive ?? this.navActive,
+        navActiveText: navActiveText ?? this.navActiveText,
         taskbar: taskbar ?? this.taskbar,
         taskbarLabel: taskbarLabel ?? this.taskbarLabel,
         taskbarMuted: taskbarMuted ?? this.taskbarMuted,
         taskbarPlaceholder: taskbarPlaceholder ?? this.taskbarPlaceholder,
+        taskbarChip: taskbarChip ?? this.taskbarChip,
+        taskbarChipBorder: taskbarChipBorder ?? this.taskbarChipBorder,
         barColors: barColors ?? this.barColors,
         barPlatform: barPlatform ?? this.barPlatform,
       );
@@ -275,10 +296,13 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
       smoke: l(smoke, other.smoke),
       focusInner: l(focusInner, other.focusInner),
       navActive: l(navActive, other.navActive),
+      navActiveText: l(navActiveText, other.navActiveText),
       taskbar: l(taskbar, other.taskbar),
       taskbarLabel: l(taskbarLabel, other.taskbarLabel),
       taskbarMuted: l(taskbarMuted, other.taskbarMuted),
       taskbarPlaceholder: l(taskbarPlaceholder, other.taskbarPlaceholder),
+      taskbarChip: l(taskbarChip, other.taskbarChip),
+      taskbarChipBorder: l(taskbarChipBorder, other.taskbarChipBorder),
       barColors: t < 0.5 ? barColors : other.barColors,
       barPlatform: t < 0.5 ? barPlatform : other.barPlatform,
     );

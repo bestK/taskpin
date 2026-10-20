@@ -92,6 +92,7 @@
 
 #include <commctrl.h>
 #include <windows.h>
+#include <cstdio>
 #include <windowsx.h>
 
 #include <memory>
@@ -330,6 +331,82 @@ class MainWindowPlugin : public flutter::Plugin {
       result->Success();
     } else if (method == "isMaximized") {
       result->Success(EncodableValue(IsZoomed(top_level_) != FALSE));
+    } else if (method == "raiseDialog") {
+      // Bring the script-dialog window to the front.
+      //
+      // WHY THIS LIVES ON THE MANAGER'S CHANNEL. A dialog is a separate
+      // top-level window owned by a SEPARATE Flutter engine, and the manager
+      // cannot address it: `taskpin/window` is registered per-engine on the
+      // dialog, not here. Windows' foreground lock also refuses
+      // `SetForegroundWindow` from a process that did not just receive user
+      // input — and the manager DID just receive the click that triggered
+      // this, which is exactly the permission the dialog's own engine lacks.
+      //
+      // The dialog is located by window class (`FLUTTER_MULTI_WINDOW_WIN32_WINDOW`)
+      // in our own process. Only the manager window is a
+      // `FLUTTER_RUNNER_WIN32_WINDOW`, so the class alone is unambiguous.
+      struct Find {
+        DWORD pid;
+        HWND found;
+      } find{GetCurrentProcessId(), nullptr};
+      EnumWindows(
+          [](HWND hwnd, LPARAM lp) -> BOOL {
+            auto* f = reinterpret_cast<Find*>(lp);
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            if (pid != f->pid) return TRUE;
+            wchar_t cls[64] = {0};
+            GetClassNameW(hwnd, cls, 64);
+            if (wcsstr(cls, L"MULTI_WINDOW") == nullptr) return TRUE;
+            f->found = hwnd;
+            return FALSE;
+          },
+          reinterpret_cast<LPARAM>(&find));
+      if (!find.found) {
+        result->Success(EncodableValue(false));
+        return;
+      }
+      {
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, L"taskpin_raise.log", L"a") == 0 && f) {
+          fprintf(f, "raise hwnd=%p wasFg=%d\n", (void*)find.found,
+                  GetForegroundWindow() == find.found ? 1 : 0);
+          fclose(f);
+        }
+      }
+      if (IsIconic(find.found)) {
+        ShowWindow(find.found, SW_RESTORE);
+      } else {
+        ShowWindow(find.found, SW_SHOW);
+      }
+      // RAISE, THREE WAYS, IN ORDER OF RELIABILITY.
+      //
+      // 1. Topmost round-trip. Works from a background process and does not
+      //    need foreground rights. It reorders z-order but does not focus.
+      // 2. AttachThreadInput + SetForegroundWindow. The foreground lock is
+      //    per-thread: attaching to the thread that owns the foreground window
+      //    makes this thread "the foreground thread" for the duration, which
+      //    is the documented way to take focus from a background process.
+      // 3. BringWindowToTop, which reorders without focus and is the fallback
+      //    when the attach fails.
+      SetWindowPos(find.found, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+      SetWindowPos(find.found, HWND_NOTOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+
+      HWND fg = GetForegroundWindow();
+      DWORD fg_thread = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+      DWORD my_thread = GetCurrentThreadId();
+      const bool attached =
+          fg_thread != 0 && fg_thread != my_thread &&
+          AttachThreadInput(my_thread, fg_thread, TRUE) != FALSE;
+      BringWindowToTop(find.found);
+      SetForegroundWindow(find.found);
+      SetFocus(find.found);
+      if (attached) {
+        AttachThreadInput(my_thread, fg_thread, FALSE);
+      }
+      result->Success(EncodableValue(true));
     } else {
       result->NotImplemented();
     }

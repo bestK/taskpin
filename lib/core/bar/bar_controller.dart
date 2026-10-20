@@ -25,6 +25,9 @@ import 'package:taskpin_engine/taskpin_engine.dart';
 import '../config/config_providers.dart';
 import '../config/config_schema.dart';
 import '../engine/engine_provider.dart';
+import '../../features/dialogs/dialog_spec.dart' as ui;
+import '../../features/dialogs/dialog_spec_bridge.dart';
+import '../../features/dialogs/inline_dialog_provider.dart';
 import '../net/http_providers.dart';
 import 'bar_channel.dart';
 import 'bar_source.dart';
@@ -47,6 +50,14 @@ final Provider<BarApi> barApiProvider = Provider<BarApi>((Ref ref) {
 /// be useful as an escape hatch.
 final StateProvider<bool> barsEnabledProvider =
     StateProvider<bool>((Ref ref) => true);
+
+/// The wire value that means "paint the taskbar's own colour".
+///
+/// Deliberately the same bit pattern as the config's "no colour chosen"
+/// default (`kColorUseGlobal`, "FFFFFFFF"), so no schema change is needed: a
+/// config written by any earlier version already means this. The native
+/// renderer resolves it by sampling the taskbar (`kColorFollowTaskbar`).
+const int kFollowTaskbarArgb = 0xFFFFFFFF;
 
 /// What the controller is currently showing.
 ///
@@ -515,31 +526,56 @@ class BarNotifier extends Notifier<BarState> {
     }
   }
 
-  /// The geometry we last sent for [index], or one derived from the config
-  /// when nothing has been sent yet.
+  /// The geometry to send for [index].
   ///
-  /// The fallback goes through the same placement rule as the reconcile, so an
-  /// auto bar is never given a made-up x of 0.
+  /// PLACEMENT MODE COMES FROM THE CONFIG, NOT FROM THE CACHE.
+  ///
+  /// The cache exists so a script refresh re-sends the width and x that are
+  /// already on screen instead of recomputing them. It must not decide whether
+  /// a bar is auto-tiled, because that decision is the user's and lives in
+  /// `bar_x`:
+  ///
+  ///   Shift+wheel moves a bar by hand. Native records it (`m_auto_index = -1`)
+  ///   and reports the new x; Dart writes `bar_x = x` and saves. The config
+  ///   change schedules a reconcile, but until that runs, the periodic script
+  ///   refresh still fires — and it used to read the cached geometry, which
+  ///   was computed when the bar was still auto. That sent `autoIndex >= 0`
+  ///   back to native, `SetAutoPlacement` turned the bar auto again, and the
+  ///   next `RelayoutAuto()` snapped it back to its tiled position. The bar
+  ///   appeared to jump home a fraction of a second after the wheel stopped.
+  ///
+  /// So: `bar_x` decides the mode, every time. The cache only supplies the
+  /// width (which native owns while the user is wheeling) and the explicit x
+  /// for a bar that is already explicit.
   BarGeometrySnapshot _geometryFor(
     PinItem item,
     int index,
     TaskPinConfig config,
   ) {
     final BarGeometrySnapshot? sent = _geometry[index];
-    if (sent != null) {
-      return sent;
+
+    // An explicit bar stays explicit: its x is whatever is on screen (the
+    // cache) or, before the first send, the config.
+    if (item.barX >= 0) {
+      return BarGeometrySnapshot(
+        width: sent?.width ?? _widthFor(item, config),
+        x: sent?.x ?? item.barX,
+        autoIndex: -1,
+      );
     }
+
+    // An auto bar: native owns x, Dart owns the ordering key and width.
     final BarPlacement? p = placementFor(config, index);
     if (p != null) {
       return BarGeometrySnapshot(
-        width: p.width,
-        x: p.isAuto ? -1 : p.x,
+        width: sent?.width ?? p.width,
+        x: -1,
         autoIndex: p.autoIndex,
       );
     }
     return BarGeometrySnapshot(
-      width: _widthFor(item, config),
-      x: item.barX >= 0 ? item.barX : -1,
+      width: sent?.width ?? _widthFor(item, config),
+      x: -1,
       autoIndex: -1,
     );
   }
@@ -611,10 +647,31 @@ class BarNotifier extends Notifier<BarState> {
     final ScriptResult? result = _lastResult[index];
     if (result == null || !result.clickable) return;
     if (result.clickAction == ClickAction.dialog) {
-      ref.read(dialogOpenerProvider)?.call(result.dialog);
+      // Inline dialogs are the default presentation (see
+      // `features/dialogs/inline_dialog_provider.dart` for why a second window
+      // was abandoned). The seam stays: a test or an alternative host can
+      // override `dialogOpenerProvider` and take the click instead.
+      final DialogOpener? custom = ref.read(dialogOpenerProvider);
+      if (custom != null) {
+        custom(result.dialog, item.luaPath);
+      } else {
+        _openInlineDialog(result.dialog, item.luaPath);
+      }
     } else if (result.clickUrl.isNotEmpty) {
       await _openUrl(result.clickUrl);
     }
+  }
+
+  /// Show [dialog] as an inline panel over the manager window.
+  ///
+  /// The engine's `DialogSpec` is a different type from the UI's (one mirrors
+  /// the C ABI, the other is the renderer's model); the bridge converts.
+  ///
+  /// [luaPath] is what the panel re-runs on the spec's `@refresh` interval.
+  void _openInlineDialog(DialogSpec spec, String luaPath) {
+    final ui.DialogSpec? uiSpec = uiSpecFromEngine(spec);
+    if (uiSpec == null) return;
+    ref.read(inlineDialogProvider.notifier).open(uiSpec, luaPath: luaPath);
   }
 
   /// The wheel changed a bar's width or x. Persist it.
@@ -741,11 +798,50 @@ class BarNotifier extends Notifier<BarState> {
   /// The config stores a Win32 COLORREF as a BGR hex string
   /// (`lib/config.c:78-85`), which is the opposite byte order from the ARGB the
   /// renderer wants — so this is the one place that conversion must happen.
+  /// The item's background as an ARGB int, or null for the token default.
+  ///
+  /// "No colour chosen" is not the same as "white". The config default is
+  /// `FFFFFFFF` (for the item and for the global), and the native renderer
+  /// treats that value as a request to sample the taskbar's own colour — see
+  /// `kColorFollowTaskbar` in `native/win/bar_tokens.h`. Passing it through
+  /// `colorrefToArgb` would turn it into opaque white, which is how a bar
+  /// could end up a bright rectangle on a dark taskbar.
+  /// Whether a colour string means "nothing was chosen".
+  ///
+  /// `FFFFFFFF` is the documented sentinel. `00000000` is what the shipped
+  /// `config.json` files actually contain at the global level: the C layer's
+  /// default, written before the sentinel existed, and — despite the C
+  /// comment calling it transparent — rendered as opaque black. Treating it
+  /// as "unset" is what lets those existing installs start following the
+  /// taskbar without a migration.
+  static bool _isUnsetColor(String wire) {
+    final String t = wire.trim().toUpperCase();
+    return t == '00000000' || t == '0X00000000';
+  }
+
   static int? _backgroundFor(PinItem item, TaskPinConfig config) {
-    final String wire = ConfigColor.isUseGlobal(item.barBgColor)
-        ? config.bgColor
-        : item.barBgColor;
-    final int? raw = ConfigColor.tryParse(wire);
+    // The sentinel means different things at the two levels:
+    //
+    //   item  `FFFFFFFF` -> "defer to the global setting"
+    //   global `FFFFFFFF` -> "no colour chosen" -> follow the taskbar
+    //
+    // The shipped config has exactly that pair (`bar_bg_color: "FFFFFFFF"`
+    // everywhere, `bg_color: "00000000"`), so collapsing the two would
+    // silently ignore a global colour the user did set.
+    if (ConfigColor.isUseGlobal(item.barBgColor)) {
+      // `00000000` is what the shipped configs carry and what the C layer
+      // wrote for "not set" (the plan notes it is opaque black in practice,
+      // which is the bug being fixed here). Treating it as "no colour" is
+      // what makes the default follow the taskbar instead of painting black.
+      if (ConfigColor.isUseGlobal(config.bgColor) ||
+          _isUnsetColor(config.bgColor)) {
+        return kFollowTaskbarArgb;
+      }
+      final int? global = ConfigColor.tryParse(config.bgColor);
+      return global == null ? null : ConfigColor.colorrefToArgb(global);
+    }
+
+    final int? raw = ConfigColor.tryParse(item.barBgColor);
     if (raw == null) {
       return null;
     }
@@ -820,12 +916,27 @@ class BarNotifier extends Notifier<BarState> {
 
   void _stop() {
     _debounce?.cancel();
+    _debounce = null;
     for (final Timer t in _timers) {
       t.cancel();
     }
     _timers.clear();
     _events?.cancel();
     _events = null;
+    // THE SUBSCRIPTION FLAG MUST BE CLEARED TOO.
+    //
+    // Riverpod re-runs `build()` on the SAME Notifier instance when a watched
+    // dependency changes (it disposes the previous build's listeners first).
+    // That dispose calls this method, which cancels the channel subscription.
+    // Leaving `_started = true` then made `_startEvents()` return early on the
+    // next reconcile, so nothing ever re-subscribed: wheel and click events
+    // stopped arriving for the rest of the session.
+    //
+    // That is what made Shift+wheel "jump back": native moved the bar and
+    // reported it, the report went nowhere, Dart never wrote `bar_x`, and the
+    // next script refresh re-sent the bar as auto-tiled — which native then
+    // snapped back to its tiled x.
+    _started = false;
   }
 
   /// The last script result per item, kept for the click path (which needs
@@ -877,7 +988,15 @@ class BarGeometrySnapshot {
 typedef UrlOpener = Future<void> Function(String url);
 
 /// Opens (or re-raises) a dialog window for a script's `dialog` payload.
-typedef DialogOpener = void Function(DialogSpec spec);
+///
+/// The argument is the ENGINE's `DialogSpec` (from `taskpin_engine`), because
+/// that is what `ScriptResult` carries. Turning it into the UI's model is the
+/// app layer's job — see `lib/features/dialogs/dialog_spec_bridge.dart`. The
+/// two types are deliberately separate (one is an ABI mirror, the other a
+/// UI model), and this provider is the seam where they meet.
+/// [luaPath] is the script that produced the dialog, so the window can re-run
+/// it on the spec's `@refresh` interval. Empty means "no refresh".
+typedef DialogOpener = void Function(DialogSpec spec, String luaPath);
 
 /// Raises the manager window.
 typedef ManagerRaiser = void Function();

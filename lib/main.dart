@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:taskpin_design/taskpin_design.dart';
+import 'package:taskpin_engine/taskpin_engine.dart' as engine;
 
 import 'app/shell/app_shell.dart';
 import 'app/shell/routes.dart';
@@ -34,8 +35,12 @@ import 'core/bar/bar_controller.dart';
 import 'core/config/config_providers.dart';
 import 'core/config/config_repository.dart';
 import 'core/config/config_schema.dart';
+import 'features/dialogs/dialog_action.dart';
+import 'features/dialogs/dialog_spec.dart' show DialogSpec;
+import 'features/dialogs/dialog_spec_bridge.dart';
 import 'l10n/app_localizations.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 /// Writes a line to the debug boot log, but ONLY in a debug build.
@@ -81,6 +86,15 @@ Future<void> _managerMain(List<String> args) async {
   try {
     _bootLog('manager started: args=$args');
 
+    // The one script-dialog window for the process. Owned here rather than by
+    // a provider: it wraps a native window and must outlive navigation. It is
+    // created lazily on the first click and then REUSED — closing a dialog
+    // hides the window, it does not destroy the engine — which is what keeps
+    // every open after the first one instant.
+    final DialogWindowHost dialogHost = DialogWindowHost(
+      actions: const ProcessDialogActionRunner(),
+    );
+
     FlutterError.onError = (FlutterErrorDetails details) {
       _bootLog('FLUTTER ERROR: ${details.exceptionAsString()}\n${details.stack}');
     };
@@ -119,11 +133,51 @@ Future<void> _managerMain(List<String> args) async {
           // instance mutex is released by the OS on exit, so no cleanup is
           // needed.
           exitRequestProvider.overrideWithValue(() => exit(0)),
+
+          // Script dialogs open in their own top-level window (Phase C).
+          //
+          // WHY NOT THE INLINE PANEL. A panel over the manager window paints
+          // instantly, but it cannot leave the window and it disappears when
+          // the manager is minimised — which is wrong for the scripts that use
+          // a dialog as a desktop HUD (a clock, a monitor readout). A dialog is
+          // also meant to be independent: it survives navigation and floats
+          // over other applications.
+          //
+          // THE COST, AND HOW IT IS PAID. A second window means a second
+          // Flutter engine and Dart isolate; the FIRST open pays for that
+          // (~0.5-2 s). After that `DialogWindowHost` keeps the window (close
+          // hides it, it does not destroy it), so every later open is a
+          // `setSpec` on an engine that is already running.
+          //
+          // It is deliberately NOT warmed at startup: that would hold the
+          // second engine resident (~120 MB measured) for the whole session,
+          // and most users open a dialog rarely.
+          dialogOpenerProvider.overrideWithValue(
+            (engine.DialogSpec spec, String luaPath) {
+              final DialogSpec? uiSpec = uiSpecFromEngine(spec);
+              if (uiSpec == null) return;
+              unawaited(dialogHost.open(uiSpec, luaPath: luaPath));
+            },
+          ),
+
+          // Bar clicks that carry a URL open it in the user's browser. Same
+          // runner the dialog window uses for its buttons and table rows.
+          urlOpenerProvider.overrideWithValue(
+            const ProcessDialogActionRunner().openUrl,
+          ),
         ],
         child: const TaskPinApp(),
       ),
     );
     _bootLog('runApp completed');
+
+    // The dialog window is NOT warmed at startup.
+    //
+    // Warming means a second Flutter engine and Dart isolate resident for the
+    // whole session, measured at ~120 MB, for a window most users open rarely.
+    // The cost is paid once instead: the first click creates the window (~0.5-2
+    // s), and `DialogWindowHost` keeps it afterwards, so every later open is a
+    // `setSpec` on an engine that is already running.
   } catch (e, st) {
     _bootLog('STARTUP EXCEPTION: $e\n$st');
   }

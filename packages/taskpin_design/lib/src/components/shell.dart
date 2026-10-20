@@ -195,7 +195,8 @@ class _TpNavItem extends StatelessWidget {
           final Color bg = selected
               ? theme.navActive
               : (hovered ? theme.subtle.hover : Colors.transparent);
-          final Color fg = selected ? theme.accent.onFill : theme.text.secondary;
+          final Color fg =
+              selected ? theme.navActiveText : theme.text.secondary;
 
           return TpFocusRing(
             radius: TpRadius.card,
@@ -282,7 +283,7 @@ class _TpNavBadge extends StatelessWidget {
     return Text(
       '$count',
       style: TpTypography.caption.toTextStyle(tabular: true).copyWith(
-            color: selected ? theme.accent.onFill : theme.text.tertiary,
+            color: selected ? theme.navActiveText : theme.text.tertiary,
           ),
     );
   }

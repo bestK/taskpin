@@ -18,6 +18,7 @@ import '../../core/bar/bar_source.dart' show resolveScriptPath;
 import '../../core/config/config_providers.dart';
 import '../../core/config/config_schema.dart';
 import '../../features/signals/widgets/item_status.dart';
+import '../../features/dialogs/inline_dialog_layer.dart';
 import '../../ui/widgets/title_bar.dart';
 import '../l10n.dart';
 import 'routes.dart';
@@ -49,9 +50,10 @@ class AppShell extends ConsumerWidget {
         ref.watch(barControllerProvider.select((BarState s) => s.bars));
     final int errorCount = countItemsWithErrors(config.items, bars, _baseDir(ref));
 
-    return Scaffold(
-      backgroundColor: theme.bg.window,
-      body: Column(
+    return _withInlineDialogs(
+      Scaffold(
+        backgroundColor: theme.bg.window,
+        body: Column(
         children: <Widget>[
           // The window has no system caption (windows/runner/win32_window.cpp
           // removes it in WM_NCCALCSIZE), so this bar IS the caption: dragging,
@@ -107,9 +109,25 @@ class AppShell extends ConsumerWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
+
+  /// The shell plus the inline-dialog layer.
+  ///
+  /// The layer goes OUTSIDE the `Scaffold` so it covers the self-drawn title
+  /// bar too: a modal dialog that leaves the window buttons clickable is not
+  /// modal. It is a `Stack`, not a route, because a script dialog is a
+  /// transient panel over whatever page is showing, and navigating away should
+  /// not silently dismiss it (`DialogController.close` is the only closer).
+  static Widget _withInlineDialogs(Widget shell) => Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          shell,
+          const InlineDialogLayer(),
+        ],
+      );
 
   static String _baseDir(WidgetRef ref) {
     try {

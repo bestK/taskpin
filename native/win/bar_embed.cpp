@@ -294,5 +294,69 @@ void TaskbarWatcher::InjectTrackedHandleForTest(HWND bogus) {
     m_tracked_primary = bogus;
 }
 
+// --------------------------------------------------- taskbar background -----
+
+uint32_t bar_embed_taskbar_background(const BarTarget& target) {
+    if (!target.valid()) return 0;
+
+    // SCREEN coordinates, which is what GetPixel wants.
+    //
+    // `BarTarget::client_rect` is a CLIENT rect: it comes from
+    // `GetClientRect`, so it starts at (0,0) and describes a size, not a place.
+    // Using it directly put the sample at (1540,20) — 20 px from the TOP of the
+    // screen rather than the bottom, where the taskbar is — and `GetPixel`
+    // returned CLR_INVALID, so the bar kept its white default.
+    //
+    // `screen_rect` is the taskbar's window rect in screen space, which is the
+    // right frame. The client area is offset from it by the window border, but
+    // a few pixels either way cannot leave a 40 px-tall taskbar.
+    RECT client = target.screen_rect;
+    if (client.right <= client.left) {
+        if (!GetWindowRect(target.taskbar, &client)) return 0;
+    }
+
+    // Sample a little to the LEFT of the tray-notify area: our bars live there,
+    // so a point further left is guaranteed to be the shell's own painting.
+    // Falling back to a quarter of the way in covers a missing notify window.
+    int sample_x;
+    if (target.notify) {
+        RECT nr = {};
+        if (GetWindowRect(target.notify, &nr)) {
+            sample_x = nr.left - 40;
+        } else {
+            sample_x = client.left + (client.right - client.left) / 4;
+        }
+    } else {
+        sample_x = client.left + (client.right - client.left) / 4;
+    }
+    const int sample_y = client.top + (client.bottom - client.top) / 2;
+
+    // Clamp inside the taskbar so a narrow bar row still lands on it.
+    if (sample_x < client.left + 2) sample_x = client.left + 2;
+    if (sample_x > client.right - 2) sample_x = client.right - 2;
+
+    HDC screen = GetDC(nullptr);
+    if (!screen) return 0;
+    COLORREF c = GetPixel(screen, sample_x, sample_y);
+    ReleaseDC(nullptr, screen);
+
+    if (c == CLR_INVALID) {
+        bar_log("taskbar bg: GetPixel failed at (%d,%d) err=%lu", sample_x,
+                sample_y, (unsigned long)GetLastError());
+        return 0;
+    }
+
+    // COLORREF is 0x00BBGGRR; the bar style wants 0xAARRGGBB. The sample is
+    // always opaque: whatever alpha the taskbar composites at, the pixel we
+    // read is the final blended result.
+    const uint32_t r = GetRValue(c);
+    const uint32_t g = GetGValue(c);
+    const uint32_t b = GetBValue(c);
+    const uint32_t argb = 0xFF000000u | (r << 16) | (g << 8) | b;
+
+    bar_log("taskbar bg: sampled (%d,%d) -> #%08X", sample_x, sample_y, argb);
+    return argb;
+}
+
 } // namespace bar
 } // namespace taskpin

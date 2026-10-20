@@ -36,6 +36,16 @@ set(BAR_SOURCES
   bar_render_d2d.cpp
   bar_window.cpp
   bar_channel.cpp
+  # The `taskpin/window` channel for script dialogs. It compiles down to
+  # nothing without TASKPIN_FLUTTER_PLUGIN (set below), so the standalone
+  # MinGW harness is unaffected; in the runner it is what gives a dialog its
+  # frame, opacity, clickthrough and drag.
+  #
+  # This file was written in Phase 6 and then never added to any CMakeLists, so
+  # `taskpin/window` did not exist in the shipped Windows build: every
+  # `setFrame` / `setBorderless` / `setOpacity` call failed and dialogs opened
+  # at the OS default 800x600 with a system title bar.
+  dialog_window_styles.cpp
 )
 
 set(BAR_LIBS

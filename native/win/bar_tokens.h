@@ -48,6 +48,28 @@ constexpr uint32_t kColorValue      = 0xFFE6EAF0u;  // bar/value
 // Fallback for a span whose colour is the "default" sentinel.
 constexpr uint32_t kColorTextDefault = kColorValue;
 
+// "Use the taskbar's own colour."
+//
+// This is the value Dart sends for the config default (`bar_bg_color` or
+// `bg_color` == "FFFFFFFF"), which means "no colour chosen". The renderer
+// treats it as a request to sample the shell rather than a colour: see
+// `BarWindow::SetStyle`. Chosen because it is already what every existing
+// config.json carries, so no schema change and no migration.
+constexpr uint32_t kColorFollowTaskbar = 0xFFFFFFFFu;
+
+// Mix `argb` toward white by `amount` (0..1), keeping the alpha.
+inline uint32_t LightenArgb(uint32_t argb, float amount) {
+    const uint32_t a = (argb >> 24) & 0xFFu;
+    const uint32_t r = (argb >> 16) & 0xFFu;
+    const uint32_t g = (argb >> 8) & 0xFFu;
+    const uint32_t b = argb & 0xFFu;
+    auto mix = [amount](uint32_t v) {
+        const float f = static_cast<float>(v) + (255.0f - static_cast<float>(v)) * amount;
+        return static_cast<uint32_t>(f + 0.5f);
+    };
+    return (a << 24) | (mix(r) << 16) | (mix(g) << 8) | mix(b);
+}
+
 // --------------------------------------------------------------- metrics ----
 // Windows: height == taskbar height (Win10 40 @100%, Win11 48 @100%),
 // padding 8h / 6v, icon 16, radius 0 (taskbar segments are square).

@@ -29,11 +29,11 @@
 // once keeps the grid aligned. This is a rendering nuance, not a data change —
 // which rows have actions is identical.
 
+import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/widgets.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
 import '../dialog_action.dart';
-import '../dialog_palette.dart';
 import '../dialog_spec.dart';
 
 class DialogTableItem extends StatelessWidget {
@@ -60,7 +60,7 @@ class DialogTableItem extends StatelessWidget {
     final bool reserveAction = item.hasAnyRowAction;
 
     return TpSurface(
-      level: TpSurfaceLevel.inset,
+      level: TpSurfaceLevel.card,
       radius: TpRadius.control,
       clip: true,
       child: Column(
@@ -69,8 +69,10 @@ class DialogTableItem extends StatelessWidget {
         children: <Widget>[
           _header(context, theme, reserveAction),
           const TpDivider(),
-          for (int r = 0; r < item.rowCount; r++)
+          for (int r = 0; r < item.rowCount; r++) ...<Widget>[
+            if (r > 0) const TpDivider(),
             _row(context, theme, r, reserveAction),
+          ],
         ],
       ),
     );
@@ -78,8 +80,9 @@ class DialogTableItem extends StatelessWidget {
 
   Widget _header(BuildContext context, TaskPinTheme theme, bool reserveAction) {
     return ColoredBox(
-      // C: TABLE_HDR_BG, RGB(45,45,45).
-      color: theme.bg.flyout,
+      // Header surface is cardSecondary so it visibly steps up from the dialog
+      // ground, providing clear visual structure for the table columns.
+      color: theme.bg.cardSecondary,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: TpSpacing.s8,
@@ -92,7 +95,7 @@ class DialogTableItem extends StatelessWidget {
                 child: Text(
                   c,
                   // C draws the header with the BOLD font (`:231, :245`).
-                  style: TpTypography.body.toTextStyle().copyWith(
+                  style: TpTypography.bodyStrong.toTextStyle().copyWith(
                     color: theme.text.secondary,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -120,10 +123,10 @@ class DialogTableItem extends StatelessWidget {
     return TpHoverBuilder(
       builder: (BuildContext context, bool hovered) {
         return ColoredBox(
-          // C: alternating TABLE_ROW_EVEN / TABLE_ROW_ODD (`:266`).
-          color: r.isEven
-              ? theme.bg.window
-              : (hovered ? theme.bg.cardSecondary : theme.bg.window),
+          // Rows sit on the card surface at rest, with a subtle hover highlight
+          // rather than alternating fills now that hairline dividers delineate
+          // the rows cleanly.
+          color: hovered ? theme.subtle.hover : Colors.transparent,
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: TpSpacing.s8,
@@ -133,13 +136,9 @@ class DialogTableItem extends StatelessWidget {
               children: <Widget>[
                 for (int c = 0; c < item.colCount; c++)
                   Expanded(
-                    child: Text(
+                    child: _cellText(
+                      theme,
                       c < cells.length ? cells[c] : '',
-                      style: TpTypography.body.toTextStyle().copyWith(
-                        color: theme.text.primary,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
                     ),
                   ),
                 if (reserveAction)
@@ -155,6 +154,29 @@ class DialogTableItem extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _cellText(TaskPinTheme theme, String text) {
+    final bool numeric = _isNumeric(text);
+    return Text(
+      text,
+      // Numeric and metric data uses tabular figures so numbers align cleanly down columns.
+      style: TpTypography.body.toTextStyle(tabular: numeric).copyWith(
+        color: theme.text.primary,
+      ),
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+    );
+  }
+
+  /// Whether a cell string represents numeric, currency, percentage, or metric data.
+  static bool _isNumeric(String text) {
+    final String s = text.trim();
+    if (s.isEmpty) {
+      return false;
+    }
+    return RegExp(r'^[+-]?[$€¥£]?\d+(?:[.,]\d+)*(?:\s*(?:%|[a-zA-Z]+))?$')
+        .hasMatch(s);
   }
 
   Widget _action(BuildContext context, TaskPinTheme theme, int r) {

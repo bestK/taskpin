@@ -129,7 +129,7 @@ void main() {
     expect(TpSemantic.dark.accent.onFill, const Color(0xFFFFFFFF));
     expect(TpSemantic.dark.accent.fill, const Color(0xFF4C8DFF));
     expect(TpSemantic.light.accent.onFill, const Color(0xFFFFFFFF));
-    expect(TpSemantic.light.accent.fill, const Color(0xFF2457D6));
+    expect(TpSemantic.light.accent.fill, const Color(0xFF2C5FA8));
   });
 
   test('of() resolves by brightness', () {

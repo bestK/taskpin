@@ -168,4 +168,63 @@ void main() {
       expect(explicit.isAuto, isFalse);
     });
   });
+
+  group('Shift+wheel keeps a hand-placed bar where the user put it', () {
+    // THE BUG: after a Shift+wheel, the periodic script refresh re-sent the
+    // bar with `autoIndex >= 0` (the placement it had cached from before the
+    // wheel). Native's `SetAutoPlacement` made the bar auto again and the next
+    // `RelayoutAuto()` snapped it back to its tiled slot — the bar jumped home
+    // about a second after the user stopped wheeling.
+    //
+    // The rule that fixes it: `bar_x >= 0` in the CONFIG decides the mode,
+    // never a cached placement. These tests assert the rule at the level the
+    // controller applies it (`placementFor`, which `_geometryFor` now
+    // delegates the mode decision to).
+
+    test('a bar with bar_x >= 0 is explicit regardless of its position', () {
+      final TaskPinConfig cfg = _config(<PinItem>[
+        _item('a', barWidth: 100),
+        _item('b', barWidth: 100, barX: 900),
+        _item('c', barWidth: 100),
+      ]);
+
+      final BarPlacement b = placementFor(cfg, 1)!;
+      expect(b.isAuto, isFalse);
+      expect(b.autoIndex, -1);
+      expect(b.x, 900);
+
+      // The auto bars around it are still auto, and their numbering skips
+      // nothing: the explicit bar takes a pinned slot but contributes no
+      // offset.
+      expect(placementFor(cfg, 0)!.autoIndex, 0);
+      expect(placementFor(cfg, 2)!.autoIndex, 2);
+      expect(placementFor(cfg, 2)!.offset, 100 + 2);
+    });
+
+    test('persisting a wheel x flips the mode on the next placement pass', () {
+      // Before the wheel: auto.
+      final TaskPinConfig before = _config(<PinItem>[_item('a', barWidth: 100)]);
+      expect(placementFor(before, 0)!.isAuto, isTrue);
+
+      // The wheel writes bar_x (this is what `_onWheel` does for shift=true).
+      before.items[0].barX = 700;
+
+      // Same config object, re-read: the mode has flipped, so the next
+      // `setSpans` sends autoIndex -1 and native stops tiling it.
+      final BarPlacement after = placementFor(before, 0)!;
+      expect(after.isAuto, isFalse);
+      expect(after.autoIndex, -1);
+      expect(after.x, 700);
+    });
+
+    test('clearing bar_x returns the bar to the tiling', () {
+      final TaskPinConfig cfg =
+          _config(<PinItem>[_item('a', barWidth: 100, barX: 700)]);
+      expect(placementFor(cfg, 0)!.isAuto, isFalse);
+
+      cfg.items[0].barX = -1;
+      expect(placementFor(cfg, 0)!.isAuto, isTrue);
+      expect(placementFor(cfg, 0)!.autoIndex, 0);
+    });
+  });
 }

@@ -24,6 +24,49 @@
 // reach this code. That is what we want — a dialog has no custom title bar.
 #include "../../native/win/taskpin_window_plugin.h"
 
+// `taskpin/window`: the channel a SCRIPT DIALOG uses for its frame, opacity,
+// clickthrough and drag. Registered on each dialog's own engine, not this one
+// (see the window-created callback below).
+#include "../../native/win/dialog_window_styles.h"
+
+#include <desktop_multi_window/desktop_multi_window_plugin.h>
+
+#include <flutter/flutter_view_controller.h>
+
+namespace {
+
+/// Give a newly created dialog engine the `taskpin/window` channel.
+///
+/// WHY A CALLBACK RATHER THAN THE RUNNER. A dialog is not this process's main
+/// window: `desktop_multi_window` creates it with its own `FlutterWindow` and
+/// its own engine, so nothing in `FlutterWindow::OnCreate` above runs for it.
+/// The plugin exposes exactly one hook for this — `WindowCreatedCallback` —
+/// and it fires after the child engine exists but before its Dart `main` runs,
+/// which is the window in which a channel handler can still be installed in
+/// time for the first `setFrame`.
+///
+/// The registrar is fetched by name rather than by constructing one: the
+/// plugin header is explicit that a second `PluginRegistrarWindows` wrapper
+/// around one registrar is undefined behaviour (the same reason the bar
+/// channel above goes through `GetRegistrarForPlugin`).
+void OnDialogWindowCreated(void* flutter_view_controller) {
+  auto* controller =
+      static_cast<flutter::FlutterViewController*>(flutter_view_controller);
+  if (!controller || !controller->engine()) {
+    return;
+  }
+  FlutterDesktopPluginRegistrarRef ref =
+      controller->engine()->GetRegistrarForPlugin("TaskPinDialogWindowStyles");
+  auto* registrar =
+      flutter::PluginRegistrarManager::GetInstance()
+          ->GetRegistrar<flutter::PluginRegistrarWindows>(ref);
+  if (registrar) {
+    TaskpinDialogWindowStylesRegisterWithRegistrar(registrar);
+  }
+}
+
+}  // namespace
+
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
 
@@ -67,6 +110,12 @@ bool FlutterWindow::OnCreate() {
   // top-level window of the engine, not our child.
   TaskpinWindowRegisterWithRegistrar(registrar, GetHandle(),
                                      flutter_controller_->view()->GetNativeWindow());
+
+  // Every script dialog gets the `taskpin/window` channel. Registered once,
+  // here, because the callback is a single global in the multi-window plugin
+  // (`_g_window_created_callback` in its multi_window_manager.cc) and the
+  // manager window is the only window whose creation we control.
+  DesktopMultiWindowSetWindowCreatedCallback(&OnDialogWindowCreated);
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();

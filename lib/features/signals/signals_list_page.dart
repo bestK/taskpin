@@ -33,12 +33,25 @@ import 'widgets/taskbar_preview.dart';
 /// Width of the search field.
 const double kSearchWidth = 320;
 
-/// Content width below which the grids collapse to one column.
-const double kGridBreakpoint = 1000;
+/// Narrowest a project card may be before the grid drops a column.
+///
+/// The grid used to be "one column below 1000 px, two above", which meant a
+/// manager window at its default size (~880 px of content) showed every card
+/// full-width: the name sat on the left, the switch and the "…" button were
+/// pushed to the far right, and a third of the row was empty. Sizing by the
+/// card instead of the page keeps a 1100 px window at two columns and only
+/// collapses when a card would genuinely be cramped.
+const double kMinCardWidth = 360;
 
 /// Fixed card heights, so every card in a grid is identical whether or not a
 /// line has a relative time. Measured at 12/16 and 14/20 type with 16 padding.
-const double kRunningCardHeight = 148;
+///
+/// The running card is sized to its content plus a small slack: 32 padding +
+/// 24 title row + 4 + 16 meta + 36 mini bar = 112 at 1x, and 122 at the 1.25
+/// text-scale clamp. 128 was the previous 148 minus the gap that a `Spacer`
+/// used to absorb, which read as an empty band between the meta line and the
+/// bar.
+const double kRunningCardHeight = 128;
 const double kStoppedCardHeight = 88;
 const double kAttentionRowHeight = 64;
 
@@ -514,8 +527,15 @@ class _ProjectGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final int cols =
-            constraints.maxWidth < kGridBreakpoint ? 1 : columns;
+        // Fit as many [kMinCardWidth] columns as the row can hold, capped at
+        // the requested [columns]. The gap is included in the arithmetic so
+        // two cards plus the gap, not two cards alone, is the threshold.
+        final int fit = constraints.maxWidth <= 0
+            ? 1
+            : ((constraints.maxWidth + TpSpacing.s16) /
+                      (kMinCardWidth + TpSpacing.s16))
+                  .floor();
+        final int cols = fit.clamp(1, columns);
         return _GridLayout(columns: cols, children: children);
       },
     );
@@ -631,28 +651,38 @@ class _RunningCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.max,
             children: <Widget>[
+              // One Expanded for the whole left group, then the controls.
+              //
+              // This used to be `Flexible(name) + Badge + Spacer + controls`.
+              // A `Flexible` (loose) and a `Spacer` (a flex-1 `Expanded`) in
+              // the same row split the free space, and the badge in between
+              // made the split depend on the name's width — so the controls
+              // did not land at the same offset as the stopped card's, which
+              // has no Spacer. Grouping the left side into one `Expanded`
+              // leaves exactly one elastic child, so the controls are pinned
+              // to the card's trailing edge in both card types.
               Row(
                 children: <Widget>[
-                  Flexible(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TpTypography.bodyStrong
-                          .toTextStyle()
-                          .copyWith(color: theme.text.primary),
+                  Expanded(
+                    child: Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TpTypography.bodyStrong
+                                .toTextStyle()
+                                .copyWith(color: theme.text.primary),
+                          ),
+                        ),
+                        const SizedBox(width: TpSpacing.s8),
+                        _RunningBadge(label: l10n.statusRunning),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: TpSpacing.s8),
-                  _RunningBadge(label: l10n.statusRunning),
-                  const Spacer(),
-                  TpSwitch(
-                    value: item.pinned,
-                    onChanged: (bool _) =>
-                        ref.read(configProvider.notifier).togglePinned(index),
-                  ),
-                  const SizedBox(width: TpSpacing.s8),
-                  ProjectMoreButton(index: index, item: item),
+                  const SizedBox(width: TpSpacing.s12),
+                  _CardControls(index: index, item: item),
                 ],
               ),
               const SizedBox(height: TpSpacing.s4),
@@ -669,6 +699,36 @@ class _RunningCard extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The trailing pair on every project card: the pin switch and the "…" menu.
+///
+/// Grouping them is what stops the card from looking like two unrelated
+/// islands. The 1 px rule is the same `stroke.divider` the rest of the UI
+/// uses, and it is vertical because the pair is laid out in a row.
+class _CardControls extends ConsumerWidget {
+  const _CardControls({required this.index, required this.item});
+
+  final int index;
+  final PinItem item;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        TpDivider(vertical: true),
+        const SizedBox(width: TpSpacing.s12),
+        TpSwitch(
+          value: item.pinned,
+          onChanged: (bool _) =>
+              ref.read(configProvider.notifier).togglePinned(index),
+        ),
+        const SizedBox(width: TpSpacing.s4),
+        ProjectMoreButton(index: index, item: item),
+      ],
     );
   }
 }
@@ -963,14 +1023,11 @@ class _StoppedCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: TpSpacing.s8),
-              TpSwitch(
-                value: item.pinned,
-                onChanged: (bool _) =>
-                    ref.read(configProvider.notifier).togglePinned(index),
-              ),
-              const SizedBox(width: TpSpacing.s8),
-              ProjectMoreButton(index: index, item: item),
+              // 12, matching the running card: both cards put the same gap
+              // between their content and the control group, so the switch
+              // and the "…" sit at the same offset from the trailing edge.
+              const SizedBox(width: TpSpacing.s12),
+              _CardControls(index: index, item: item),
             ],
           ),
         ),

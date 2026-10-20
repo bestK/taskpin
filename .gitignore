@@ -75,3 +75,9 @@ test/_scratch/
 # Local debugging leftovers: screenshots of the taskbar, run logs.
 bar_shot_*.png
 flutter_*.log
+
+# Screenshots and logs captured while debugging the UI by hand.
+ui_*.png
+taskbar_now.png
+taskpin_raise.log
+.tp_prev_session.txt

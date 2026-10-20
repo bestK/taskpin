@@ -169,29 +169,36 @@ Future<void> dialogWindowMain(
   DialogWindowArguments args, [
   List<String> entrypointArgs = const <String>[],
 ]) async {
-  // Start this window's own engine only when the dialog can refresh (the args
-  // name a script). A dialog with no `@refresh` never pays for an isolate.
-  engine_ffi.EngineApi? engine;
-  if (args.luaPath.isNotEmpty) {
-    try {
-      engine = await engine_ffi.EngineApi.start(debugName: 'taskpin-dialog-engine');
-    } catch (_) {
-      // No engine (library missing). The dialog still renders; its refresh
-      // simply reports the failure through `DialogController.refreshError`.
-      engine = null;
-    }
-  }
-
+  // The engine is started LAZILY, on the first spec that asks for a refresh.
+  //
+  // A window created by `DialogWindowHost.warm()` has no script yet: it exists
+  // only so the first click does not pay for the engine boot. Starting a Lua
+  // isolate for it would undo that. The first `setSpec` carries the script
+  // identity, and that is when an engine becomes necessary — and only if the
+  // spec has a `@refresh` interval.
   final _DialogWindowBridge bridge = _DialogWindowBridge(args);
   await bridge.listen();
-  runApp(_DialogWindowApp(bridge: bridge, engine: engine));
+  runApp(_DialogWindowApp(bridge: bridge));
 }
 
 /// Receives the spec from the manager window and keeps the running controller.
 class _DialogWindowBridge {
-  _DialogWindowBridge(this.arguments);
+  _DialogWindowBridge(this._arguments);
 
-  final DialogWindowArguments arguments;
+  /// The window's launch arguments.
+  ///
+  /// Mutable identity: `DialogWindowHost` reuses ONE window for every dialog,
+  /// so the script a window refreshes changes when a different bar is clicked.
+  /// The manager sends the new identity with every `setSpec`, and [_adopt]
+  /// applies it.
+  DialogWindowArguments _arguments;
+
+  /// The script this window currently represents, for the refresh loop.
+  DialogWindowArguments get arguments => _arguments;
+
+  /// Called when the script identity changes, so the app can (re)build the
+  /// re-run callback for the new script.
+  void Function()? onIdentityChanged;
 
   DialogSpec? _spec;
   final MethodChannelDialogWindowApi _windowApi =
@@ -214,9 +221,48 @@ class _DialogWindowBridge {
       if (payload is! Map) {
         return null;
       }
+      // A spec always carries items; anything else is a probe or a malformed
+      // message. Accepting an empty map here once turned the channel probe
+      // into the first dialog (see `DialogWindowHost._waitForChannel`).
+      final Object? items = payload['items'];
+      if (items is! List) {
+        return null;
+      }
+      // The identity travels WITH the spec, because the window is reused: the
+      // launch arguments are only correct for the first dialog it ever showed.
+      final String luaPath = payload['luaPath'] is String
+          ? payload['luaPath'] as String
+          : '';
+      final String argsJson = payload['argsJson'] is String
+          ? payload['argsJson'] as String
+          : '';
+      final bool identityChanged = luaPath != _arguments.luaPath ||
+          argsJson != _arguments.argsJson;
+      if (identityChanged) {
+        _arguments = DialogWindowArguments(
+          luaPath: luaPath,
+          argsJson: argsJson,
+        );
+      }
       _spec = DialogSpec.fromJson(Map<String, dynamic>.from(payload));
       if (!_firstSpec.isCompleted) {
         _firstSpec.complete();
+      }
+      // RAISE OURSELVES ON EVERY SPEC.
+      //
+      // A click on a bar whose dialog is already open must bring that dialog
+      // to the front. The manager cannot do it for us: it is a different
+      // process from this window's engine, and `SetForegroundWindow` from a
+      // background process is refused by the foreground lock. This window CAN
+      // raise itself, so the manager sends the spec again on every click and
+      // this handler does the rest.
+      //
+      // `_windowApi.show()` is the `taskpin/window` path, which un-minimises,
+      // does a topmost round-trip and calls `SetForegroundWindow` — see the
+      // native `show` handler for why the round-trip is needed.
+      unawaited(_windowApi.show());
+      if (identityChanged) {
+        onIdentityChanged?.call();
       }
       return null;
     });
@@ -246,25 +292,92 @@ DialogRerun? dialogRerun({
   };
 }
 
-class _DialogWindowApp extends StatelessWidget {
-  const _DialogWindowApp({required this.bridge, required this.engine});
+/// The dialog window's app.
+///
+/// Stateful because the window is REUSED: it outlives the dialog it shows, and
+/// a later dialog may come from a different script. Two things therefore change
+/// at runtime — the script identity (from the bridge) and, the first time a
+/// refreshing spec arrives, the engine. Both are owned here.
+class _DialogWindowApp extends StatefulWidget {
+  const _DialogWindowApp({required this.bridge});
 
   final _DialogWindowBridge bridge;
 
-  /// The dialog window's own engine, or null when it could not start.
-  final engine_ffi.EngineApi? engine;
+  @override
+  State<_DialogWindowApp> createState() => _DialogWindowAppState();
+}
+
+class _DialogWindowAppState extends State<_DialogWindowApp> {
+  /// Started on demand: a warmed window that only ever shows a non-refreshing
+  /// dialog never pays for a Lua isolate.
+  engine_ffi.EngineApi? _engine;
+
+  /// The script the current spec belongs to, so a refresh re-runs the right
+  /// one after the window is reused for a different bar.
+  String _luaPath = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _luaPath = widget.bridge.arguments.luaPath;
+    widget.bridge.onIdentityChanged = _onIdentityChanged;
+  }
+
+  @override
+  void dispose() {
+    widget.bridge.onIdentityChanged = null;
+    _engine?.dispose();
+    super.dispose();
+  }
+
+  void _onIdentityChanged() {
+    setState(() {
+      _luaPath = widget.bridge.arguments.luaPath;
+    });
+  }
+
+  /// Start the engine the first time a spec actually needs it.
+  Future<engine_ffi.EngineApi?> _engineFor(DialogSpec spec) async {
+    if (_luaPath.isEmpty || spec.refreshSeconds <= 0) return null;
+    if (_engine != null) return _engine;
+    try {
+      _engine = await engine_ffi.EngineApi.start(
+        debugName: 'taskpin-dialog-engine',
+      );
+    } catch (_) {
+      // No engine (library missing). The dialog still renders; its refresh
+      // simply reports the failure through `DialogController.refreshError`.
+      _engine = null;
+    }
+    return _engine;
+  }
 
   @override
   Widget build(BuildContext context) {
+    // TRANSPARENT BACKGROUND.
+    //
+    // The window is borderless and DWM rounds its corners, so the area outside
+    // the dialog's own rounded surface must be see-through. Without this the
+    // theme's `scaffoldBackgroundColor` (a dark grey) fills the whole window
+    // and the rounded panel sits on a black square.
+    //
+    // `color` + `MaterialApp` alone are not enough: Flutter's root surface is
+    // cleared to the scaffold colour, so both the theme override and the
+    // transparent `home` below are needed.
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: TaskPinTheme.light().toThemeData(),
-      darkTheme: TaskPinTheme.dark().toThemeData(),
+      color: Colors.transparent,
+      theme: TaskPinTheme.light().toThemeData().copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+      ),
+      darkTheme: TaskPinTheme.dark().toThemeData().copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+      ),
       themeMode: ThemeMode.dark,
       // A dialog has no chrome to title, and the OS window carries the title.
       title: '',
       home: FutureBuilder<void>(
-        future: bridge.ready,
+        future: widget.bridge.ready,
         builder: (BuildContext context, AsyncSnapshot<void> snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             // `hiddenAtLaunch` means this frame is not visible in practice; it
@@ -272,13 +385,79 @@ class _DialogWindowApp extends StatelessWidget {
             // crosses the channel.
             return const SizedBox.shrink();
           }
-          return DialogWindowScaffold(
-            spec: bridge.spec!,
-            windowApi: bridge._windowApi,
-            rerun: dialogRerun(arguments: bridge.arguments, engine: engine),
+          final DialogSpec spec = widget.bridge.spec!;
+          return _EngineBoundScaffold(
+            // Keyed by script identity: when the window is reused for another
+            // bar, the scaffold is rebuilt from scratch, so the old
+            // `DialogController` (with its timer and its stale rerun callback)
+            // is disposed rather than left pointing at the previous script.
+            key: ValueKey<String>('${_luaPath}\u0000${spec.title}'),
+            spec: spec,
+            windowApi: widget.bridge._windowApi,
+            bridge: widget.bridge,
+            engineFor: _engineFor,
           );
         },
       ),
+    );
+  }
+}
+
+/// Binds a [DialogWindowScaffold] to an engine that may not exist yet.
+///
+/// The engine is started only when the spec asks for a refresh (see
+/// `_DialogWindowAppState._engineFor`), so the scaffold cannot receive it at
+/// construction. It resolves it in `initState` and holds the scaffold back
+/// until it is ready, which is one frame at most after the first refresh.
+class _EngineBoundScaffold extends StatefulWidget {
+  const _EngineBoundScaffold({
+    super.key,
+    required this.spec,
+    required this.windowApi,
+    required this.bridge,
+    required this.engineFor,
+  });
+
+  final DialogSpec spec;
+  final DialogWindowApi windowApi;
+  final _DialogWindowBridge bridge;
+  final Future<engine_ffi.EngineApi?> Function(DialogSpec spec) engineFor;
+
+  @override
+  State<_EngineBoundScaffold> createState() => _EngineBoundScaffoldState();
+}
+
+class _EngineBoundScaffoldState extends State<_EngineBoundScaffold> {
+  DialogRerun? _rerun;
+  bool _resolved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    final engine_ffi.EngineApi? engine = await widget.engineFor(widget.spec);
+    if (!mounted) return;
+    setState(() {
+      _rerun = dialogRerun(
+        arguments: widget.bridge.arguments,
+        engine: engine,
+      );
+      _resolved = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_resolved) {
+      return const SizedBox.shrink();
+    }
+    return DialogWindowScaffold(
+      spec: widget.spec,
+      windowApi: widget.windowApi,
+      rerun: _rerun,
     );
   }
 }
@@ -394,7 +573,30 @@ class _DialogWindowScaffoldState extends State<DialogWindowScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    return DialogView(controller: _controller, onClose: _controller.close);
+    final TaskPinTheme theme = TaskPinTheme.of(context);
+    // `Material` is NOT optional here.
+    //
+    // `DialogView` draws its own surface (a `DecoratedBox` with the flyout
+    // colour), but it renders `Text` widgets, and a `Text` with no `Material`
+    // ancestor does not inherit `DefaultTextStyle` — it falls back to the
+    // engine's debug style, which is what produced the yellow underlines and
+    // the wrong type ramp in the dialog window. The manager window never hit
+    // this because its tree starts at a `Scaffold`.
+    //
+    // Transparent, because the surface colour belongs to `DialogView`: painting
+    // it here as well would double up and break `transparent_bg`.
+    return Material(
+      type: MaterialType.transparency,
+      child: DefaultTextStyle(
+        style: TpTypography.body.toTextStyle().copyWith(
+          color: theme.text.primary,
+        ),
+        child: DialogView(
+          controller: _controller,
+          onClose: _controller.close,
+        ),
+      ),
+    );
   }
 }
 
@@ -411,8 +613,44 @@ class DialogWindowHost {
 
   WindowController? _window;
 
+  /// The in-flight create, shared by `warm()` and `open()`.
+  ///
+  /// WITHOUT THIS, A CLICK DURING WARM-UP CREATES A SECOND ENGINE. `warm()`
+  /// runs at startup and takes a while (native window + Flutter engine + Dart
+  /// isolate); if the user clicks a bar before it finishes, `open()` saw
+  /// `_window == null`, created another window, and the first one was orphaned
+  /// — two engines, two isolates, and the orphan kept polling. That is the
+  /// "slow and heavy" behaviour: not one slow open, but two engines competing.
+  ///
+  /// Both callers now await the same future, so exactly one window exists.
+  Future<WindowController>? _creating;
+
   /// Whether a dialog window is currently open.
   bool get isOpen => _window != null;
+
+  /// Get the window, creating it at most once.
+  Future<WindowController> _ensureWindow() {
+    final WindowController? existing = _window;
+    if (existing != null) return Future<WindowController>.value(existing);
+    return _creating ??= _createWindow();
+  }
+
+  Future<WindowController> _createWindow() async {
+    try {
+      final WindowController window = await WindowController.create(
+        WindowConfiguration(
+          arguments: const DialogWindowArguments().encode(),
+          hiddenAtLaunch: false,
+        ),
+      );
+      _window = window;
+      return window;
+    } finally {
+      // Cleared on both paths: on success the window is cached in `_window`,
+      // and on failure the next caller must be allowed to retry.
+      _creating = null;
+    }
+  }
 
   /// Create the window if needed, then send [spec].
   ///
@@ -429,40 +667,123 @@ class DialogWindowHost {
     String argsJson = '',
   }) async {
     try {
-      WindowController? window = _window;
-      if (window == null) {
-        window = await WindowController.create(
-          WindowConfiguration(
-            arguments: DialogWindowArguments(
-              luaPath: luaPath,
-              argsJson: argsJson,
-            ).encode(),
-            // Hide until positioned and populated: otherwise the user sees an
-            // empty window at the OS default position for one frame.
-            hiddenAtLaunch: true,
-          ),
-        );
-        _window = window;
-        // The child registers the same channel name (see
-        // `_DialogWindowBridge.listen`), so the name must NOT carry the window
-        // id — `WindowMethodChannel` routes by engine, not by name.
-        await window.show();
+      // Awaits the startup warm-up instead of racing it (see `_creating`).
+      final WindowController window = await _ensureWindow();
+      // WAIT FOR THE CHILD ENGINE TO REGISTER ITS HANDLER.
+      //
+      // `WindowController.create` returns as soon as the native window exists.
+      // The child engine then boots its own Dart isolate, runs `main`, decodes
+      // the window arguments and only THEN calls `bridge.listen()` — which is
+      // what registers `taskpin/dialog_spec`. Sending the spec immediately
+      // races that registration and fails with
+      // `WindowMethodChannelException(CHANNEL_UNREGISTERED, ...)`, which the
+      // catch below used to swallow, leaving an empty 800x600 window.
+      //
+      // Poll until the handler answers. The window is `hiddenAtLaunch`, so a
+      // short wait is invisible; the timeout keeps a genuinely broken child
+      // (no runner wiring, crashed isolate) from hanging the click forever.
+      final bool sent = await _sendSpecWithRetry(
+        spec,
+        luaPath: luaPath,
+        argsJson: argsJson,
+      );
+      if (!sent) {
+        // The child never registered the channel. Tear the window down rather
+        // than leaving a half-started engine resident for the rest of the
+        // session; the next open tries a fresh one.
+        await _destroyWindow();
+        return false;
       }
-      await kDialogSpecChannel.invokeMethod<void>('setSpec', spec.toJson());
+      // The spec is in the child now. Showing here (rather than at create)
+      // means the first visible frame is the populated dialog.
+      await window.show();
+      // Raise it through the MANAGER's channel.
+      //
+      // The dialog's own engine tried to raise itself when the spec arrived,
+      // but Windows' foreground lock refuses `SetForegroundWindow` from a
+      // process that did not just receive user input. This process did: the
+      // click that got us here. `raiseDialog` is the one call that has the
+      // rights to do it.
+      try {
+        await const MethodChannel('taskpin/main_window')
+            .invokeMethod<bool>('raiseDialog');
+      } on Object {
+        // No manager channel (a test, or a platform without it). The dialog is
+        // still visible; it just may not be on top.
+      }
       return true;
     } on Exception {
       // No plugin / no runner wiring. The caller falls back.
-      _window = null;
+      await _destroyWindow();
       return false;
     }
   }
 
-  /// Close the dialog window, if any.
-  Future<void> close() async {
+  /// Forget and destroy the current window, if any.
+  ///
+  /// `desktop_multi_window` exposes only `show` / `hide`; there is no
+  /// `WindowController.close`. Destroying means asking the window's own engine
+  /// to post `WM_CLOSE` through `taskpin/window`, which is the channel this app
+  /// already owns — the window then goes away and takes its engine and isolate
+  /// with it.
+  Future<void> _destroyWindow() async {
     final WindowController? window = _window;
     _window = null;
-    if (window != null) {
-      await window.hide();
+    if (window == null) return;
+    try {
+      await const MethodChannel(kDialogWindowChannel).invokeMethod<void>('close');
+    } on Object {
+      // The child is already gone, or the channel was never up. Either way
+      // there is nothing left to release.
     }
   }
+
+  /// Send [spec], retrying while the child engine is still starting.
+  ///
+  /// [luaPath] / [argsJson] ride along because the window is reused: its launch
+  /// arguments only describe the first dialog it ever showed, and the refresh
+  /// loop needs the CURRENT script.
+  ///
+  /// Returns false if every attempt failed, which means the child never
+  /// registered the channel.
+  Future<bool> _sendSpecWithRetry(
+    DialogSpec spec, {
+    String luaPath = '',
+    String argsJson = '',
+  }) async {
+    final Map<String, dynamic> payload = <String, dynamic>{
+      ...spec.toJson(),
+      'luaPath': luaPath,
+      'argsJson': argsJson,
+    };
+    for (int attempt = 0; attempt < 400; attempt++) {
+      try {
+        await kDialogSpecChannel.invokeMethod<void>('setSpec', payload);
+        return true;
+      } on WindowChannelException {
+        // Not registered yet.
+        //
+        // 10 ms, not 50: the wait is pure latency on the user's click, and the
+        // channel becomes available the instant the child's `main` reaches
+        // `bridge.listen()`. A 50 ms poll added up to 50 ms of dead time per
+        // missed attempt — measured at ~350 ms of the 3.4 s first open on this
+        // machine. 400 attempts still bounds a broken child at ~4 s.
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    }
+    return false;
+  }
+
+  /// Hide the dialog window.
+  ///
+  /// The window is NOT destroyed: keeping the engine alive is what makes the
+  /// next open instant. It is released when the app exits (`dispose`).
+  Future<void> close() async {
+    final WindowController? window = _window;
+    if (window == null) return;
+    await window.hide();
+  }
+
+  /// Release everything. Called when the app is shutting down.
+  Future<void> dispose() => _destroyWindow();
 }

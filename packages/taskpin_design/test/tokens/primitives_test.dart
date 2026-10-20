@@ -54,9 +54,12 @@ void main() {
 
   group('light primitives match the spec table', () {
     test('surfaces', () {
-      expect(TpPrimitives.lightBgWindow, const Color(0xFFF6F6F3));
+      // Cooler and slightly darker than the spec's original #F6F6F3; see
+      // the EYE COMFORT note in primitives.dart. Cards stay white so they
+      // keep an edge against the ground.
+      expect(TpPrimitives.lightBgWindow, const Color(0xFFEDEEF0));
       expect(TpPrimitives.lightBgCard, const Color(0xFFFFFFFF));
-      expect(TpPrimitives.lightBgCardSecondary, const Color(0xFFF4F4F1));
+      expect(TpPrimitives.lightBgCardSecondary, const Color(0xFFF3F4F6));
       expect(TpPrimitives.lightBgFlyout, const Color(0xFFFFFFFF));
     });
 
@@ -75,10 +78,12 @@ void main() {
       expect(TpPrimitives.lightTextSecondary, const Color(0x9E000000));
       expect(TpPrimitives.lightTextTertiary, const Color(0x72000000));
       expect(TpPrimitives.lightTextDisabled, const Color(0x5C000000));
-      expect(TpPrimitives.lightAccentFill, const Color(0xFF2457D6));
-      expect(TpPrimitives.lightAccentFillHover, const Color(0xFF1E4BB8));
+      // Desaturated from the spec's #2457D6 so a primary button stops
+      // reading as an alarm on a light page; white on it is still 6.5:1.
+      expect(TpPrimitives.lightAccentFill, const Color(0xFF2C5FA8));
+      expect(TpPrimitives.lightAccentFillHover, const Color(0xFF24508F));
       expect(TpPrimitives.lightAccentOnFill, const Color(0xFFFFFFFF));
-      expect(TpPrimitives.lightAccentText, const Color(0xFF2457D6));
+      expect(TpPrimitives.lightAccentText, const Color(0xFF2C5FA8));
       expect(TpPrimitives.lightStatusSuccess, const Color(0xFF1E7F4F));
       expect(TpPrimitives.lightStatusCaution, const Color(0xFFB07800));
       expect(TpPrimitives.lightStatusCritical, const Color(0xFFB42318));
