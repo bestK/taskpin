@@ -144,7 +144,7 @@ void main() {
     expect(find.text('已安装'), findsNothing);
     expect(_button('管理来源'), findsOneWidget);
     // Subtitle counts and the source name appear once per card footer.
-    expect(find.text('2 个插件 · 已安装 0 个 · 来源：$_repo'), findsOneWidget);
+    expect(find.text('2 个插件，已安装 0 个，来源：$_repo'), findsOneWidget);
     expect(find.text(_repo), findsNWidgets(2));
     // One letter avatar per card.
     expect(find.byType(TpAvatar), findsNWidgets(2));
@@ -246,7 +246,7 @@ void main() {
     // call the plugin 已安装 on the strength of the name alone.
     expect(find.text('已安装'), findsNothing);
     expect(_button('安装'), findsNWidgets(2));
-    expect(find.text('2 个插件 · 已安装 0 个 · 来源：$_repo'), findsOneWidget);
+    expect(find.text('2 个插件，已安装 0 个，来源：$_repo'), findsOneWidget);
   });
 
   testWidgets('filter segments switch between installed and not installed', (

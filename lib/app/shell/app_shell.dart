@@ -1,8 +1,9 @@
-// The manager window shell: nav rail on the left, routed page on the right.
+// The manager window shell: the caption strip, the centered top navigation,
+// then the routed page.
 //
-// The rail has no background and no divider and sits on the window colour
-// (docs/VISUAL_SPEC.md section 5.1). It is 240 wide, and collapses to a 48 wide
-// icon rail when the window is narrower than 900.
+// The stage world has no sidebar. Navigation is a row of words centred in a
+// 52 px bar under the title bar, the way a product site names its sections;
+// the page below is free to open with a full-width stage.
 //
 // The taskbar bars are native windows, not widgets. Nothing here draws them.
 
@@ -23,12 +24,9 @@ import '../../ui/widgets/title_bar.dart';
 import '../l10n.dart';
 import 'routes.dart';
 
-/// Window width below which the rail collapses to icons.
-const double kRailCollapseWidth = 900;
-
 /// App theme mode. Defaults to following the system.
 final StateProvider<ThemeMode> appThemeModeProvider =
-    StateProvider<ThemeMode>((Ref ref) => ThemeMode.system);
+    StateProvider<ThemeMode>((Ref ref) => ThemeMode.dark); // TEMP-SHOT
 
 /// The shell frame.
 class AppShell extends ConsumerWidget {
@@ -48,67 +46,50 @@ class AppShell extends ConsumerWidget {
     final TaskPinConfig config = ref.watch(configProvider);
     final Map<int, BarSnapshot> bars =
         ref.watch(barControllerProvider.select((BarState s) => s.bars));
-    final int errorCount = countItemsWithErrors(config.items, bars, _baseDir(ref));
+    final int errorCount =
+        countItemsWithErrors(config.items, bars, _baseDir(ref));
 
     return _withInlineDialogs(
       Scaffold(
         backgroundColor: theme.bg.window,
         body: Column(
-        children: <Widget>[
-          // The window has no system caption (windows/runner/win32_window.cpp
-          // removes it in WM_NCCALCSIZE), so this bar IS the caption: dragging,
-          // double-click to maximize and the three window buttons all live
-          // here. It sits above the shell, spanning the full width, so the
-          // buttons align with the window edge rather than the page.
-          const TitleBar(),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final bool collapsed = constraints.maxWidth < kRailCollapseWidth;
-                return TpAppShell(
-            rail: Padding(
-              // Same top as the page content (24), so the first item and the page
-              // title share a line.
-              padding: const EdgeInsets.only(top: TpSpacing.s24),
-              child: TpNavRail(
-                selectedRoute: section,
-                collapsed: collapsed,
-                onSelect: (String route) => context.go(route),
-                destinations: <TpNavDestination>[
-                  TpNavDestination(
-                    label: context.l10n.navProjects,
-                    icon: TpIcons.signals,
-                    route: AppRoutes.signals,
-                    badgeCount: config.items.length,
-                  ),
-                  TpNavDestination(
-                    label: context.l10n.marketTitle,
-                    icon: TpIcons.market,
-                    route: AppRoutes.market,
-                  ),
-                  TpNavDestination(
-                    label: context.l10n.navLogs,
-                    icon: TpIcons.diagnostics,
-                    route: AppRoutes.diagnostics,
-                    badgeCount: errorCount,
-                    badgeCritical: true,
-                  ),
-                ],
-                footerDestinations: <TpNavDestination>[
-                  TpNavDestination(
-                    label: context.l10n.mainSettings,
-                    icon: TpIcons.settings,
-                    route: AppRoutes.settings,
-                  ),
-                ],
-              ),
+          children: <Widget>[
+            // The window has no system caption (windows/runner/win32_window.cpp
+            // removes it in WM_NCCALCSIZE), so this bar IS the caption:
+            // dragging, double-click to maximize and the three window buttons
+            // all live here.
+            const TitleBar(),
+            TpTopNav(
+              selectedRoute: section,
+              onSelect: (String route) => context.go(route),
+              destinations: <TpNavDestination>[
+                TpNavDestination(
+                  label: context.l10n.navProjects,
+                  icon: TpIcons.signals,
+                  route: AppRoutes.signals,
+                  badgeCount: config.items.length,
+                ),
+                TpNavDestination(
+                  label: context.l10n.marketTitle,
+                  icon: TpIcons.market,
+                  route: AppRoutes.market,
+                ),
+                TpNavDestination(
+                  label: context.l10n.navLogs,
+                  icon: TpIcons.diagnostics,
+                  route: AppRoutes.diagnostics,
+                  badgeCount: errorCount,
+                  badgeCritical: true,
+                ),
+                TpNavDestination(
+                  label: context.l10n.mainSettings,
+                  icon: TpIcons.settings,
+                  route: AppRoutes.settings,
+                ),
+              ],
             ),
-            child: TpToastHost(child: child),
-                );
-              },
-            ),
-          ),
-        ],
+            Expanded(child: TpToastHost(child: child)),
+          ],
         ),
       ),
     );

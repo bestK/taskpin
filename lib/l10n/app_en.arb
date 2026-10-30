@@ -169,7 +169,7 @@
   "detailRunning": "Running...",
   "detailSectionPreview": "Preview",
   "detailPreviewIdle": "Not run yet",
-  "detailPreviewMeta": "{ms} ms · {time}",
+  "detailPreviewMeta": "{ms} ms  {time}",
   "@detailPreviewMeta": {
     "placeholders": {
       "ms": {
@@ -340,7 +340,7 @@
   "projectsGroupRunning": "Running",
   "projectsGroupAttention": "Needs attention",
   "projectsGroupStopped": "Stopped",
-  "projectsPreviewTitle": "Taskbar preview · {n} plugins",
+  "projectsPreviewTitle": "Taskbar preview  {n} plugins",
   "@projectsPreviewTitle": {
     "placeholders": {
       "n": {
@@ -403,7 +403,8 @@
   },
   "projectCopySuffix": " copy",
   "taskbarShowLabel": "Taskbar",
-  "marketSubtitle": "{total} plugins · {installed} installed · Sources: {sources}",
+  "projectBarWaiting": "Waiting for first run",
+  "marketSubtitle": "{total} plugins, {installed} installed, from {sources}",
   "@marketSubtitle": {
     "placeholders": {
       "total": {
@@ -444,5 +445,16 @@
   "marketNoDescription": "No description",
   "marketBarLabel": "Taskbar",
   "marketSourceSeparator": ", ",
-  "projectsDragHint": "Drag to reorder"
+  "projectsDragHint": "Drag to reorder",
+  "projectsStageReady": "All set. {n} on the taskbar.",
+  "@projectsStageReady": {"placeholders": {"n": {"type": "int"}}},
+  "projectsStageNeedsYou": "{n} on the taskbar, {m} need you.",
+  "@projectsStageNeedsYou": {"placeholders": {"n": {"type": "int"}, "m": {"type": "int"}}},
+  "projectsStageIdle": "All stopped. Pin one to the taskbar.",
+  "projectsStripEmpty": "Nothing pinned to the taskbar yet",
+  "detailScriptOpen": "Open script",
+  "detailOpenWith": "Open with",
+  "detailOpenDefault": "Default app",
+  "detailOpenNoEditor": "No editor found",
+  "detailOpenFailed": "Could not open this script"
 }

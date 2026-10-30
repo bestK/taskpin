@@ -116,12 +116,83 @@ abstract class DialogWindowApi {
   Future<void> show();
 }
 
+/// Everything a dialog needs applied before its first visible frame, in one
+/// native round trip.
+///
+/// WHY ONE CALL. Opening a dialog used to issue six method-channel calls in
+/// sequence (title, borderless, transparent, clickthrough, opacity, frame).
+/// Each is a hop to the UI thread of a child engine, and together they were
+/// measured at ~400 ms on the open path — a visible pause between the click and
+/// the dialog. The native side applies them in the same order this used to:
+/// style before the frame (the frame is sized for the chrome the style
+/// implies), layering after.
+///
+/// Implementations without the combined method (test doubles, a platform whose
+/// half is not wired) fall back to the individual calls, issued together.
+Future<void> applyDialogStartup(
+  DialogWindowApi api, {
+  required String title,
+  required bool borderless,
+  required bool transparent,
+  required bool clickthrough,
+  required int opacity,
+  required int x,
+  required int y,
+  required int width,
+  required int height,
+}) {
+  if (api is MethodChannelDialogWindowApi) {
+    return api.applyStartup(
+      title: title,
+      borderless: borderless,
+      transparent: transparent,
+      clickthrough: clickthrough,
+      opacity: opacity,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+    );
+  }
+  return Future.wait(<Future<void>>[
+    api.setTitle(title),
+    api.setBorderless(borderless),
+    api.setTransparentBackground(transparent),
+    api.setClickthrough(clickthrough),
+    api.setOpacity(opacity),
+    api.setFrame(x: x, y: y, width: width, height: height),
+  ]);
+}
+
 /// The real implementation, over [kDialogWindowChannel].
 class MethodChannelDialogWindowApi implements DialogWindowApi {
   MethodChannelDialogWindowApi({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel(kDialogWindowChannel);
 
   final MethodChannel _channel;
+
+  /// The combined open-path call. See [applyDialogStartup].
+  Future<void> applyStartup({
+    required String title,
+    required bool borderless,
+    required bool transparent,
+    required bool clickthrough,
+    required int opacity,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+  }) => _invoke('applyStartup', <String, Object?>{
+        'title': title,
+        'borderless': borderless,
+        'transparent': transparent,
+        'clickthrough': clickthrough,
+        'opacity': opacity,
+        'x': x,
+        'y': y,
+        'width': width,
+        'height': height,
+      });
 
   /// Swallow platform errors.
   ///

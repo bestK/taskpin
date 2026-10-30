@@ -15,7 +15,7 @@ import 'package:taskpin/core/config/config_schema.dart';
 import 'package:taskpin/core/engine/engine_provider.dart';
 import 'package:taskpin/features/signals/signals_editor_page.dart' show ClickMode;
 import 'package:taskpin/features/signals/signals_list_page.dart'
-    show kAttentionRowHeight, kRunningCardHeight, kStoppedCardHeight;
+    show kProjectRowHeight;
 import 'package:taskpin/features/signals/widgets/avatar.dart';
 import 'package:taskpin/l10n/app_localizations.dart';
 import 'package:taskpin_design/taskpin_design.dart';
@@ -114,7 +114,7 @@ TaskPinConfig _config(List<PinItem> items) =>
 
 void main() {
   group('shell', () {
-    testWidgets('rail has four destinations and none of the old chrome', (
+    testWidgets('top nav has four destinations and none of the old chrome', (
       WidgetTester tester,
     ) async {
       await _pump(tester, _config(<PinItem>[_url('Price')]));
@@ -138,18 +138,21 @@ void main() {
       expect(find.byType(TpTaskbarFlightStrip), findsNothing);
     });
 
-    testWidgets('rail is 240 wide, and 48 below 900', (
+    testWidgets('the nav is a centered 52 px bar with four words', (
       WidgetTester tester,
     ) async {
       await _pump(tester, _config(<PinItem>[_url('Price')]));
-      expect(tester.getSize(find.byType(TpNavRail)).width, 240);
+      final Finder nav = find.byType(TpTopNav);
+      expect(nav, findsOneWidget);
+      expect(tester.getSize(nav).height, TpControlSize.topNav);
 
-      await _pump(
-        tester,
-        _config(<PinItem>[_url('Price')]),
-        size: const Size(800, 700),
-      );
-      expect(tester.getSize(find.byType(TpNavRail)).width, 48);
+      // The bar spans the window and the words sit at its centre.
+      final double navCentre = tester.getCenter(nav).dx;
+      final double wordsCentre =
+          (tester.getTopLeft(find.text('项目').last).dx +
+                  tester.getTopRight(find.text('设置')).dx) /
+              2;
+      expect((navCentre - wordsCentre).abs(), lessThan(60));
     });
 
     testWidgets('nav item navigates', (WidgetTester tester) async {
@@ -174,16 +177,13 @@ void main() {
 
       expect(find.byType(TpListGroup), findsNothing);
       expect(find.byType(TpListRow), findsNothing);
-      // One switch on the running card, one on the stopped card.
-      expect(find.byType(TpSwitch), findsOneWidget);
+      // One switch on the running row, one on the stopped row.
+      expect(find.byType(TpSwitch), findsNWidgets(2));
 
-      // Status line, group headers and the preview caption.
-      expect(find.text('1 运行中'), findsOneWidget);
-      expect(find.text('1 异常'), findsOneWidget);
-      expect(find.text('0 已停止'), findsOneWidget);
-      expect(find.text('运行中'), findsWidgets);
-      expect(find.text('需要处理'), findsOneWidget);
-      expect(find.text('任务栏预览 · 1 个插件'), findsOneWidget);
+      // The stage sentence, the preview caption and the row statuses.
+      expect(find.text('1 个在任务栏上，1 个要你看。'), findsOneWidget);
+      expect(find.textContaining('运行中'), findsOneWidget);
+      expect(find.text('任务栏预览  1 个插件'), findsOneWidget);
       expect(find.text('拖动调整顺序'), findsOneWidget);
 
       // Error banner and the attention row's problem text.
@@ -198,7 +198,7 @@ void main() {
       expect(find.byType(TpSplitPane), findsNothing);
     });
 
-    testWidgets('stopped cards and attention rows have fixed heights', (
+    testWidgets('every project is one row of the same height', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -206,32 +206,16 @@ void main() {
         _config(<PinItem>[
           _url('Stopped A'),
           _url('Stopped B'),
-          _lua('Missing', path: r'C:\nowhere\missing.lua'),
+          _lua('Missing', path: 'C:/nowhere/missing.lua'),
         ]),
       );
 
-      // Both stopped cards are the same height even though the meta line
-      // differs (one has a relative time, one does not).
-      final Finder cards = find.byType(TpAvatar);
-      expect(cards, findsNWidgets(2));
-      expect(
-        tester.getSize(cards.first).height,
-        tester.getSize(cards.last).height,
-      );
-
-      final Finder shells = find.ancestor(
-        of: find.text('Stopped A'),
-        matching: find.byType(AnimatedContainer),
-      );
-      // The outer card shell is the one constrained by the fixed height.
-      final Finder card = shells.last;
-      expect(tester.getSize(card).height, kStoppedCardHeight);
-
-      final Finder attention = find.ancestor(
-        of: find.text('Missing'),
-        matching: find.byType(AnimatedContainer),
-      );
-      expect(tester.getSize(attention.first).height, kAttentionRowHeight);
+      for (final String name in <String>['Stopped A', 'Stopped B', 'Missing']) {
+        final Finder row = find
+            .ancestor(of: find.text(name), matching: find.byType(SizedBox))
+            .last;
+        expect(tester.getSize(row).height, kProjectRowHeight, reason: name);
+      }
     });
 
     for (final double scale in <double>[1, 1.5]) {
@@ -249,29 +233,16 @@ void main() {
         );
         expect(tester.takeException(), isNull);
 
-        // The fixed heights hold at both scales.
-        expect(
-          tester
-              .getSize(find
-                  .ancestor(
-                    of: find.text('Stopped'),
-                    matching: find.byType(AnimatedContainer),
-                  )
-                  .last)
-              .height,
-          kStoppedCardHeight,
-        );
-        expect(
-          tester
-              .getSize(find
-                  .ancestor(
-                    of: find.text('Running'),
-                    matching: find.byType(AnimatedContainer),
-                  )
-                  .last)
-              .height,
-          kRunningCardHeight,
-        );
+        // The fixed row height holds at both scales.
+        for (final String name in <String>['Running', 'Stopped', 'Missing']) {
+          final Finder row = find
+              .ancestor(
+                of: find.text(name),
+                matching: find.byType(SizedBox),
+              )
+              .last;
+          expect(tester.getSize(row).height, kProjectRowHeight, reason: name);
+        }
       });
     }
 
@@ -458,6 +429,22 @@ void main() {
       expect(find.text('取值表达式'), findsOneWidget);
     });
 
+    testWidgets('a lua item offers Open and Open with', (
+      WidgetTester tester,
+    ) async {
+      await _pump(
+        tester,
+        _config(<PinItem>[_lua('Clock')]),
+        location: '/signals/0',
+      );
+
+      // The card under the script path: the OS default app, and the editors
+      // found on this machine.
+      expect(find.text('打开脚本'), findsOneWidget);
+      expect(find.text('打开'), findsOneWidget);
+      expect(find.text('打开方式'), findsOneWidget);
+    });
+
     testWidgets('the preview strip sits on the taskbar colour, 48 high', (
       WidgetTester tester,
     ) async {
@@ -473,6 +460,7 @@ void main() {
       final Finder bar = find.byWidgetPredicate(
         (Widget w) =>
             w is Container &&
+            w.constraints?.maxHeight == 48 &&
             w.decoration is BoxDecoration &&
             (w.decoration! as BoxDecoration).color == theme.taskbarPreview,
       );
@@ -645,29 +633,29 @@ void main() {
   });
 
   group('page frame', () {
-    testWidgets('margin is 24 below 1000 px content width, 36 above', (
+    testWidgets('the content column is centred, with a 24 px minimum margin', (
       WidgetTester tester,
     ) async {
-      // 1000 + 240 rail = 1240 window: content area is exactly 1000.
+      // Narrower than the column: the margins are the page's, 24 a side.
       await _pump(
         tester,
         _config(<PinItem>[_url('Price')]),
-        size: const Size(1239, 800),
+        size: const Size(999, 800),
       );
-      final double narrow =
-          tester.getTopLeft(find.text('任务栏预览 · 0 个插件')).dx -
-              tester.getSize(find.byType(TpNavRail)).width;
-      expect(narrow, 24);
+      expect(tester.getTopLeft(find.text('任务栏预览  0 个插件')).dx, 24);
 
+      // Wider than the column: it centres, so the two margins match.
       await _pump(
         tester,
         _config(<PinItem>[_url('Price')]),
         size: const Size(1500, 800),
       );
-      final double wide =
-          tester.getTopLeft(find.text('任务栏预览 · 0 个插件')).dx -
-              tester.getSize(find.byType(TpNavRail)).width;
-      expect(wide, 36);
+      final double left = tester.getTopLeft(find.text('任务栏预览  0 个插件')).dx;
+      final double right =
+          1500 - tester.getTopRight(find.text('任务栏预览  0 个插件')).dx;
+      expect(left, greaterThan(200));
+      expect((left - (1500 - 1000) / 2).abs(), lessThan(1));
+      expect(right, greaterThan(left));
     });
 
     testWidgets('content is at most 1000 wide', (WidgetTester tester) async {
@@ -678,7 +666,7 @@ void main() {
       );
       expect(
         tester.getSize(find.ancestor(
-          of: find.text('任务栏预览 · 0 个插件'),
+          of: find.text('任务栏预览  0 个插件'),
           matching: find.byType(Column),
         ).first).width,
         1000,

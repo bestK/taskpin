@@ -80,6 +80,7 @@ class _MarketPageState extends ConsumerState<MarketPage> {
 
     return AppPage(
       title: l10n.marketTitle,
+      stage: const TpStageBackdrop(),
       subtitle: catalog == null
           ? null
           : Text(

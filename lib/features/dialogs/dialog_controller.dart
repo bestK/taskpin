@@ -72,11 +72,31 @@ class DialogController extends ChangeNotifier {
   /// Order matters: the effects are applied to the window this controller was
   /// built for, so this must run after the window exists.
   Future<void> start() async {
-    await windowApi.setTitle(_spec.title);
-    await applyWindowEffects();
-    await centerOnPrimaryScreen();
+    // One native call for the whole open path: title, style, layering, frame.
+    // Six separate calls were ~400 ms of the click-to-dialog time, because each
+    // one hops to the UI thread of a child engine. The native side applies them
+    // in the order that matters — style before the frame.
+    await applyDialogStartup(
+      windowApi,
+      title: _spec.title,
+      borderless: true,
+      transparent: true,
+      clickthrough: _spec.clickthrough,
+      opacity: _spec.needsLayered ? _spec.opacity : 255,
+      x: -1,
+      y: -1,
+      width: _spec.width,
+      height: _spec.height,
+    );
     _startTimer();
   }
+
+  /// Start only the refresh loop.
+  ///
+  /// Used when the rerun callback arrives after the window is already on
+  /// screen (the engine starts behind the first frame). Applying the window
+  /// effects again would re-centre a dialog the user may have moved.
+  void startRefreshOnly() => _startTimer();
 
   /// Size and centre the window, the way `show_script_dialog` does.
   ///
@@ -118,22 +138,28 @@ class DialogController extends ChangeNotifier {
     // IN-PANEL title row is drawn (see `DialogView`), not the OS frame. That is
     // a deliberate departure from the C layer, which had no in-panel chrome to
     // conflict with and used `borderless` for the OS frame alone.
-    await windowApi.setBorderless(true);
-    // ALWAYS layered, not only for `transparent_bg`.
     //
-    // The window is borderless and DWM rounds its corners, so the pixels
-    // outside the dialog's own rounded surface must be see-through. A plain
-    // (non-layered) window paints them with whatever Flutter cleared to, which
-    // is the theme's dark scaffold colour — the black square the rounded panel
-    // sat on.
-    //
-    // `setOpacity(255)` right after keeps the dialog itself fully opaque, so
-    // this does not change how a normal dialog looks; it only makes the corner
-    // pixels transparent. A script's own `transparent_bg` / `opacity` still
-    // apply below.
-    await windowApi.setTransparentBackground(true);
-    await windowApi.setClickthrough(_spec.clickthrough);
-    await windowApi.setOpacity(_spec.needsLayered ? _spec.opacity : 255);
+    // The four effects are independent of each other, so they go out together:
+    // each method-channel call is a round trip to the UI thread of a child
+    // engine, and serialising them put three avoidable waits on the click.
+    await Future.wait(<Future<void>>[
+      windowApi.setBorderless(true),
+      // ALWAYS layered, not only for `transparent_bg`.
+      //
+      // The window is borderless and the corners are cut with a window region,
+      // so the pixels outside the dialog's own rounded surface must be
+      // see-through. A plain (non-layered) window paints them with whatever
+      // Flutter cleared to, which is the theme's dark scaffold colour — the
+      // black square the rounded panel sat on.
+      //
+      // `setOpacity(255)` right after keeps the dialog itself fully opaque, so
+      // this does not change how a normal dialog looks; it only makes the
+      // corner pixels transparent. A script's own `transparent_bg` / `opacity`
+      // still apply below.
+      windowApi.setTransparentBackground(true),
+      windowApi.setClickthrough(_spec.clickthrough),
+      windowApi.setOpacity(_spec.needsLayered ? _spec.opacity : 255),
+    ]);
   }
 
   void _startTimer() {

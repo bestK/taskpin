@@ -166,13 +166,117 @@ void set_style_bits(HWND hwnd, LONG_PTR bits, bool on) {
 // message handling we must not disturb.
 constexpr UINT_PTR kFramelessSubclassId = 0xD1A106;
 
+/// Corner radius of the dialog's surface, in DIP. Matches `TpRadius.overlay`
+/// (16) on the Flutter side.
+constexpr int kDialogCornerRadiusDip = 16;
+
+/// Name of the window property holding the requested corner radius, or absent
+/// when the window is rectangular.
+constexpr const wchar_t* kCornerRadiusProp = L"taskpin_dialog_corner";
+
+/// The window's DPI, resolved at runtime.
+///
+/// `GetDpiForWindow` needs `_WIN32_WINNT >= 0x0605`, which this plugin does not
+/// set (it still targets Windows 7 APIs elsewhere). Resolving it by name keeps
+/// the target version alone and still gets per-monitor DPI on Windows 10 1607+;
+/// the device-context fallback answers on anything older.
+UINT window_dpi(HWND hwnd) {
+  using GetDpiForWindowFn = UINT(WINAPI*)(HWND);
+  static const GetDpiForWindowFn fn = reinterpret_cast<GetDpiForWindowFn>(
+      GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+  if (fn != nullptr) {
+    const UINT dpi = fn(hwnd);
+    if (dpi != 0) {
+      return dpi;
+    }
+  }
+  HDC dc = GetDC(hwnd);
+  const UINT dpi = dc != nullptr
+                       ? static_cast<UINT>(GetDeviceCaps(dc, LOGPIXELSX))
+                       : 96U;
+  if (dc != nullptr) {
+    ReleaseDC(hwnd, dc);
+  }
+  return dpi == 0 ? 96U : dpi;
+}
+
+/// Round the window itself, not just what Flutter paints inside it.
+///
+/// WHY A WINDOW REGION. The panel is drawn with rounded corners, but a Win32
+/// window is a rectangle: the pixels outside the corners are whatever the
+/// surface was cleared to, which reads as a black square with a rounded card
+/// floating in it — most visibly on Windows 10, which ignores
+/// `DWMWA_WINDOW_CORNER_PREFERENCE`.
+///
+/// `SetWindowRgn` clips the window at the OS level, so those corner pixels are
+/// not drawn at all and the desktop shows through. It works on every supported
+/// Windows version and needs no engine support (Flutter's Windows embedder has
+/// no per-pixel-alpha surface). The cost is DWM's drop shadow, which a
+/// region-clipped window does not get; the panel keeps its own hairline.
+void apply_corner_region(HWND hwnd) {
+  HANDLE value = GetPropW(hwnd, kCornerRadiusProp);
+  if (value == nullptr) {
+    return;
+  }
+  RECT box{};
+  if (!GetWindowRect(hwnd, &box)) {
+    return;
+  }
+  const int width = box.right - box.left;
+  const int height = box.bottom - box.top;
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  const int dip = static_cast<int>(reinterpret_cast<INT_PTR>(value));
+  const UINT dpi = window_dpi(hwnd);
+  const int radius = MulDiv(dip, static_cast<int>(dpi), 96);
+  // CreateRoundRectRgn takes the FULL width and height of the corner ellipse,
+  // i.e. twice the radius.
+  HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2,
+                                   radius * 2);
+  if (region == nullptr) {
+    return;
+  }
+  // The window owns the region after this call (third argument TRUE).
+  SetWindowRgn(hwnd, region, TRUE);
+}
+
+/// Answer `WM_ERASEBKGND` on the Flutter view's own window.
+///
+/// The view is a child HWND with its own window class, and that class has a
+/// background brush. Windows paints it whenever the child is exposed before
+/// Flutter's swapchain presents — the white edge that flashes as the dialog
+/// appears and on every resize. Flutter paints every pixel itself, so erasing
+/// is always wrong here.
+constexpr UINT_PTR kNoEraseSubclassId = 0xD1A107;
+
+LRESULT CALLBACK NoEraseProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                             UINT_PTR, DWORD_PTR) {
+  if (msg == WM_ERASEBKGND) {
+    return 1;
+  }
+  return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
 LRESULT CALLBACK FramelessProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                UINT_PTR, DWORD_PTR) {
+  if (msg == WM_ERASEBKGND) {
+    // The root window's class brush is the system window colour. Left alone,
+    // it is painted on every expose — a white flash before the first Flutter
+    // frame, and a white edge while the window is resized.
+    return 1;
+  }
   if (msg == WM_NCCALCSIZE && wp) {
     // wParam TRUE: lp points at NCCALCSIZE_PARAMS. Leaving the proposed rect
     // untouched means "the client covers the whole window", and returning 0
     // without calling DefWindowProc is the documented way to do that.
     return 0;
+  }
+  if (msg == WM_SIZE || msg == WM_DPICHANGED) {
+    // The region is in window pixels, so it has to be rebuilt whenever the
+    // window's size or scale changes. Without this a resized dialog keeps the
+    // old corner curve, which is visibly wrong at the new edges.
+    apply_corner_region(hwnd);
   }
   return DefSubclassProc(hwnd, msg, wp, lp);
 }
@@ -184,6 +288,16 @@ void install_frameless(HWND hwnd) {
     return;  // already installed
   }
   SetWindowSubclass(hwnd, &FramelessProc, kFramelessSubclassId, 0);
+  // The Flutter view inside the frame gets the same treatment: it is the
+  // window whose class brush paints the white flash.
+  for (HWND child = GetWindow(hwnd, GW_CHILD); child != nullptr;
+       child = GetWindow(child, GW_HWNDNEXT)) {
+    DWORD_PTR childExisting = 0;
+    if (!GetWindowSubclass(child, &NoEraseProc, kNoEraseSubclassId,
+                           &childExisting)) {
+      SetWindowSubclass(child, &NoEraseProc, kNoEraseSubclassId, 0);
+    }
+  }
   refresh_frame(hwnd);
 }
 
@@ -246,6 +360,17 @@ void tp_dialog_set_borderless(HWND hwnd, bool borderless) {
     const DWORD corner = 2;  // DWMWCP_ROUND
     DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */,
                           &corner, sizeof(corner));
+    // Windows 11 rounds the window for us above; Windows 10 ignores that
+    // attribute, so the region is what makes the corners transparent there.
+    // Applying it on both keeps the two versions identical.
+    SetPropW(hwnd, kCornerRadiusProp,
+             reinterpret_cast<HANDLE>(
+                 static_cast<INT_PTR>(kDialogCornerRadiusDip)));
+    apply_corner_region(hwnd);
+  } else {
+    // A titled dialog is a rectangle again.
+    RemovePropW(hwnd, kCornerRadiusProp);
+    SetWindowRgn(hwnd, nullptr, TRUE);
   }
 }
 
@@ -487,7 +612,21 @@ class DialogWindowStylesPlugin {
           const EncodableMap empty;
           const EncodableMap& a = args ? *args : empty;
 
-          if (method == "setBorderless") {
+          if (method == "applyStartup") {
+            // The whole open path in one round trip. Order matters: the style
+            // decides how `setFrame` sizes the window (chrome), and layering
+            // goes on after the frame so the resize is not composited twice.
+            const std::wstring title = widen(string_arg(a, "title"));
+            SetWindowTextW(hwnd, title.c_str());
+            tp_dialog_set_borderless(hwnd, bool_arg(a, "borderless", true));
+            tp_dialog_set_transparent_background(
+                hwnd, bool_arg(a, "transparent", true));
+            tp_dialog_set_clickthrough(hwnd, bool_arg(a, "clickthrough", false));
+            tp_dialog_set_opacity(hwnd, int_arg(a, "opacity", 255));
+            tp_dialog_set_frame(hwnd, int_arg(a, "x", -1), int_arg(a, "y", -1),
+                                int_arg(a, "width", 400),
+                                int_arg(a, "height", 300));
+          } else if (method == "setBorderless") {
             tp_dialog_set_borderless(hwnd, bool_arg(a, "borderless", false));
           } else if (method == "setClickthrough") {
             tp_dialog_set_clickthrough(hwnd, bool_arg(a, "clickthrough", false));
@@ -538,6 +677,15 @@ class DialogWindowStylesPlugin {
             tp_dialog_resize_by(hwnd, int_arg(a, "dx", 0),
                                 int_arg(a, "dy", 0));
           } else if (method == "close") {
+            // HIDE, do not destroy.
+            //
+            // The dialog's X button calls this. Destroying the window takes
+            // its engine with it, and `DialogWindowHost` keeps reusing the
+            // window it created — so the next click sent a spec to a dead
+            // window and nothing opened. `destroy` is the explicit teardown
+            // the host uses when it really wants the window gone.
+            ShowWindow(hwnd, SW_HIDE);
+          } else if (method == "destroy") {
             tp_dialog_close(hwnd);
           } else if (method == "hide") {
             // Hide, do NOT destroy.
@@ -572,15 +720,23 @@ class DialogWindowStylesPlugin {
             // from a background process — it does not need foreground rights,
             // and because the flag is removed immediately the dialog does not
             // stay above everything (that would be wrong for a normal panel).
+            // The topmost round-trip is only needed to RAISE a window that is
+            // already on screen. On a first show it costs a full DWM
+            // recomposition of a layered window before the first frame is even
+            // painted — measured as most of a second between "show" and the
+            // dialog appearing.
+            const bool was_visible = IsWindowVisible(hwnd) != FALSE;
             if (IsIconic(hwnd)) {
               ShowWindow(hwnd, SW_RESTORE);
             } else {
               ShowWindow(hwnd, SW_SHOW);
             }
-            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            if (was_visible) {
+              SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                           SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+              SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                           SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            }
             SetForegroundWindow(hwnd);
           } else {
             result->NotImplemented();

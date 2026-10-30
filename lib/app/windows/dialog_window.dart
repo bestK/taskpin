@@ -200,6 +200,18 @@ class _DialogWindowBridge {
   /// re-run callback for the new script.
   void Function()? onIdentityChanged;
 
+  /// Whether the window has been shown at least once.
+  ///
+  /// A spec that arrives before the first frame must not show the window: it
+  /// is still the runner's default 800x600 in the top-left corner and has no
+  /// content. Once the first frame has been shown, every later spec — a repeat
+  /// click, or a click after the dialog's X hid the window — may show it
+  /// immediately, because the size and position are already right.
+  bool _shown = false;
+
+  /// Called by the scaffold once the window is on screen.
+  void markShown() => _shown = true;
+
   DialogSpec? _spec;
   final MethodChannelDialogWindowApi _windowApi =
       MethodChannelDialogWindowApi();
@@ -244,8 +256,9 @@ class _DialogWindowBridge {
           argsJson: argsJson,
         );
       }
+      final bool first = !_firstSpec.isCompleted;
       _spec = DialogSpec.fromJson(Map<String, dynamic>.from(payload));
-      if (!_firstSpec.isCompleted) {
+      if (first) {
         _firstSpec.complete();
       }
       // RAISE OURSELVES ON EVERY SPEC.
@@ -257,10 +270,21 @@ class _DialogWindowBridge {
       // raise itself, so the manager sends the spec again on every click and
       // this handler does the rest.
       //
-      // `_windowApi.show()` is the `taskpin/window` path, which un-minimises,
-      // does a topmost round-trip and calls `SetForegroundWindow` — see the
-      // native `show` handler for why the round-trip is needed.
-      unawaited(_windowApi.show());
+      // SHOW ONLY ONCE THE WINDOW HAS SOMETHING TO SHOW.
+      //
+      // The first spec must not show it: the window is still the runner's
+      // default 800x600 at 10,10 with nothing painted. `DialogWindowScaffold`
+      // shows it after the frame is applied and the first frame is on screen,
+      // and tells us with [markShown].
+      //
+      // Every later spec may show: the size and position are already right,
+      // and the two cases that reach here — a second click on the same bar, and
+      // a click after the dialog's X hid the window — both mean "be visible".
+      // Without this, a dialog closed with its X could never be reopened: the
+      // window still existed, so nothing re-created it, and nothing showed it.
+      if (_shown) {
+        unawaited(_windowApi.show());
+      }
       if (identityChanged) {
         onIdentityChanged?.call();
       }
@@ -429,11 +453,18 @@ class _EngineBoundScaffold extends StatefulWidget {
 
 class _EngineBoundScaffoldState extends State<_EngineBoundScaffold> {
   DialogRerun? _rerun;
-  bool _resolved = false;
 
   @override
   void initState() {
     super.initState();
+    // THE FIRST FRAME DOES NOT WAIT FOR THE ENGINE.
+    //
+    // Starting a Lua isolate costs well over a second, and this used to hold
+    // the scaffold back until it finished — so the dialog (and the window
+    // show that follows its first frame) waited on the engine. The dialog's
+    // content is already in the spec; only its `@refresh` loop needs the
+    // engine. Rendering now and attaching the rerun when it is ready moves
+    // that second off the click.
     _resolve();
   }
 
@@ -445,19 +476,16 @@ class _EngineBoundScaffoldState extends State<_EngineBoundScaffold> {
         arguments: widget.bridge.arguments,
         engine: engine,
       );
-      _resolved = true;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_resolved) {
-      return const SizedBox.shrink();
-    }
     return DialogWindowScaffold(
       spec: widget.spec,
       windowApi: widget.windowApi,
       rerun: _rerun,
+      onShown: widget.bridge.markShown,
     );
   }
 }
@@ -520,6 +548,7 @@ class DialogWindowScaffold extends StatefulWidget {
     this.rerun,
     this.actions,
     this.baseDirectory,
+    this.onShown,
   });
 
   final DialogSpec spec;
@@ -533,6 +562,13 @@ class DialogWindowScaffold extends StatefulWidget {
 
   final String? baseDirectory;
 
+  /// Called once the window has been shown for the first time.
+  ///
+  /// The bridge uses it to stop suppressing later shows: a spec that arrives
+  /// after the first frame may show the window immediately (repeat click, or a
+  /// click after the dialog's X hid it).
+  final VoidCallback? onShown;
+
   @override
   State<DialogWindowScaffold> createState() => _DialogWindowScaffoldState();
 }
@@ -540,11 +576,37 @@ class DialogWindowScaffold extends StatefulWidget {
 class _DialogWindowScaffoldState extends State<DialogWindowScaffold> {
   late DialogController _controller;
 
+  /// Whether the window's frame has been applied. The view waits for it: see
+  /// `_startThenShow`.
+  bool _framed = false;
+
   @override
   void initState() {
     super.initState();
     _controller = _build();
-    _controller.start();
+    unawaited(_startThenShow());
+  }
+
+  /// Apply the window effects, let one frame paint, then show.
+  ///
+  /// The window is created hidden so nothing is visible until it is both the
+  /// right size (frame applied) and painted (first frame rendered). Showing at
+  /// create time is what produced an empty 800x600 rectangle in the corner
+  /// before the dialog appeared.
+  Future<void> _startThenShow() async {
+    await _controller.start();
+    if (!mounted) return;
+    // The view is built only now. It measures its content and asks the window
+    // to fit it, so building before the frame is applied would measure the
+    // runner's 800x600 creation size and grow the window to that — the dialog
+    // came up nearly twice its content's height.
+    setState(() => _framed = true);
+    // One frame with the content in place, then show.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(widget.windowApi.show());
+      widget.onShown?.call();
+    });
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   @override
@@ -554,6 +616,13 @@ class _DialogWindowScaffoldState extends State<DialogWindowScaffold> {
       _controller.dispose();
       _controller = _build();
       _controller.start();
+    } else if (old.rerun != widget.rerun) {
+      // The engine finished starting after the first frame: the refresh loop
+      // was built without a rerun. Rebuild the controller, but only restart
+      // the timer — `start` would re-centre a window the user may have moved.
+      _controller.dispose();
+      _controller = _build();
+      _controller.startRefreshOnly();
     }
   }
 
@@ -573,6 +642,9 @@ class _DialogWindowScaffoldState extends State<DialogWindowScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_framed) {
+      return const SizedBox.shrink();
+    }
     final TaskPinTheme theme = TaskPinTheme.of(context);
     // `Material` is NOT optional here.
     //
@@ -607,9 +679,16 @@ class _DialogWindowScaffoldState extends State<DialogWindowScaffold> {
 /// (`lib/script_dialog.c:59-62`), so a second click on the bar raises the
 /// existing dialog rather than stacking another one.
 class DialogWindowHost {
-  DialogWindowHost({this.actions});
+  DialogWindowHost({this.actions, this.onError});
 
   final DialogActionRunner? actions;
+
+  /// Called with the exception when the window cannot be created or reached.
+  ///
+  /// The failure used to be swallowed: `open` returned false and the caller
+  /// had no way to say WHY, which made a broken runner look identical to a
+  /// script that produced no dialog. Null keeps the old silent behaviour.
+  final void Function(Object error)? onError;
 
   WindowController? _window;
 
@@ -640,7 +719,9 @@ class DialogWindowHost {
       final WindowController window = await WindowController.create(
         WindowConfiguration(
           arguments: const DialogWindowArguments().encode(),
-          hiddenAtLaunch: false,
+          // Hidden until a spec has been painted into it: the first visible
+          // frame must be the dialog, not an empty 800x600 window.
+          hiddenAtLaunch: true,
         ),
       );
       _window = window;
@@ -649,6 +730,38 @@ class DialogWindowHost {
       // Cleared on both paths: on success the window is cached in `_window`,
       // and on failure the next caller must be allowed to retry.
       _creating = null;
+    }
+  }
+
+  /// Create the dialog window now and boot its engine, hidden.
+  ///
+  /// WHY THIS EXISTS: a cold window costs ~3 s on this machine — native window,
+  /// a second Flutter engine, a Dart isolate, `main`, the channel registration
+  /// — and all of it happens after the user's click, so the first click looks
+  /// broken. Warming moves that cost off the click: the window and its engine
+  /// are already up, and the first `open()` is a `setSpec` plus a show.
+  ///
+  /// The trade-off is memory: a second engine stays resident (~120 MB). It is
+  /// started lazily (see `main.dart`, a couple of seconds after the first
+  /// frame) rather than at launch, so startup time is unaffected.
+  ///
+  /// Never throws: a platform without multi-window support simply keeps the
+  /// lazy path, and [onError] hears about it.
+  Future<void> warm() async {
+    try {
+      await _ensureWindow();
+      // Wait for the child's `taskpin/dialog_spec` handler so the first real
+      // spec does not spend its retry budget on a channel that is not up yet.
+      for (int attempt = 0; attempt < 400; attempt++) {
+        try {
+          await kDialogSpecChannel.invokeMethod<void>('probe');
+          return;
+        } on WindowChannelException {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      }
+    } on Object catch (e) {
+      onError?.call(e);
     }
   }
 
@@ -668,7 +781,7 @@ class DialogWindowHost {
   }) async {
     try {
       // Awaits the startup warm-up instead of racing it (see `_creating`).
-      final WindowController window = await _ensureWindow();
+      await _ensureWindow();
       // WAIT FOR THE CHILD ENGINE TO REGISTER ITS HANDLER.
       //
       // `WindowController.create` returns as soon as the native window exists.
@@ -682,21 +795,39 @@ class DialogWindowHost {
       // Poll until the handler answers. The window is `hiddenAtLaunch`, so a
       // short wait is invisible; the timeout keeps a genuinely broken child
       // (no runner wiring, crashed isolate) from hanging the click forever.
-      final bool sent = await _sendSpecWithRetry(
+      bool sent = await _sendSpecWithRetry(
         spec,
         luaPath: luaPath,
         argsJson: argsJson,
       );
       if (!sent) {
-        // The child never registered the channel. Tear the window down rather
-        // than leaving a half-started engine resident for the rest of the
-        // session; the next open tries a fresh one.
+        // The window on file is dead — it was destroyed from outside, or its
+        // engine never came up. Tear it down and try ONE more with a fresh
+        // window, which is what "click again and nothing happens" needed: the
+        // host used to keep a dead handle and every later click failed the
+        // same way.
         await _destroyWindow();
-        return false;
+        try {
+          await _ensureWindow();
+          sent = await _sendSpecWithRetry(
+            spec,
+            luaPath: luaPath,
+            argsJson: argsJson,
+          );
+        } on Object {
+          sent = false;
+        }
+        if (!sent) {
+          await _destroyWindow();
+          return false;
+        }
       }
-      // The spec is in the child now. Showing here (rather than at create)
-      // means the first visible frame is the populated dialog.
-      await window.show();
+      // The child shows itself after the spec is painted (see
+      // `DialogWindowScaffold._startThenShow`). The plugin's `window.show()`
+      // is not used here: it targets the handle recorded at create time, which
+      // is not the root window, and it would show the window before the frame
+      // is applied — the empty-corner flash.
+      //
       // Raise it through the MANAGER's channel.
       //
       // The dialog's own engine tried to raise itself when the spec arrived,
@@ -712,8 +843,10 @@ class DialogWindowHost {
         // still visible; it just may not be on top.
       }
       return true;
-    } on Exception {
-      // No plugin / no runner wiring. The caller falls back.
+    } on Object catch (e) {
+      // No plugin / no runner wiring. The caller falls back, and `onError`
+      // (when supplied) says what went wrong.
+      onError?.call(e);
       await _destroyWindow();
       return false;
     }
@@ -731,7 +864,8 @@ class DialogWindowHost {
     _window = null;
     if (window == null) return;
     try {
-      await const MethodChannel(kDialogWindowChannel).invokeMethod<void>('close');
+      await const MethodChannel(kDialogWindowChannel)
+          .invokeMethod<void>('destroy');
     } on Object {
       // The child is already gone, or the channel was never up. Either way
       // there is nothing left to release.

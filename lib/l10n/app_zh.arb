@@ -169,7 +169,7 @@
   "detailRunning": "运行中...",
   "detailSectionPreview": "预览",
   "detailPreviewIdle": "尚未运行",
-  "detailPreviewMeta": "{ms} 毫秒 · {time}",
+  "detailPreviewMeta": "{ms} 毫秒  {time}",
   "@detailPreviewMeta": {
     "placeholders": {
       "ms": {
@@ -340,7 +340,7 @@
   "projectsGroupRunning": "运行中",
   "projectsGroupAttention": "需要处理",
   "projectsGroupStopped": "已停止",
-  "projectsPreviewTitle": "任务栏预览 · {n} 个插件",
+  "projectsPreviewTitle": "任务栏预览  {n} 个插件",
   "@projectsPreviewTitle": {
     "placeholders": {
       "n": {
@@ -403,7 +403,8 @@
   },
   "projectCopySuffix": " 副本",
   "taskbarShowLabel": "任务栏显示",
-  "marketSubtitle": "{total} 个插件 · 已安装 {installed} 个 · 来源：{sources}",
+  "projectBarWaiting": "等待首次运行",
+  "marketSubtitle": "{total} 个插件，已安装 {installed} 个，来源：{sources}",
   "@marketSubtitle": {
     "placeholders": {
       "total": {
@@ -444,5 +445,16 @@
   "marketNoDescription": "暂无描述",
   "marketBarLabel": "任务栏",
   "marketSourceSeparator": "、",
-  "projectsDragHint": "拖动调整顺序"
+  "projectsDragHint": "拖动调整顺序",
+  "projectsStageReady": "全部就绪，{n} 个在任务栏上。",
+  "@projectsStageReady": {"placeholders": {"n": {"type": "int"}}},
+  "projectsStageNeedsYou": "{n} 个在任务栏上，{m} 个要你看。",
+  "@projectsStageNeedsYou": {"placeholders": {"n": {"type": "int"}, "m": {"type": "int"}}},
+  "projectsStageIdle": "都停着，挑一个固定到任务栏。",
+  "projectsStripEmpty": "还没有插件固定到任务栏",
+  "detailScriptOpen": "打开脚本",
+  "detailOpenWith": "打开方式",
+  "detailOpenDefault": "默认应用",
+  "detailOpenNoEditor": "没有发现可用的编辑器",
+  "detailOpenFailed": "无法打开这个脚本"
 }

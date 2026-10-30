@@ -1,13 +1,13 @@
-// The project list (docs/VISUAL_SPEC.md section 5.3).
+// The project page: the stage opening, then one hairline list.
 //
-// Four blocks, fixed order: status line, taskbar preview, error banner, then
-// the three status groups. Cards are grouped by state:
+// The page is built around the product's one signature object. Under a moving
+// spotlight the pinned strip is lifted onto a raised slab; below it every
+// project is one row, separated by hairlines rather than boxed in cards, so
+// the list reads as a table of what is on the taskbar and what is not.
 //
-//   运行中     two-column cards with the switch and latest output
-//   需要处理   one-column rows for items whose script is missing
-//   已停止     shorter two-column cards with a letter avatar
-//
-// A card tap opens the detail page. The more menu duplicates or deletes.
+// Row order is by urgency: what needs attention first, then what is running,
+// then what is stopped. The status text carries the group, so there are no
+// group headers.
 
 import 'dart:async';
 import 'dart:io';
@@ -25,40 +25,23 @@ import '../../core/bar/bar_controller.dart';
 import '../../core/bar/bar_source.dart' show resolveScriptPath;
 import '../../core/config/config_providers.dart';
 import '../../core/config/config_schema.dart';
-import 'widgets/avatar.dart';
 import 'widgets/item_labels.dart';
 import 'widgets/item_status.dart';
+import 'widgets/script_open_card.dart';
 import 'widgets/taskbar_preview.dart';
 
 /// Width of the search field.
 const double kSearchWidth = 320;
 
-/// Narrowest a project card may be before the grid drops a column.
-///
-/// The grid used to be "one column below 1000 px, two above", which meant a
-/// manager window at its default size (~880 px of content) showed every card
-/// full-width: the name sat on the left, the switch and the "…" button were
-/// pushed to the far right, and a third of the row was empty. Sizing by the
-/// card instead of the page keeps a 1100 px window at two columns and only
-/// collapses when a card would genuinely be cramped.
-const double kMinCardWidth = 360;
+/// Height of one project row.
+const double kProjectRowHeight = 56;
 
-/// Fixed card heights, so every card in a grid is identical whether or not a
-/// line has a relative time. Measured at 12/16 and 14/20 type with 16 padding.
-///
-/// The running card is sized to its content plus a small slack: 32 padding +
-/// 24 title row + 4 + 16 meta + 36 mini bar = 112 at 1x, and 122 at the 1.25
-/// text-scale clamp. 128 was the previous 148 minus the gap that a `Spacer`
-/// used to absorb, which read as an empty band between the meta line and the
-/// bar.
-const double kRunningCardHeight = 128;
-const double kStoppedCardHeight = 88;
-const double kAttentionRowHeight = 64;
+/// Width of the status column, and of the interval column beside it.
+const double kStatusColumnWidth = 240;
+const double kIntervalColumnWidth = 120;
 
-/// The mini bar inside the running card. The strip fills it; its own 6 + 6
-/// padding leaves 24 for content, so a two-line reading shows its first line
-/// only.
-const double kMiniBarHeight = 36;
+/// Below this row width the status text moves under the name.
+const double kRowNarrowWidth = 760;
 
 /// The project list page.
 class SignalsListPage extends ConsumerStatefulWidget {
@@ -115,8 +98,13 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
       }
     }
 
+    final List<int> order = <int>[...attention, ...running, ...stopped];
     final int errorCount = attention.length;
     final bool empty = items.isEmpty;
+    final List<int> pinned = <int>[
+      for (int i = 0; i < items.length; i++)
+        if (items[i].pinned) i,
+    ];
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -125,12 +113,17 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
       },
       child: AppPage(
         title: l10n.navProjects,
-        subtitle: empty
+        stage: const TpStageBackdrop(),
+        // The page's name is already the selected word in the top nav, so the
+        // opening says the one thing the page is for: what is on the taskbar
+        // and whether anything wants the user.
+        hero: empty
             ? null
-            : _StatusLine(
-                running: running.length,
-                errors: errorCount,
-                stopped: stopped.length,
+            : Text(
+                _stageSentence(l10n, pinned.length, errorCount),
+                style: TpTypography.headline.toTextStyle(tabular: true).copyWith(
+                      color: TaskPinTheme.of(context).text.primary,
+                    ),
               ),
         headerTrailing: <Widget>[
           if (!empty)
@@ -149,7 +142,6 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
           if (!empty)
             TpButton(
               label: l10n.projectsEmptyAction,
-              icon: TpIcons.add,
               variant: TpButtonVariant.primary,
               onPressed: () => _addItem(context),
             ),
@@ -157,31 +149,36 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
         children: <Widget>[
           if (empty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 64),
+              padding: const EdgeInsets.symmetric(vertical: 96),
               child: TpEmptyState(
                 title: l10n.projectsEmptyTitle,
                 action: TpButton(
                   label: l10n.projectsEmptyAction,
-                  icon: TpIcons.add,
                   variant: TpButtonVariant.primary,
                   onPressed: () => _addItem(context),
                 ),
               ),
             )
           else ...<Widget>[
-            _TaskbarPreviewBlock(
-              items: items,
-              bars: bars,
-              baseDir: baseDir,
+            TpEntrance(
+              lift: true,
+              delay: const Duration(milliseconds: 120),
+              duration: const Duration(milliseconds: 1100),
+              child: _TaskbarPreviewBlock(
+                items: items,
+                bars: bars,
+                pinned: pinned,
+              ),
             ),
             if (errorCount > 0) ...<Widget>[
-              const SizedBox(height: TpSpacing.s16),
+              const SizedBox(height: TpSpacing.s24),
               _ErrorBanner(
                 count: errorCount,
                 onRelocate: () => _relocateAll(attention),
               ),
             ],
-            if (running.isEmpty && attention.isEmpty && stopped.isEmpty)
+            const SizedBox(height: TpSpacing.s24),
+            if (order.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 48),
                 child: Center(
@@ -191,54 +188,23 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
                   ),
                 ),
               )
-            else ...<Widget>[
-              if (running.isNotEmpty) ...<Widget>[
-                _GroupHeader(l10n.projectsGroupRunning),
-                _ProjectGrid(
-                  columns: 2,
-                  children: <Widget>[
-                    for (final int i in running)
-                      _RunningCard(
-                        key: ValueKey<int>(i),
-                        index: i,
-                        item: items[i],
-                        snapshot: bars[i],
-                        baseDir: baseDir,
-                      ),
-                  ],
+            else
+              for (int k = 0; k < order.length; k++)
+                TpEntrance(
+                  delay: Duration(milliseconds: 260 + k * 60),
+                  child: _ProjectRow(
+                    key: ValueKey<int>(order[k]),
+                    index: order[k],
+                    item: items[order[k]],
+                    snapshot: bars[order[k]],
+                    baseDir: baseDir,
+                    kind: attention.contains(order[k])
+                        ? _RowKind.attention
+                        : running.contains(order[k])
+                            ? _RowKind.running
+                            : _RowKind.stopped,
+                  ),
                 ),
-              ],
-              if (attention.isNotEmpty) ...<Widget>[
-                _GroupHeader(l10n.projectsGroupAttention),
-                _AttentionList(
-                  children: <Widget>[
-                    for (final int i in attention)
-                      _AttentionRow(
-                        key: ValueKey<int>(i),
-                        index: i,
-                        item: items[i],
-                        snapshot: bars[i],
-                        baseDir: baseDir,
-                      ),
-                  ],
-                ),
-              ],
-              if (stopped.isNotEmpty) ...<Widget>[
-                _GroupHeader(l10n.projectsGroupStopped),
-                _ProjectGrid(
-                  columns: 2,
-                  children: <Widget>[
-                    for (final int i in stopped)
-                      _StoppedCard(
-                        key: ValueKey<int>(i),
-                        index: i,
-                        item: items[i],
-                        baseDir: baseDir,
-                      ),
-                  ],
-                ),
-              ],
-            ],
           ],
         ],
       ),
@@ -295,82 +261,11 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
 
 String _oneLine(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-/// `● 3 运行中　● 3 异常　○ 2 已停止`.
-class _StatusLine extends StatelessWidget {
-  const _StatusLine({
-    required this.running,
-    required this.errors,
-    required this.stopped,
-  });
-
-  final int running;
-  final int errors;
-  final int stopped;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppLocalizations l10n = context.l10n;
-    return Wrap(
-      spacing: TpSpacing.s16,
-      runSpacing: TpSpacing.s4,
-      children: <Widget>[
-        _StatusItem(
-          kind: TpStateKind.success,
-          filled: true,
-          label: l10n.projectsStatusRunning(running),
-        ),
-        _StatusItem(
-          kind: TpStateKind.critical,
-          filled: true,
-          label: l10n.projectsStatusError(errors),
-        ),
-        _StatusItem(
-          kind: TpStateKind.neutral,
-          filled: false,
-          label: l10n.projectsStatusStopped(stopped),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatusItem extends StatelessWidget {
-  const _StatusItem({
-    required this.kind,
-    required this.filled,
-    required this.label,
-  });
-
-  final TpStateKind kind;
-  final bool filled;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final Color color = theme.stateColor(kind);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: filled ? color : Colors.transparent,
-            shape: BoxShape.circle,
-            border: filled ? null : Border.all(color: color, width: 1.5),
-          ),
-        ),
-        const SizedBox(width: TpSpacing.s8),
-        Text(
-          label,
-          style: TpTypography.body
-              .toTextStyle(tabular: true)
-              .copyWith(color: theme.text.secondary),
-        ),
-      ],
-    );
-  }
+/// The one sentence that opens the page.
+String _stageSentence(AppLocalizations l10n, int pinned, int attention) {
+  if (attention > 0) return l10n.projectsStageNeedsYou(pinned, attention);
+  if (pinned > 0) return l10n.projectsStageReady(pinned);
+  return l10n.projectsStageIdle;
 }
 
 /// A small bordered "Ctrl K" chip.
@@ -386,7 +281,7 @@ class _ShortcutChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s6),
       decoration: BoxDecoration(
         borderRadius: TpRadius.control,
-        border: Border.all(color: theme.control.stroke),
+        border: Border.all(color: theme.control.strokeStrong),
       ),
       child: Text(
         label,
@@ -398,25 +293,21 @@ class _ShortcutChip extends StatelessWidget {
   }
 }
 
-/// Caption row plus the taskbar mock.
+/// Caption row plus the slab.
 class _TaskbarPreviewBlock extends ConsumerWidget {
   const _TaskbarPreviewBlock({
     required this.items,
     required this.bars,
-    required this.baseDir,
+    required this.pinned,
   });
 
   final List<PinItem> items;
   final Map<int, BarSnapshot> bars;
-  final String baseDir;
+  final List<int> pinned;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l10n = context.l10n;
-    final List<int> pinned = <int>[
-      for (int i = 0; i < items.length; i++)
-        if (items[i].pinned) i,
-    ];
     final Map<int, int> positionOf = <int, int>{
       for (int k = 0; k < pinned.length; k++) pinned[k]: k,
     };
@@ -424,10 +315,12 @@ class _TaskbarPreviewBlock extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        TaskbarPreviewHeader(count: pinned.length),
-        const SizedBox(height: TpSpacing.s8),
-        TaskbarPreviewBar(
-          pinnedCount: pinned.length,
+        Padding(
+          padding: const EdgeInsets.only(bottom: TpSpacing.s12),
+          child: TaskbarPreviewHeader(count: pinned.length),
+        ),
+        TaskbarStageStrip(
+          emptyHint: l10n.projectsStripEmpty,
           onReorder: (int from, int to) {
             final int? a = pinned.length > from ? pinned[from] : null;
             final int? b = pinned.length > to ? pinned[to] : null;
@@ -469,7 +362,7 @@ class _ErrorBanner extends StatelessWidget {
         vertical: TpSpacing.s12,
       ),
       decoration: BoxDecoration(
-        color: theme.stateSubtleOf(TpStateKind.critical, 0.08),
+        color: theme.bg.card,
         borderRadius: TpRadius.card,
       ),
       child: Row(
@@ -492,407 +385,187 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-/// A caption group header with the section spacing from the spec.
-class _GroupHeader extends StatelessWidget {
-  const _GroupHeader(this.label);
+/// What a row's status reads as.
+enum _RowKind { running, attention, stopped }
 
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(
-        top: TpSpacing.sectionTop,
-        bottom: TpSpacing.sectionBottom + TpSpacing.s4,
-      ),
-      child: Text(
-        label,
-        style: TpTypography.caption
-            .toTextStyle()
-            .copyWith(color: theme.text.secondary),
-      ),
-    );
-  }
-}
-
-/// A responsive grid of cards, 16 apart.
-class _ProjectGrid extends StatelessWidget {
-  const _ProjectGrid({required this.columns, required this.children});
-
-  final int columns;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        // Fit as many [kMinCardWidth] columns as the row can hold, capped at
-        // the requested [columns]. The gap is included in the arithmetic so
-        // two cards plus the gap, not two cards alone, is the threshold.
-        final int fit = constraints.maxWidth <= 0
-            ? 1
-            : ((constraints.maxWidth + TpSpacing.s16) /
-                      (kMinCardWidth + TpSpacing.s16))
-                  .floor();
-        final int cols = fit.clamp(1, columns);
-        return _GridLayout(columns: cols, children: children);
-      },
-    );
-  }
-}
-
-class _GridLayout extends StatelessWidget {
-  const _GridLayout({required this.columns, required this.children});
-
-  final int columns;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Widget> rows = <Widget>[];
-    for (int i = 0; i < children.length; i += columns) {
-      final List<Widget> row = <Widget>[];
-      for (int c = 0; c < columns; c++) {
-        final int k = i + c;
-        if (c > 0) row.add(const SizedBox(width: TpSpacing.s16));
-        row.add(Expanded(
-          child: k < children.length ? children[k] : const SizedBox.shrink(),
-        ));
-      }
-      if (i > 0) rows.add(const SizedBox(height: TpSpacing.s16));
-      // IntrinsicHeight gives the row a bounded height inside the page's
-      // scroll view, so CrossAxisAlignment.stretch can equalise card heights.
-      rows.add(IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: row,
-        ),
-      ));
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: rows,
-    );
-  }
-}
-
-/// One card surface: bg.card, 1 px stroke.card, radius 8, padding 16. Hover
-/// swaps the outline for stroke.strong. The card tap is translucent so its
-/// inner switch and buttons still receive the pointer.
-class _CardShell extends StatelessWidget {
-  const _CardShell({required this.child, required this.onTap});
-
-  final Widget child;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    return TpHoverBuilder(
-      builder: (BuildContext context, bool hovered) => TpFocusRing(
-        radius: TpRadius.card,
-        onTap: onTap,
-        hitTestBehavior: HitTestBehavior.translucent,
-        // The focus ring wraps the child in a Stack, which hands it loose
-        // constraints; expand so the card keeps the fixed height around it.
-        child: SizedBox.expand(
-          child: AnimatedContainer(
-            duration: TpMotion.resolve(context, TpMotion.fast),
-            padding: const EdgeInsets.all(TpSpacing.s16),
-            decoration: BoxDecoration(
-              color: theme.bg.card,
-              borderRadius: TpRadius.card,
-              border: Border.all(
-                color: hovered ? theme.stroke.strong : theme.stroke.card,
-              ),
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A running project: name, badge, switch, more; metadata; mini bar.
+/// One project: name and source, status, interval, toggle, more.
 ///
-/// Fixed height: every card in the grid is identical whether or not the
-/// metadata line carries a relative time. At 150 % text scaling the content
-/// still fits (see the widget tests).
-class _RunningCard extends ConsumerWidget {
-  const _RunningCard({
+/// Rows are separated by a hairline above each one; hovering lifts the row's
+/// ground instead of outlining it. The columns drop away as the window
+/// narrows: status moves under the name below 760, the interval below 560.
+class _ProjectRow extends ConsumerStatefulWidget {
+  const _ProjectRow({
     super.key,
     required this.index,
     required this.item,
     required this.snapshot,
     required this.baseDir,
+    required this.kind,
   });
 
   final int index;
   final PinItem item;
   final BarSnapshot? snapshot;
   final String baseDir;
+  final _RowKind kind;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ProjectRow> createState() => _ProjectRowState();
+}
+
+class _ProjectRowState extends ConsumerState<_ProjectRow> {
+  /// The running row's status carries an age, so it re-reads the clock once
+  /// per second while it is mounted. Stopped and attention rows do not.
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTick();
+  }
+
+  @override
+  void didUpdateWidget(_ProjectRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.kind != widget.kind ||
+        oldWidget.snapshot?.updatedAt != widget.snapshot?.updatedAt) {
+      _startTick();
+    }
+  }
+
+  void _startTick() {
+    _tick?.cancel();
+    if (widget.kind != _RowKind.running ||
+        widget.snapshot?.updatedAt == null) {
+      return;
+    }
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final PinItem item = widget.item;
+    final int index = widget.index;
+    final _RowKind kind = widget.kind;
     final AppLocalizations l10n = context.l10n;
     final TaskPinTheme theme = TaskPinTheme.of(context);
     final String name = itemDisplayName(item, index, l10n);
     final String source = itemSourceLabel(item);
     final String interval = itemIntervalLabel(item.intervalMs, l10n);
-    return SizedBox(
-      height: kRunningCardHeight,
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.25,
-        child: _CardShell(
-          onTap: () => context.go(AppRoutes.signal(index)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.max,
-            children: <Widget>[
-              // One Expanded for the whole left group, then the controls.
-              //
-              // This used to be `Flexible(name) + Badge + Spacer + controls`.
-              // A `Flexible` (loose) and a `Spacer` (a flex-1 `Expanded`) in
-              // the same row split the free space, and the badge in between
-              // made the split depend on the name's width — so the controls
-              // did not land at the same offset as the stopped card's, which
-              // has no Spacer. Grouping the left side into one `Expanded`
-              // leaves exactly one elastic child, so the controls are pinned
-              // to the card's trailing edge in both card types.
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Row(
-                      children: <Widget>[
-                        Flexible(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TpTypography.bodyStrong
-                                .toTextStyle()
-                                .copyWith(color: theme.text.primary),
-                          ),
-                        ),
-                        const SizedBox(width: TpSpacing.s8),
-                        _RunningBadge(label: l10n.statusRunning),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: TpSpacing.s12),
-                  _CardControls(index: index, item: item),
-                ],
-              ),
-              const SizedBox(height: TpSpacing.s4),
-              _UpdatedLine(
-                parts: <String>[source, interval],
-                updatedAt: snapshot?.updatedAt,
-                style: TpTypography.caption
-                    .toTextStyle(tabular: true)
-                    .copyWith(color: theme.text.secondary),
-              ),
-              const Spacer(),
-              _MiniBar(content: snapshot?.content),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The trailing pair on every project card: the pin switch and the "…" menu.
-///
-/// Grouping them is what stops the card from looking like two unrelated
-/// islands. The 1 px rule is the same `stroke.divider` the rest of the UI
-/// uses, and it is vertical because the pair is laid out in a row.
-class _CardControls extends ConsumerWidget {
-  const _CardControls({required this.index, required this.item});
-
-  final int index;
-  final PinItem item;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        TpDivider(vertical: true),
-        const SizedBox(width: TpSpacing.s12),
-        TpSwitch(
-          value: item.pinned,
-          onChanged: (bool _) =>
-              ref.read(configProvider.notifier).togglePinned(index),
-        ),
-        const SizedBox(width: TpSpacing.s4),
-        ProjectMoreButton(index: index, item: item),
-      ],
-    );
-  }
-}
-
-/// `运行中` pill: success text on a 12 % success fill, radius 4.
-class _RunningBadge extends StatelessWidget {
-  const _RunningBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TpSpacing.s6,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: theme.stateSubtle(TpStateKind.success),
-        borderRadius: TpRadius.control,
-      ),
-      child: Text(
-        label,
-        style: TpTypography.caption.toTextStyle().copyWith(
-              color: theme.status.success,
-            ),
-      ),
-    );
-  }
-}
-
-/// The 36-high dark strip inside a card: label plus latest output.
-class _MiniBar extends StatelessWidget {
-  const _MiniBar({required this.content});
-
-  final TpBarContent? content;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppLocalizations l10n = context.l10n;
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final TpBarContent? c = content;
-    return Container(
-      height: kMiniBarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s12),
-      decoration: BoxDecoration(
-        color: theme.taskbar,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        children: <Widget>[
-          Text(
-            l10n.taskbarShowLabel,
-            style: TpTypography.caption
-                .toTextStyle()
-                .copyWith(color: theme.taskbarLabel),
-          ),
-          const SizedBox(width: TpSpacing.s12),
-          Expanded(
-            child: c == null || c.isEmpty
-                ? const SizedBox.shrink()
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      height: kMiniBarHeight,
-                      width: double.infinity,
-                      child: TpBarPreviewStrip(
-                        content: c,
-                        height: kMiniBarHeight,
-                        background: theme.taskbar,
-                        width: double.infinity,
-                        showStateStrip: false,
-                      ),
-                    ),
-                  ),          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A needs-attention row: critical file icon, name, error, actions.
-class _AttentionRow extends ConsumerWidget {
-  const _AttentionRow({
-    super.key,
-    required this.index,
-    required this.item,
-    required this.snapshot,
-    required this.baseDir,
-  });
-
-  final int index;
-  final PinItem item;
-  final BarSnapshot? snapshot;
-  final String baseDir;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final AppLocalizations l10n = context.l10n;
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final String name = itemDisplayName(item, index, l10n);
-    final String? problem = _problemText(context, ref);
+    final String status = _statusText(context, ref, l10n);
+    final Color statusColor = switch (kind) {
+      _RowKind.running => theme.status.success,
+      _RowKind.attention => theme.status.critical,
+      _RowKind.stopped => theme.text.tertiary,
+    };
 
     return SizedBox(
-      height: kAttentionRowHeight,
+      height: kProjectRowHeight,
       child: MediaQuery.withClampedTextScaling(
         maxScaleFactor: 1.25,
         child: TpHoverBuilder(
-          builder: (BuildContext context, bool hovered) => TpFocusRing(
-            radius: TpRadius.card,
-            onTap: () => context.go(AppRoutes.signal(index)),
-            hitTestBehavior: HitTestBehavior.translucent,
-            child: SizedBox.expand(
-              child: AnimatedContainer(
-                duration: TpMotion.resolve(context, TpMotion.fast),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: TpSpacing.s16,
-                  vertical: TpSpacing.s8,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.bg.card,
-                  border: Border.all(
-                    color: hovered ? theme.stroke.strong : theme.stroke.card,
-                  ),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Icon(TpIcons.file, size: 16, color: theme.status.critical),
-                    const SizedBox(width: TpSpacing.s12),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TpTypography.body
-                                .toTextStyle()
-                                .copyWith(color: theme.text.primary),
+          builder: (BuildContext context, bool hovered) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: hovered ? theme.subtle.hover : Colors.transparent,
+              border: Border(top: BorderSide(color: theme.stroke.divider)),
+            ),
+            child: TpFocusRing(
+              radius: BorderRadius.zero,
+              onTap: () => context.go(AppRoutes.signal(index)),
+              hitTestBehavior: HitTestBehavior.translucent,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s8),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints c) {
+                    final bool wide = c.maxWidth >= kRowNarrowWidth;
+                    final bool medium = c.maxWidth >= 560;
+                    return Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TpTypography.bodyStrong
+                                    .toTextStyle()
+                                    .copyWith(color: theme.text.primary),
+                              ),
+                              if (source.isNotEmpty)
+                                Text(
+                                  source,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TpTypography.caption.toTextStyle(
+                                    tabular: true,
+                                  ).copyWith(color: theme.text.tertiary),
+                                ),
+                            ],
                           ),
-                          if (problem != null)
-                            Text(
-                              problem,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TpTypography.caption
-                                  .toTextStyle()
-                                  .copyWith(color: theme.status.critical),
+                        ),
+                        if (wide)
+                          SizedBox(
+                            width: kStatusColumnWidth,
+                            child: _StatusCell(
+                              text: status,
+                              color: statusColor,
+                              filled: kind != _RowKind.stopped,
                             ),
+                          )
+                        else ...<Widget>[
+                          const SizedBox(width: TpSpacing.s12),
+                          Flexible(
+                            child: _StatusCell(
+                              text: status,
+                              color: statusColor,
+                              filled: kind != _RowKind.stopped,
+                              alignEnd: true,
+                            ),
+                          ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: TpSpacing.s16),
-                    TpButton(
-                      label: l10n.projectRelocate,
-                      onPressed: () => _relocate(context, ref),
-                    ),
-                    const SizedBox(width: TpSpacing.s8),
-                    ProjectDeleteButton(index: index, item: item),
-                  ],
+                        if (wide)
+                          SizedBox(
+                            width: kIntervalColumnWidth,
+                            child: Text(
+                              interval,
+                              maxLines: 1,
+                              textAlign: TextAlign.right,
+                              style: TpTypography.body
+                                  .toTextStyle(tabular: true)
+                                  .copyWith(color: theme.text.secondary),
+                            ),
+                          ),
+                        const SizedBox(width: TpSpacing.s16),
+                        if (medium && kind == _RowKind.attention) ...<Widget>[
+                          TpButton(
+                            label: l10n.projectRelocate,
+                            onPressed: () => _relocate(context, ref),
+                          ),
+                          const SizedBox(width: TpSpacing.s8),
+                        ],
+                        TpSwitch(
+                          value: item.pinned,
+                          onChanged: (bool _) => ref
+                              .read(configProvider.notifier)
+                              .togglePinned(index),
+                        ),
+                        const SizedBox(width: TpSpacing.s4),
+                        ProjectMoreButton(index: index, item: item),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -902,136 +575,101 @@ class _AttentionRow extends ConsumerWidget {
     );
   }
 
-  String? _problemText(BuildContext context, WidgetRef ref) {
-    final AppLocalizations l10n = context.l10n;
-    final SignalStatus status = SignalStatus.of(
-      item,
-      pathExists: (String p) {
-        try {
-          return File(resolveScriptPath(p, baseDir)).existsSync();
-        } on Object {
-          return false;
-        }
-      },
-    );
-    final String? problem = itemConfigProblem(status, l10n);
-    if (problem != null) return problem;
-    final String? error = snapshot?.error;
-    return error == null ? null : _oneLine(error);
+  /// `运行中 · 刚刚` for a running row, the problem for an attention row,
+  /// `已停止` for a stopped one.
+  String _statusText(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) {
+    final PinItem item = widget.item;
+    final BarSnapshot? snapshot = widget.snapshot;
+    final String baseDir = widget.baseDir;
+    final _RowKind kind = widget.kind;
+    switch (kind) {
+      case _RowKind.running:
+        final String updated =
+            formatRelativeUpdated(snapshot?.updatedAt, l10n);
+        return updated.isEmpty
+            ? l10n.statusRunning
+            : '${l10n.statusRunning} · $updated';
+      case _RowKind.stopped:
+        return l10n.projectsGroupStopped;
+      case _RowKind.attention:
+        final SignalStatus status = SignalStatus.of(
+          item,
+          pathExists: (String p) {
+            try {
+              return File(resolveScriptPath(p, baseDir)).existsSync();
+            } on Object {
+              return false;
+            }
+          },
+        );
+        final String? problem = itemConfigProblem(status, l10n);
+        if (problem != null) return problem;
+        final String? error = snapshot?.error;
+        return error == null ? l10n.statusError : _oneLine(error);
+      }
   }
 
   Future<void> _relocate(BuildContext context, WidgetRef ref) async {
     final AppLocalizations l10n = context.l10n;
     final String? path = await showRelocateDialog(
       context,
-      name: itemDisplayName(item, index, l10n),
-      current: item.luaPath,
+      name: itemDisplayName(widget.item, widget.index, l10n),
+      current: widget.item.luaPath,
     );
     if (path == null) return;
-    ref.read(configProvider.notifier).editItem(index, (PinItem i) {
+    ref.read(configProvider.notifier).editItem(widget.index, (PinItem i) {
       i.luaPath = path;
     });
   }
 }
 
-/// The needs-attention group is one card holding divided rows. Each row is
-/// [kAttentionRowHeight] high; the 1 px divider sits between rows, so the
-/// rows themselves stay identical.
-class _AttentionList extends StatelessWidget {
-  const _AttentionList({required this.children});
+/// A status word with a 6 px dot in front.
+class _StatusCell extends StatelessWidget {
+  const _StatusCell({
+    required this.text,
+    required this.color,
+    required this.filled,
+    this.alignEnd = false,
+  });
 
-  final List<Widget> children;
+  final String text;
+  final Color color;
+
+  /// Running and error rows carry a filled dot; stopped rows a hollow one.
+  final bool filled;
+  final bool alignEnd;
 
   @override
   Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final List<Widget> rows = <Widget>[];
-    for (int i = 0; i < children.length; i++) {
-      if (i > 0) {
-        rows.add(Container(height: 1, color: theme.stroke.divider));
-      }
-      rows.add(children[i]);
-    }
-    return ClipRRect(
-      borderRadius: TpRadius.card,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: rows,
-      ),
-    );
-  }
-}
-
-/// A stopped project: letter avatar, name, source, switch, more.
-///
-/// Fixed height, so every stopped card is identical.
-class _StoppedCard extends ConsumerWidget {
-  const _StoppedCard({
-    super.key,
-    required this.index,
-    required this.item,
-    required this.baseDir,
-  });
-
-  final int index;
-  final PinItem item;
-  final String baseDir;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final AppLocalizations l10n = context.l10n;
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final String name = itemDisplayName(item, index, l10n);
-    final String source = itemSourceLabel(item);
-    final String interval = itemIntervalLabel(item.intervalMs, l10n);
-
-    return SizedBox(
-      height: kStoppedCardHeight,
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.25,
-        child: _CardShell(
-          onTap: () => context.go(AppRoutes.signal(index)),
-          child: Row(
-            children: <Widget>[
-              TpAvatar(name: name, size: 40),
-              const SizedBox(width: TpSpacing.s12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TpTypography.body
-                          .toTextStyle()
-                          .copyWith(color: theme.text.primary),
-                    ),
-                    Text(
-                      <String>[source, interval]
-                          .where((String s) => s.isNotEmpty)
-                          .join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TpTypography.caption
-                          .toTextStyle(tabular: true)
-                          .copyWith(color: theme.text.secondary),
-                    ),
-                  ],
-                ),
-              ),
-              // 12, matching the running card: both cards put the same gap
-              // between their content and the control group, so the switch
-              // and the "…" sit at the same offset from the trailing edge.
-              const SizedBox(width: TpSpacing.s12),
-              _CardControls(index: index, item: item),
-            ],
+    return Row(
+      mainAxisAlignment:
+          alignEnd ? MainAxisAlignment.end : MainAxisAlignment.start,
+      children: <Widget>[
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: filled ? color : Colors.transparent,
+            shape: BoxShape.circle,
+            border: filled ? null : Border.all(color: color),
           ),
         ),
-      ),
+        const SizedBox(width: TpSpacing.s8),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TpTypography.body.toTextStyle(tabular: true).copyWith(
+                  color: color,
+                ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1112,6 +750,10 @@ class ProjectMoreButton extends ConsumerWidget {
         side: BorderSide(color: theme.stroke.card),
       ),
       items: <PopupMenuEntry<_RowAction>>[
+        // Only a Lua item has a file to open; a URL item's "source" is a
+        // remote address, and there is nothing local to edit.
+        if (item.type == PinItemType.lua && item.luaPath.trim().isNotEmpty)
+          entry(_RowAction.openScript, TpIcons.code, l10n.detailScriptOpen),
         entry(_RowAction.copy, TpIcons.copy, l10n.projectCopy),
         entry(_RowAction.delete, TpIcons.delete, l10n.mainDelete),
       ],
@@ -1119,6 +761,8 @@ class ProjectMoreButton extends ConsumerWidget {
     if (picked == null || !context.mounted) return;
 
     switch (picked) {
+      case _RowAction.openScript:
+        await openScriptWithDefaultApp(context, item.luaPath.trim());
       case _RowAction.copy:
         final PinItem copy = item.copy();
         copy.name = '${itemDisplayName(item, index, l10n)}${l10n.projectCopySuffix}';
@@ -1151,7 +795,7 @@ class ProjectDeleteButton extends ConsumerWidget {
   }
 }
 
-enum _RowAction { copy, delete }
+enum _RowAction { openScript, copy, delete }
 
 /// Confirms and deletes the item at [index].
 Future<void> confirmProjectDelete(
@@ -1274,67 +918,6 @@ class _RelocateDialogState extends State<_RelocateDialog> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Source and interval, followed by the relative update time. Ticks once per
-/// second while the card is mounted.
-class _UpdatedLine extends StatefulWidget {
-  const _UpdatedLine({
-    required this.parts,
-    required this.updatedAt,
-    required this.style,
-  });
-
-  final List<String> parts;
-  final DateTime? updatedAt;
-  final TextStyle style;
-
-  @override
-  State<_UpdatedLine> createState() => _UpdatedLineState();
-}
-
-class _UpdatedLineState extends State<_UpdatedLine> {
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _start();
-  }
-
-  @override
-  void didUpdateWidget(_UpdatedLine oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.updatedAt != widget.updatedAt) {
-      _start();
-    }
-  }
-
-  void _start() {
-    _timer?.cancel();
-    if (widget.updatedAt == null) return;
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final String updated =
-        formatRelativeUpdated(widget.updatedAt, context.l10n);
-    return Text(
-      <String>[...widget.parts, if (updated.isNotEmpty) updated].join(' · '),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: widget.style,
     );
   }
 }

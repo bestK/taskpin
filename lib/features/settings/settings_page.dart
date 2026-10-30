@@ -96,6 +96,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     return AppPage(
       title: l10n.settingsTitle,
+      stage: const TpStageBackdrop(),
       children: <Widget>[
         TpSettingsSection(
           title: l10n.settingsSectionAppearance,

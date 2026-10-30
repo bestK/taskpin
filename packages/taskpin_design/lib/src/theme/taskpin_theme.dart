@@ -84,6 +84,43 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
       ? TpPrimitives.taskbarPreviewDark
       : TpPrimitives.taskbarPreviewLight;
 
+  /// Switch knob. White in both themes.
+  Color get switchKnob => TpPrimitives.white;
+
+  /// Stage background: centre of the radial glow.
+  Color get stageGlow =>
+      isDark ? TpPrimitives.darkStageGlow : TpPrimitives.lightStageGlow;
+
+  /// Stage background: the stop between the glow and the ground.
+  Color get stageMid =>
+      isDark ? TpPrimitives.darkStageMid : TpPrimitives.lightStageMid;
+
+  /// The drifting spotlight's centre colour.
+  Color get spotlight =>
+      isDark ? TpPrimitives.darkSpotlight : TpPrimitives.lightSpotlight;
+
+  /// The slab the stage strip sits on. Dark in both themes: the strip is a
+  /// picture of the taskbar, and a taskbar is dark. On the light page the
+  /// slab is the one deep-black object, which is the point.
+  Color get stageSlab => TpPrimitives.darkBgCard;
+
+  /// One segment on the slab.
+  Color get stageSegment => TpPrimitives.darkBgCardSecondary;
+
+  /// The stage slab's drop shadow and inner top highlight.
+  List<BoxShadow> get slabShadow => <BoxShadow>[
+        BoxShadow(
+          color: isDark
+              ? TpPrimitives.darkSlabShadow
+              : TpPrimitives.lightSlabShadow,
+          offset: const Offset(0, 40),
+          blurRadius: 90,
+        ),
+      ];
+
+  /// 1 px highlight along the slab's top edge.
+  Color get slabHighlight => TpPrimitives.slabHighlight;
+
   /// Keyboard focus ring outer line (`text.primary`).
   Color get focusOuter => text.primary;
 

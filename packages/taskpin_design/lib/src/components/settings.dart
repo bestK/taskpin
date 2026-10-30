@@ -169,7 +169,7 @@ class TpSettingsCard extends StatelessWidget {
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: clickable && hovered ? theme.control.fillHover : theme.bg.card,
-            borderRadius: TpRadius.control,
+            borderRadius: TpRadius.card,
             border: Border.all(color: theme.stroke.card),
           ),
           child: row,
@@ -181,7 +181,7 @@ class TpSettingsCard extends StatelessWidget {
         return MouseRegion(
           cursor: SystemMouseCursors.click,
           child: TpFocusRing(
-            radius: TpRadius.control,
+            radius: TpRadius.card,
             onTap: onTap,
             child: card,
           ),
@@ -250,10 +250,10 @@ class _TpSettingsExpanderState extends State<TpSettingsExpander> {
                 color: hovered ? theme.control.fillHover : Colors.transparent,
                 borderRadius: _expanded
                     ? const BorderRadius.only(
-                        topLeft: Radius.circular(TpRadius.controlValue),
-                        topRight: Radius.circular(TpRadius.controlValue),
+                        topLeft: Radius.circular(TpRadius.cardValue),
+                        topRight: Radius.circular(TpRadius.cardValue),
                       )
-                    : TpRadius.control,
+                    : TpRadius.card,
               ),
               child: _TpSettingsRow(
                 title: widget.title,
@@ -302,7 +302,7 @@ class _TpSettingsExpanderState extends State<TpSettingsExpander> {
     return Container(
       decoration: BoxDecoration(
         color: theme.bg.card,
-        borderRadius: TpRadius.control,
+        borderRadius: TpRadius.card,
         border: Border.all(color: theme.stroke.card),
       ),
       child: Column(
@@ -351,10 +351,14 @@ class TpSettingsSection extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.only(bottom: TpSpacing.sectionBottom),
+            // A section label, not a second headline: small, quiet, and set
+            // apart by tracking rather than by weight.
             child: Text(
               title,
-              style: TpTypography.bodyStrong.toTextStyle().copyWith(
-                    color: theme.text.primary,
+              style: TpTypography.caption.toTextStyle().copyWith(
+                    color: theme.text.tertiary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
                   ),
             ),
           ),

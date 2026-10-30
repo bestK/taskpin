@@ -90,10 +90,16 @@ class TpControlSize {
   static const double titleBar = 32;
 
   /// Switch width.
-  static const double switchWidth = 40;
+  static const double switchWidth = 46;
 
   /// Switch height.
-  static const double switchHeight = 20;
+  static const double switchHeight = 26;
+
+  /// Switch knob diameter.
+  static const double switchKnob = 20;
+
+  /// Centered top navigation bar.
+  static const double topNav = 52;
 
   /// Icon button edge.
   static const double iconButton = 32;

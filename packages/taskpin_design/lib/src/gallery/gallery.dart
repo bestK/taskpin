@@ -734,59 +734,35 @@ class _TaskPinGalleryState extends State<TaskPinGallery> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          TpText('NavRail'),
+          TpText('TopNav'),
           const SizedBox(height: TpSpacing.s8),
-          SizedBox(
-            height: 200,
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: TpNavRail(
-                    destinations: <TpNavDestination>[
-                      TpNavDestination(
-                        label: 'Signals',
-                        icon: TpIcons.signals,
-                        route: '/signals',
-                      ),
-                      TpNavDestination(
-                        label: 'Market',
-                        icon: TpIcons.market,
-                        route: '/market',
-                        badgeCount: 3,
-                      ),
-                      TpNavDestination(
-                        label: 'Settings',
-                        icon: TpIcons.settings,
-                        route: '/settings',
-                      ),
-                    ],
-                    selectedRoute: '/signals',
-                    onSelect: (_) {},
-                  ),
-                ),
-                const SizedBox(width: TpSpacing.s16),
-                Expanded(
-                  child: TpNavRail(
-                    destinations: <TpNavDestination>[
-                      TpNavDestination(
-                        label: 'Signals',
-                        icon: TpIcons.signals,
-                        route: '/signals',
-                      ),
-                      TpNavDestination(
-                        label: 'Market',
-                        icon: TpIcons.market,
-                        route: '/market',
-                        badgeCount: 3,
-                      ),
-                    ],
-                    selectedRoute: '/market',
-                    collapsed: true,
-                    onSelect: (_) {},
-                  ),
-                ),
-              ],
-            ),
+          TpTopNav(
+            destinations: <TpNavDestination>[
+              TpNavDestination(
+                label: 'Signals',
+                icon: TpIcons.signals,
+                route: '/signals',
+              ),
+              TpNavDestination(
+                label: 'Market',
+                icon: TpIcons.market,
+                route: '/market',
+              ),
+              TpNavDestination(
+                label: 'Logs',
+                icon: TpIcons.diagnostics,
+                route: '/logs',
+                badgeCount: 2,
+                badgeCritical: true,
+              ),
+              TpNavDestination(
+                label: 'Settings',
+                icon: TpIcons.settings,
+                route: '/settings',
+              ),
+            ],
+            selectedRoute: '/market',
+            onSelect: (_) {},
           ),
           const SizedBox(height: TpSpacing.s16),
           TpText('Toolbar'),

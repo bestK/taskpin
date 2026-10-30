@@ -1034,39 +1034,34 @@ class TpSwitch extends StatelessWidget {
     final String? d = description;
     final bool interactive = enabled && onChanged != null;
 
-    // 40 x 20 pill. Off: transparent with a strong outline and a secondary
-    // knob. On: accent fill with an on-accent knob. No on/off text.
-    final Color trackFill = value
-        ? (interactive ? theme.accent.fill : theme.text.disabled)
-        : Colors.transparent;
-    final Color knob = value
-        ? (interactive ? theme.accent.onFill : theme.bg.window)
-        : (interactive ? theme.text.secondary : theme.text.disabled);
-    final double knobSize = value ? 12 : 10;
+    // 46 x 26 pill with a 20 px white knob. On: success green, so "pinned"
+    // reads the same colour as "running" everywhere. Off: the strong stroke
+    // colour as a solid track. The knob travels on the spring curve, which
+    // overshoots a little and settles.
+    final Color trackFill = interactive
+        ? (value ? theme.status.success : theme.control.strokeStrong)
+        : theme.control.fill;
+    final Color knob = interactive ? theme.switchKnob : theme.text.disabled;
+    final double inset =
+        (TpControlSize.switchHeight - TpControlSize.switchKnob) / 2;
 
     final Widget track = AnimatedContainer(
-      duration: TpMotion.resolve(context, TpMotion.fast),
+      duration: TpMotion.resolve(context, TpMotion.base),
       width: TpControlSize.switchWidth,
       height: TpControlSize.switchHeight,
       decoration: BoxDecoration(
         color: trackFill,
         borderRadius: TpRadius.chip,
-        border: value
-            ? null
-            : Border.all(
-                color: interactive
-                    ? theme.control.strokeStrong
-                    : theme.text.disabled,
-              ),
       ),
       child: AnimatedAlign(
-        duration: TpMotion.resolve(context, TpMotion.fast),
+        duration: TpMotion.resolve(context, const Duration(milliseconds: 350)),
+        curve: TpMotion.resolveCurve(context, TpMotion.spring),
         alignment: value ? Alignment.centerRight : Alignment.centerLeft,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s4),
+          padding: EdgeInsets.all(inset),
           child: Container(
-            width: knobSize,
-            height: knobSize,
+            width: TpControlSize.switchKnob,
+            height: TpControlSize.switchKnob,
             decoration: BoxDecoration(color: knob, shape: BoxShape.circle),
           ),
         ),

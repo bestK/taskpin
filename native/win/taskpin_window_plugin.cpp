@@ -8,7 +8,8 @@
 //
 //  CHANNELS
 //    taskpin/main_window          methods: minimize, toggleMaximize, close,
-//                                 isMaximized
+//                                 show, isMaximized
+//                                 (close HIDES the window: see WM_CLOSE below)
 //    taskpin/main_window/events   a broadcast Stream<bool> of maximizedChanged
 //
 //  This is deliberately NOT `taskpin/window`: that name already belongs to the
@@ -290,6 +291,16 @@ class MainWindowPlugin : public flutter::Plugin {
               EmitMaximized();
               return std::nullopt;
             }
+            case WM_CLOSE:
+              // Closing the manager HIDES it. The taskbar bars live in this
+              // process, so letting the runner destroy the window (and post
+              // WM_QUIT, `SetQuitOnClose(true)`) would take every bar down
+              // with it. This catches the title-bar button, Alt+F4 and the
+              // taskbar thumbnail's close alike. Quitting is the bar menu's
+              // "Exit"; reopening is "Manage Items..." or a second launch
+              // (windows/runner/main.cpp).
+              ShowWindow(top_level_, SW_HIDE);
+              return 0;
             case WM_DPICHANGED:
               // Nothing to do: every rect above is computed on demand from the
               // live DPI. Returning nullopt lets the runner's own
@@ -328,6 +339,13 @@ class MainWindowPlugin : public flutter::Plugin {
       result->Success();
     } else if (method == "close") {
       PostMessageW(top_level_, WM_CLOSE, 0, 0);
+      result->Success();
+    } else if (method == "show") {
+      // Undo a close (which hides) or a minimize, and bring the window
+      // forward. Called from a bar click, i.e. user input this process just
+      // received, so SetForegroundWindow is allowed.
+      ShowWindow(top_level_, IsIconic(top_level_) ? SW_RESTORE : SW_SHOW);
+      SetForegroundWindow(top_level_);
       result->Success();
     } else if (method == "isMaximized") {
       result->Success(EncodableValue(IsZoomed(top_level_) != FALSE));
@@ -374,10 +392,22 @@ class MainWindowPlugin : public flutter::Plugin {
           fclose(f);
         }
       }
+      // NEVER SHOW A HIDDEN DIALOG FROM HERE.
+      //
+      // The dialog window is created hidden and shows itself only after its
+      // spec is painted and its frame is applied (`DialogWindowScaffold`).
+      // Raising it from the manager at this point — which is the instant the
+      // spec was sent — put an empty 800x600 window in the top-left corner
+      // before the dialog had a size or content: the flash on the first open.
+      //
+      // A window that is already visible is a repeat click, and raising it is
+      // exactly what this call is for.
+      if (!IsWindowVisible(find.found)) {
+        result->Success(EncodableValue(false));
+        return;
+      }
       if (IsIconic(find.found)) {
         ShowWindow(find.found, SW_RESTORE);
-      } else {
-        ShowWindow(find.found, SW_SHOW);
       }
       // RAISE, THREE WAYS, IN ORDER OF RELIABILITY.
       //

@@ -1,16 +1,18 @@
-// Shared widgets for the project page's taskbar preview.
+// The stage strip: the pinned plugins, lifted onto a raised slab.
 //
-// The strip mimics the Windows taskbar: a dark bar with drag placeholders, one
-// segment per pinned item, and a decorative tray at the right end. It is drawn
-// with theme tokens, not the frozen bar palette, because it is chrome inside
-// the manager window rather than a real taskbar item.
+// This is the product's one signature object. The real taskbar is a row of
+// small native windows; here it is drawn at reading size on a #111113 slab so
+// the user can see what is on it, what it says, and drag the order.
+//
+// It is chrome inside the manager window, so it reads theme tokens rather
+// than the frozen bar palette.
 
 import 'package:flutter/material.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
 import '../../../app/l10n.dart';
 
-/// One segment in the taskbar preview.
+/// One segment in the stage strip.
 class TaskbarPreviewSegment {
   const TaskbarPreviewSegment({
     required this.key,
@@ -35,278 +37,235 @@ class TaskbarPreviewSegment {
   final VoidCallback onTap;
 }
 
-/// The full-width taskbar mock.
-class TaskbarPreviewBar extends StatelessWidget {
-  const TaskbarPreviewBar({
+/// Height of one segment on the slab.
+const double kStageSegmentHeight = 68;
+
+/// Widest a single segment may draw.
+const double kTaskbarSegmentMaxWidth = 320;
+
+/// The slab: segments on the left, the tray clock on the right.
+class TaskbarStageStrip extends StatelessWidget {
+  const TaskbarStageStrip({
     super.key,
     required this.segments,
     required this.onReorder,
-    required this.pinnedCount,
+    this.emptyHint,
   });
 
   final List<TaskbarPreviewSegment> segments;
 
-  /// Called with (oldIndex, newIndex) from the placeholder drag.
+  /// Called with (oldIndex, newIndex) when a segment is dropped on another.
   final void Function(int oldIndex, int newIndex) onReorder;
 
-  /// Number of pinned items, which is also the number of placeholders.
-  final int pinnedCount;
-
-  static const double height = 56;
+  /// Shown when nothing is pinned.
+  final String? emptyHint;
 
   @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
 
     return Container(
-      height: height,
-      padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.taskbar,
-        borderRadius: TpRadius.card,
+        color: theme.stageSlab,
+        borderRadius: TpRadius.slab,
+        boxShadow: theme.slabShadow,
+        border: Border.all(color: theme.stroke.card),
       ),
       child: Row(
         children: <Widget>[
-          _DragPlaceholders(
-            count: pinnedCount,
-            onReorder: onReorder,
-            color: theme.taskbarPlaceholder,
-          ),
-          const SizedBox(width: TpSpacing.s16),
-          // Flexible, not Expanded: the placeholders and the tray are fixed
-          // widths, so at a narrow window the plugin row must be allowed to
-          // shrink below its natural size instead of overflowing the strip.
-          Flexible(
-            child: Row(
-              // LEFT-aligned, directly after the drag placeholders.
-              //
-              // The placeholders at the start of the strip are the pinned
-              // items' drag handles, and they already mark where the row
-              // begins. Pushing the segments to the right edge (an earlier
-              // attempt at "match the real taskbar, which sits next to the
-              // tray") left a lone plugin floating against the clock with a
-              // wide black gap before it — it read as a missing segment, not
-              // as a taskbar. The tray stays pinned at the far right below,
-              // so the strip still has both ends anchored.
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: <Widget>[
-                for (int i = 0; i < segments.length; i++) ...<Widget>[
-                  if (i > 0)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: TpSpacing.s12,
-                      ),
-                      child: SizedBox(
-                        width: 1,
-                        height: 20,
-                        child: ColoredBox(color: theme.taskbarPlaceholder),
-                      ),
-                    ),
-                  // Flexible with a tight cap: the segment sizes to its
-                  // reading up to [kTaskbarSegmentMaxWidth], and may shrink
-                  // below that when the row is narrow. A bare ConstrainedBox
-                  // was measured at its natural width and overflowed the row
-                  // at 560 px windows; a bare Flexible let one segment claim
-                  // the whole strip and draw as a full-width black band.
-                  Flexible(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: kTaskbarSegmentMaxWidth,
-                      ),
-                      child: _Segment(segment: segments[i]),
+          if (segments.isEmpty)
+            Expanded(
+              child: SizedBox(
+                height: kStageSegmentHeight,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: TpSpacing.s8),
+                    child: Text(
+                      emptyHint ?? '',
+                      style: TpTypography.body.toTextStyle().copyWith(
+                            color: theme.taskbarLabel,
+                          ),
                     ),
                   ),
+                ),
+              ),
+            )
+          else
+            Flexible(
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < segments.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(width: 10),
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: kTaskbarSegmentMaxWidth,
+                        ),
+                        child: _StageSegment(
+                          segment: segments[i],
+                          position: i,
+                          onReorder: onReorder,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: TpSpacing.s12),
-          const _TrayHint(),
+          const SizedBox(width: TpSpacing.s16),
+          const _TrayClock(),
         ],
       ),
     );
   }
 }
 
-/// Widest a single pinned plugin may draw in the preview.
-///
-/// Real bars are 50–800 wide, but the preview is about arrangement, not
-/// resizing, and an unbounded segment swallows the strip. This keeps one
-/// plugin looking like a plugin next to the tray.
-const double kTaskbarSegmentMaxWidth = 260;
-
-/// Vertical room inside a segment: the 56 bar minus 6 above and 6 below.
-const double _kSegmentInnerHeight = TaskbarPreviewBar.height - 12;
-
-class _DragPlaceholders extends StatelessWidget {
-  const _DragPlaceholders({
-    required this.count,
+class _StageSegment extends StatelessWidget {
+  const _StageSegment({
+    required this.segment,
+    required this.position,
     required this.onReorder,
-    required this.color,
   });
 
-  final int count;
+  final TaskbarPreviewSegment segment;
+  final int position;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    if (count == 0) return const SizedBox.shrink();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (int i = 0; i < count; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: TpSpacing.s8),
-          DragTarget<int>(
-            onWillAcceptWithDetails: (DragTargetDetails<int> d) => d.data != i,
-            onAcceptWithDetails: (DragTargetDetails<int> d) =>
-                onReorder(d.data, i),
-            builder: (BuildContext context, _, __) => Draggable<int>(
-              data: i,
-              feedback: MouseRegion(
-                cursor: SystemMouseCursors.grabbing,
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: TpRadius.control,
-                    border: Border.all(color: color),
-                  ),
-                ),
-              ),
-              childWhenDragging: const SizedBox(width: 24, height: 24),
+    final Widget chip = _SegmentChip(segment: segment, elevated: false);
+
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (DragTargetDetails<int> d) => d.data != position,
+      onAcceptWithDetails: (DragTargetDetails<int> d) =>
+          onReorder(d.data, position),
+      builder: (BuildContext context, List<int?> candidates, _) {
+        final bool over = candidates.isNotEmpty;
+        return AnimatedOpacity(
+          duration: TpMotion.resolve(context, TpMotion.fast),
+          opacity: over ? 0.5 : 1,
+          child: Draggable<int>(
+            data: position,
+            feedback: Material(
+              color: Colors.transparent,
               child: MouseRegion(
-                cursor: SystemMouseCursors.grab,
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: TpRadius.control,
-                  ),
-                ),
+                cursor: SystemMouseCursors.grabbing,
+                child: _SegmentChip(segment: segment, elevated: true),
+              ),
+            ),
+            childWhenDragging: Opacity(opacity: 0.3, child: chip),
+            child: TpFocusRing(
+              radius: TpRadius.segment,
+              onTap: segment.onTap,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: chip,
               ),
             ),
           ),
-        ],
-      ],
+        );
+      },
     );
   }
 }
 
-class _Segment extends StatelessWidget {
-  const _Segment({required this.segment});
+/// One plugin on the slab: a 68 px chip in the segment colour.
+class _SegmentChip extends StatelessWidget {
+  const _SegmentChip({required this.segment, required this.elevated});
 
   final TaskbarPreviewSegment segment;
+
+  /// True for the drag feedback: lifted off the slab.
+  final bool elevated;
 
   @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
     final bool empty = segment.content.isEmpty;
 
-    // Each segment gets its own chip so the strip reads as a row of distinct
-    // items rather than as one long dark band with text scattered on it. This
-    // mirrors the real taskbar, where every pinned item is its own child
-    // window with its own edge.
-    final Widget body = empty
-        ? Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s8),
-              child: Text(
-                segment.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TpTypography.caption.toTextStyle(
-                  tabular: true,
-                ).copyWith(color: theme.taskbarMuted),
+    return Container(
+      height: kStageSegmentHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      decoration: BoxDecoration(
+        color: theme.stageSegment,
+        borderRadius: TpRadius.segment,
+        boxShadow: elevated ? theme.shadowDialog : null,
+      ),
+      alignment: Alignment.centerLeft,
+      child: empty
+          ? Text(
+              segment.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TpTypography.body.toTextStyle().copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: theme.text.tertiary,
+                  ),
+            )
+          // The strip is drawn at the bar's own 56 px height and scaled up
+          // through the text scaler, so the reading keeps the bar's exact
+          // layout instead of a lookalike built from other type.
+          : MediaQuery.withClampedTextScaling(
+              minScaleFactor: 1.4,
+              maxScaleFactor: 1.4,
+              child: SizedBox(
+                height: kStageSegmentHeight - 12,
+                child: TpBarPreviewStrip(
+                  content: segment.content,
+                  height: kStageSegmentHeight - 12,
+                  background: theme.stageSegment,
+                  showStateStrip: false,
+                ),
               ),
             ),
-          )
-        // No `width: double.infinity` here: the segment is already bounded by
-        // [kTaskbarSegmentMaxWidth] and by the row's remaining space. An
-        // infinite width inside a bounded parent makes the strip fight the
-        // constraint and overflow at narrow window sizes.
-        : SizedBox(
-            height: _kSegmentInnerHeight,
-            child: TpBarPreviewStrip(
-              content: segment.content,
-              height: _kSegmentInnerHeight,
-              background: theme.taskbarChip,
-              showStateStrip: false,
-            ),
-          );
+    );
+  }
+}
 
-    return TpFocusRing(
-      radius: TpRadius.control,
-      onTap: segment.onTap,
+/// The tray at the right end of the slab: time over date, 18 px.
+class _TrayClock extends StatelessWidget {
+  const _TrayClock();
+
+  @override
+  Widget build(BuildContext context) {
+    final TaskPinTheme theme = TaskPinTheme.of(context);
+    final DateTime now = DateTime.now();
+    final String time = '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}';
+    final String date = '${now.year}/${now.month.toString().padLeft(2, '0')}/'
+        '${now.day.toString().padLeft(2, '0')}';
+
+    return IgnorePointer(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: TpSpacing.s6),
-        // The segment is 44 high inside the 56 bar; clipping keeps a long
-        // reading from painting outside its own segment.
-        child: ClipRRect(
-          borderRadius: TpRadius.control,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.taskbarChip,
-              borderRadius: TpRadius.control,
-              border: Border.all(color: theme.taskbarChipBorder),
+        padding: const EdgeInsets.only(right: TpSpacing.s8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            Text(
+              time,
+              style: TpTypography.body.toTextStyle(tabular: true).copyWith(
+                    fontSize: 18,
+                    color: theme.taskbarMuted,
+                  ),
             ),
-            child: body,
-          ),
+            Text(
+              date,
+              style: TpTypography.caption.toTextStyle(tabular: true).copyWith(
+                    color: theme.taskbarLabel,
+                  ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// The decorative tray at the right end: network, volume, clock.
-class _TrayHint extends StatelessWidget {
-  const _TrayHint();
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final DateTime now = DateTime.now();
-    final String time =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    final String date =
-        '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
-
-    return IgnorePointer(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(TpIcons.network, size: 16, color: theme.taskbarMuted),
-          const SizedBox(width: TpSpacing.s12),
-          Icon(TpIcons.volume, size: 16, color: theme.taskbarMuted),
-          const SizedBox(width: TpSpacing.s12),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              Text(
-                time,
-                style: TpTypography.caption.toTextStyle(
-                  tabular: true,
-                ).copyWith(color: theme.taskbarMuted),
-              ),
-              Text(
-                date,
-                style: TpTypography.caption.toTextStyle(
-                  tabular: true,
-                ).copyWith(color: theme.taskbarMuted),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Caption row above the preview: title on the left, hint on the right.
+/// Caption row above the slab: what the strip is, and how to change it.
 class TaskbarPreviewHeader extends StatelessWidget {
   const TaskbarPreviewHeader({super.key, required this.count});
 
@@ -316,34 +275,28 @@ class TaskbarPreviewHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = context.l10n;
     final TaskPinTheme theme = TaskPinTheme.of(context);
-    // A fixed 20 px line. Without it the row collapsed to the 16 px text
-    // height, and the 8 px gap below left the two captions visually touching
-    // the strip — which reads as clipped text rather than as a caption.
-    return SizedBox(
-      height: 20,
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              l10n.projectsPreviewTitle(count),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TpTypography.caption
-                  .toTextStyle(tabular: true)
-                  .copyWith(color: theme.text.secondary),
-            ),
-          ),
-          const SizedBox(width: TpSpacing.s16),
-          Text(
-            l10n.projectsDragHint,
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            l10n.projectsPreviewTitle(count),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TpTypography.caption.toTextStyle().copyWith(
-                  color: theme.text.tertiary,
-                ),
+            style: TpTypography.caption
+                .toTextStyle(tabular: true)
+                .copyWith(color: theme.text.secondary),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: TpSpacing.s16),
+        Text(
+          l10n.projectsDragHint,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TpTypography.caption.toTextStyle().copyWith(
+                color: theme.text.tertiary,
+              ),
+        ),
+      ],
     );
   }
 }

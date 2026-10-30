@@ -81,3 +81,6 @@ ui_*.png
 taskbar_now.png
 taskpin_raise.log
 .tp_prev_session.txt
+
+# Impeccable design-process artefacts (mocks, review captures, caches).
+.impeccable/

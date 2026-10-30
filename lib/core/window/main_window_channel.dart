@@ -24,7 +24,8 @@
 //   taskpin/main_window          MethodChannel
 //     minimize() -> void
 //     toggleMaximize() -> void
-//     close() -> void
+//     close() -> void        hides the window; the process (and the bars) stay
+//     show() -> void         un-hides / restores and raises it
 //     isMaximized() -> bool
 //
 //   taskpin/main_window/events   EventChannel, Stream<bool>
@@ -61,9 +62,13 @@ abstract class MainWindowApi {
   /// Maximize if restored, restore if maximized.
   Future<void> toggleMaximize();
 
-  /// Close the manager window (which quits the app — the runner sets
-  /// `SetQuitOnClose(true)`).
+  /// Close the manager window. The native side HIDES it rather than
+  /// destroying it, because the taskbar bars live in the same process; see
+  /// [show] and the bar menu's "Exit".
   Future<void> close();
+
+  /// Show the manager window again after [close] or a minimize, and raise it.
+  Future<void> show();
 
   /// Whether the window is maximized.
   ///
@@ -124,6 +129,9 @@ class MethodChannelMainWindowApi implements MainWindowApi {
   Future<void> close() => _invoke('close');
 
   @override
+  Future<void> show() => _invoke('show');
+
+  @override
   Future<bool?> isMaximized() async {
     try {
       return await _channel.invokeMethod<bool>('isMaximized');
@@ -148,6 +156,8 @@ class NoopMainWindowApi implements MainWindowApi {
   Future<void> toggleMaximize() async {}
   @override
   Future<void> close() async {}
+  @override
+  Future<void> show() async {}
 
   /// Null = "not supported", so the title bar hides its buttons.
   @override
@@ -187,6 +197,8 @@ class RecordingMainWindowApi implements MainWindowApi {
   Future<void> toggleMaximize() async => calls.add('toggleMaximize');
   @override
   Future<void> close() async => calls.add('close');
+  @override
+  Future<void> show() async => calls.add('show');
 
   @override
   Future<bool?> isMaximized() async => supported ? maximized : null;

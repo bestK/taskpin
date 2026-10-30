@@ -19,10 +19,13 @@ void main() {
       expectSpec(TpTypography.bodyLarge, 18, 24, FontWeight.w400);
       expectSpec(TpTypography.subtitle, 20, 28, FontWeight.w600);
       expectSpec(TpTypography.title, 28, 36, FontWeight.w600);
+      expectSpec(TpTypography.figure, 30, 36, FontWeight.w600);
+      expectSpec(TpTypography.headline, 48, 56, FontWeight.w700);
+      expectSpec(TpTypography.display, 64, 72, FontWeight.w700);
       expectSpec(TpTypography.mono, 13, 20, FontWeight.w400);
     });
 
-    test('only the 7 roles exist', () {
+    test('the ramp has exactly these roles', () {
       expect(TpTypography.all.keys.toSet(), <String>{
         'caption',
         'body',
@@ -30,17 +33,34 @@ void main() {
         'bodyLarge',
         'subtitle',
         'title',
+        'figure',
+        'headline',
+        'display',
         'mono',
       });
     });
 
-    test('only weights 400 and 600 are used', () {
-      for (final TpTextStyleSpec s in TpTypography.all.values) {
-        expect(
-          s.weight == FontWeight.w400 || s.weight == FontWeight.w600,
-          isTrue,
-        );
+    test('700 is reserved for the two display roles', () {
+      for (final MapEntry<String, TpTextStyleSpec> e
+          in TpTypography.all.entries) {
+        if (e.key == 'headline' || e.key == 'display') {
+          expect(e.value.weight, FontWeight.w700, reason: e.key);
+        } else {
+          expect(
+            e.value.weight == FontWeight.w400 ||
+                e.value.weight == FontWeight.w600,
+            isTrue,
+            reason: e.key,
+          );
+        }
       }
+    });
+
+    test('display roles run tight; UI roles do not', () {
+      expect(TpTypography.display.tracking, -0.03);
+      expect(TpTypography.headline.tracking, -0.03);
+      expect(TpTypography.body.tracking, 0);
+      expect(TpTypography.display.toTextStyle().letterSpacing, closeTo(-1.92, 0.001));
     });
 
     test('no size is below 12', () {

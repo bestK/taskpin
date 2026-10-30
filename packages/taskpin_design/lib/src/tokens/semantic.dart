@@ -115,7 +115,8 @@ class TpTextColors {
   final Color disabled;
 }
 
-/// Accent colours. One accent: Windows default blue.
+/// Accent colours. The primary action is a pill in the text colour (white on
+/// the black stage, ink on the light one); [text] is the link blue.
 class TpAccentColors {
   const TpAccentColors({
     required this.fill,
@@ -298,8 +299,8 @@ class TpSemantic {
     ),
     smoke: TpPrimitives.smoke,
     focusInner: TpPrimitives.darkFocusInner,
-    navActive: TpPrimitives.taskbar,
-    navActiveText: TpPrimitives.white,
+    navActive: TpPrimitives.darkBgCard,
+    navActiveText: TpPrimitives.darkTextPrimary,
     taskbar: TpPrimitives.taskbar,
     taskbarLabel: TpPrimitives.taskbarLabel,
     taskbarMuted: TpPrimitives.taskbarMuted,

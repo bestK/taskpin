@@ -128,11 +128,11 @@ void main() {
       expect(find.text('42'), findsOneWidget);
     });
 
-    testWidgets('NavRail renders its items immediately',
+    testWidgets('TopNav renders its items immediately',
         (WidgetTester tester) async {
       await pumpReduced(
         tester,
-        TpNavRail(
+        TpTopNav(
           destinations: <TpNavDestination>[
             TpNavDestination(
               label: 'Signals',

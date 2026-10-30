@@ -35,6 +35,7 @@ import '../../core/bar/bar_source.dart'
     show ResolvedBarContent, resolveContent;
 import '../../core/config/config_providers.dart';
 import '../../core/config/config_schema.dart';
+
 import '../../core/engine/engine_provider.dart';
 import '../../core/engine/engine_run.dart';
 import '../../core/net/http_providers.dart';
@@ -44,6 +45,7 @@ import 'data/param_merge.dart';
 import 'data/req_headers_codec.dart';
 import 'widgets/config_color_field.dart';
 import 'widgets/item_labels.dart';
+import 'widgets/script_open_card.dart';
 
 /// What a click on the taskbar item does.
 enum ClickMode { none, link, popup }
@@ -280,6 +282,7 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
     final PinItem item = config.items[widget.index];
 
     return AppPage(
+      stage: const TpStageBackdrop(),
       breadcrumb: <TpBreadcrumbSegment>[
         TpBreadcrumbSegment(
           label: l10n.navProjects,
@@ -510,6 +513,7 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
             ),
           ),
         ),
+        ScriptOpenCard(path: item.luaPath.trim()),
       ];
     } else {
       cards = <Widget>[

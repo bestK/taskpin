@@ -24,20 +24,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:taskpin_design/taskpin_design.dart';
-import 'package:taskpin_engine/taskpin_engine.dart' as engine;
 
+import 'app/manager_overrides.dart';
 import 'app/shell/app_shell.dart';
 import 'app/shell/routes.dart';
 import 'app/startup.dart';
 import 'app/windows/dialog_window.dart';
 import 'core/app/single_instance.dart';
-import 'core/bar/bar_controller.dart';
-import 'core/config/config_providers.dart';
 import 'core/config/config_repository.dart';
 import 'core/config/config_schema.dart';
+import 'core/window/main_window_channel.dart';
 import 'features/dialogs/dialog_action.dart';
-import 'features/dialogs/dialog_spec.dart' show DialogSpec;
-import 'features/dialogs/dialog_spec_bridge.dart';
 import 'l10n/app_localizations.dart';
 
 import 'dart:async';
@@ -119,65 +116,37 @@ Future<void> _managerMain(List<String> args) async {
 
     runApp(
       ProviderScope(
-        overrides: <Override>[
-          configRepositoryProvider.overrideWithValue(repository),
-          initialConfigProvider.overrideWithValue(config),
-          // The bar controller's host seams. It cannot open a URL, open a
-          // dialog window or quit the process itself without dragging
-          // `dart:io`, the multi-window plugin and the router into a provider
-          // that tests must be able to construct, so the three effects are
-          // injected here instead.
-          //
-          // Exit mirrors the C layer: the right-click menu's Exit ends the
-          // process (`src/bar_window.c` -> `PostQuitMessage`). The single
-          // instance mutex is released by the OS on exit, so no cleanup is
-          // needed.
-          exitRequestProvider.overrideWithValue(() => exit(0)),
-
-          // Script dialogs open in their own top-level window (Phase C).
-          //
-          // WHY NOT THE INLINE PANEL. A panel over the manager window paints
-          // instantly, but it cannot leave the window and it disappears when
-          // the manager is minimised — which is wrong for the scripts that use
-          // a dialog as a desktop HUD (a clock, a monitor readout). A dialog is
-          // also meant to be independent: it survives navigation and floats
-          // over other applications.
-          //
-          // THE COST, AND HOW IT IS PAID. A second window means a second
-          // Flutter engine and Dart isolate; the FIRST open pays for that
-          // (~0.5-2 s). After that `DialogWindowHost` keeps the window (close
-          // hides it, it does not destroy it), so every later open is a
-          // `setSpec` on an engine that is already running.
-          //
-          // It is deliberately NOT warmed at startup: that would hold the
-          // second engine resident (~120 MB measured) for the whole session,
-          // and most users open a dialog rarely.
-          dialogOpenerProvider.overrideWithValue(
-            (engine.DialogSpec spec, String luaPath) {
-              final DialogSpec? uiSpec = uiSpecFromEngine(spec);
-              if (uiSpec == null) return;
-              unawaited(dialogHost.open(uiSpec, luaPath: luaPath));
-            },
-          ),
-
-          // Bar clicks that carry a URL open it in the user's browser. Same
-          // runner the dialog window uses for its buttons and table rows.
-          urlOpenerProvider.overrideWithValue(
-            const ProcessDialogActionRunner().openUrl,
-          ),
-        ],
+        overrides: managerOverrides(
+          repository: repository,
+          config: config,
+          dialogHost: dialogHost,
+          exitRequest: () => exit(0),
+          // Closing the manager only hides it (the bars must keep running),
+          // so "Manage Items..." / a bar double-click brings it back.
+          managerRaiser: () => unawaited(MethodChannelMainWindowApi().show()),
+          urlOpener: const ProcessDialogActionRunner().openUrl,
+        ),
         child: const TaskPinApp(),
       ),
     );
     _bootLog('runApp completed');
 
-    // The dialog window is NOT warmed at startup.
+    // Warm the dialog window a moment after the first frame.
     //
-    // Warming means a second Flutter engine and Dart isolate resident for the
-    // whole session, measured at ~120 MB, for a window most users open rarely.
-    // The cost is paid once instead: the first click creates the window (~0.5-2
-    // s), and `DialogWindowHost` keeps it afterwards, so every later open is a
-    // `setSpec` on an engine that is already running.
+    // A cold dialog costs ~3 s (native window + a second Flutter engine + Dart
+    // isolate) and all of it lands on the user's click, which reads as "the
+    // click did nothing". Warming moves that cost to idle time after startup:
+    // the first click then only sends the spec and shows the window.
+    //
+    // Deliberately NOT at launch: a second engine is ~120 MB resident, and
+    // startup is the one moment the user is watching the window open. Two
+    // seconds later nothing is waiting on us.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(Future<void>.delayed(
+        const Duration(seconds: 2),
+        dialogHost.warm,
+      ));
+    });
   } catch (e, st) {
     _bootLog('STARTUP EXCEPTION: $e\n$st');
   }

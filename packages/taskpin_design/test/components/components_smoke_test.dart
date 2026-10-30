@@ -34,11 +34,11 @@ Future<void> pumpBoth(
 
 void main() {
   group('shell', () {
-    testWidgets('NavRail renders destinations and badges',
+    testWidgets('TopNav renders destinations and the error count',
         (WidgetTester tester) async {
       await pumpBoth(
         tester,
-        () => TpNavRail(
+        () => TpTopNav(
           destinations: <TpNavDestination>[
             TpNavDestination(
               label: 'Signals',
@@ -49,7 +49,13 @@ void main() {
               label: 'Market',
               icon: TpIcons.market,
               route: '/market',
-              badgeCount: 3,
+            ),
+            TpNavDestination(
+              label: 'Logs',
+              icon: TpIcons.diagnostics,
+              route: '/logs',
+              badgeCount: 2,
+              badgeCritical: true,
             ),
           ],
           selectedRoute: '/market',
@@ -58,43 +64,8 @@ void main() {
       );
 
       expect(find.text('Signals'), findsOneWidget);
-      expect(find.text('3'), findsOneWidget);
-    });
-
-    testWidgets('NavRail collapsed hides labels', (WidgetTester tester) async {
-      await pumpBoth(
-        tester,
-        () => TpNavRail(
-          destinations: <TpNavDestination>[
-            TpNavDestination(
-              label: 'Signals',
-              icon: TpIcons.signals,
-              route: '/signals',
-            ),
-          ],
-          selectedRoute: '/signals',
-          collapsed: true,
-          onSelect: (_) {},
-        ),
-      );
-
-      expect(find.text('Signals'), findsNothing);
-    });
-
-    testWidgets('AppShell composes rail and content',
-        (WidgetTester tester) async {
-      await pumpBoth(
-        tester,
-        () => SizedBox(
-          height: 400,
-          child: TpAppShell(
-            rail: const SizedBox(width: 60),
-            child: const Text('content'),
-          ),
-        ),
-      );
-
-      expect(find.text('content'), findsOneWidget);
+      expect(find.text('Market'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
     });
 
     testWidgets('PageHeader renders title, description and actions',

@@ -24,8 +24,8 @@ void main() {
     });
 
     test('focus inner differs per theme', () {
-      expect(TaskPinTheme.dark().focusInner, const Color(0xB3000000));
-      expect(TaskPinTheme.light().focusInner, const Color(0xB3FFFFFF));
+      expect(TaskPinTheme.dark().focusInner, const Color(0xFF000000));
+      expect(TaskPinTheme.light().focusInner, const Color(0xFFF5F5F7));
     });
 
     test('bar palette and platform are carried through', () {
@@ -145,8 +145,8 @@ void main() {
     });
 
     test('taskbarPreview follows the brightness', () {
-      expect(TaskPinTheme.dark().taskbarPreview, const Color(0xFF1C1C1C));
-      expect(TaskPinTheme.light().taskbarPreview, const Color(0xFFEEEEEE));
+      expect(TaskPinTheme.dark().taskbarPreview, const Color(0xFF111113));
+      expect(TaskPinTheme.light().taskbarPreview, const Color(0xFFF5F5F7));
     });
 
     test('metricStyle is mono with tabular figures', () {

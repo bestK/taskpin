@@ -113,9 +113,13 @@ void main() {
         expect(_contrast(c.accent.onFill, fill), greaterThanOrEqualTo(3.0));
       });
 
-      test('focus inner ring differs from the window', () {
+      test('focus inner ring matches the window so the outer ring floats', () {
+        // The ring is two lines: an inner one in the window colour (a gap)
+        // and an outer one in the text colour. On a black ground the inner
+        // line is black; what has to contrast is the outer one.
         final Color bg = c.bg.window;
-        expect(_over(c.focusInner, bg), isNot(bg));
+        expect(_over(c.focusInner, bg), bg);
+        expect(c.focusOuter, c.text.primary);
       });
     });
   }
@@ -125,11 +129,13 @@ void main() {
     expect(TpSemantic.dark.accent.fill, isNot(TpSemantic.light.accent.fill));
   });
 
-  test('both themes use white text on the accent fill', () {
-    expect(TpSemantic.dark.accent.onFill, const Color(0xFFFFFFFF));
-    expect(TpSemantic.dark.accent.fill, const Color(0xFF4C8DFF));
-    expect(TpSemantic.light.accent.onFill, const Color(0xFFFFFFFF));
-    expect(TpSemantic.light.accent.fill, const Color(0xFF2C5FA8));
+  test('the primary action is the text colour with ink on it', () {
+    // The one button a page is for is a pill in the ink colour: white on the
+    // black stage, black ink on the light one. The accent is a link blue.
+    expect(TpSemantic.dark.accent.fill, TpSemantic.dark.text.primary);
+    expect(TpSemantic.dark.accent.onFill, TpPrimitives.black);
+    expect(TpSemantic.light.accent.fill, TpSemantic.light.text.primary);
+    expect(TpSemantic.light.accent.onFill, TpPrimitives.white);
   });
 
   test('of() resolves by brightness', () {

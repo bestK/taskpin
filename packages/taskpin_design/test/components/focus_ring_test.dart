@@ -211,7 +211,7 @@ void main() {
             ],
             onChanged: (_) {},
           ),
-      'TpNavRail': () => TpNavRail(
+      'TpTopNav': () => TpTopNav(
             destinations: <TpNavDestination>[
               TpNavDestination(
                 label: 'Signals',

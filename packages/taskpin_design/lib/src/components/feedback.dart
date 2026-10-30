@@ -15,10 +15,10 @@ import 'ui.dart';
 
 /// Button variants (docs/VISUAL_SPEC.md §6.2).
 enum TpButtonVariant {
-  /// The one action a screen is for. Accent fill, no border.
+  /// The one action a screen is for. A pill in the text colour.
   primary,
 
-  /// Default button. Control fill with a 1 px outline.
+  /// Default button. A raised near-black pill, no outline.
   standard,
 
   /// Borderless. Accent text, subtle hover.
@@ -109,7 +109,9 @@ class _TpButtonState extends State<TpButton> {
         Flexible(
           child: Text(
             widget.label,
-            style: TpTypography.body
+            style: (widget.variant == TpButtonVariant.primary
+                    ? TpTypography.bodyStrong
+                    : TpTypography.body)
                 .toTextStyle()
                 .copyWith(color: skin.foreground),
             overflow: TextOverflow.ellipsis,
@@ -133,11 +135,13 @@ class _TpButtonState extends State<TpButton> {
       width: isIcon ? TpControlSize.iconButton : null,
       padding: isIcon
           ? EdgeInsets.zero
-          : const EdgeInsets.symmetric(horizontal: TpSpacing.s12),
+          : const EdgeInsets.symmetric(horizontal: TpSpacing.s16),
       alignment: Alignment.center,
+      // Every button is a pill: on the stage the shape alone separates an
+      // action from a field (fields keep the 8 px control radius).
       decoration: BoxDecoration(
         color: skin.background,
-        borderRadius: TpRadius.control,
+        borderRadius: TpRadius.chip,
         border: skin.border,
       ),
       child: content,
@@ -158,7 +162,7 @@ class _TpButtonState extends State<TpButton> {
         onPointerUp: interactive ? (_) => _setPressed(false) : null,
         onPointerCancel: interactive ? (_) => _setPressed(false) : null,
         child: TpFocusRing(
-          radius: TpRadius.control,
+          radius: TpRadius.chip,
           enabled: interactive,
           onTap: interactive ? widget.onPressed : null,
           child: body,
@@ -208,7 +212,7 @@ class _TpButtonSkin {
           return _TpButtonSkin(
             background: t.control.fill,
             foreground: t.text.disabled,
-            border: Border.all(color: t.control.stroke),
+            border: null,
           );
         case TpButtonVariant.text:
           return _TpButtonSkin(
@@ -238,8 +242,7 @@ class _TpButtonSkin {
         return _TpButtonSkin(
           background: bg,
           foreground: t.text.primary,
-          border: Border.all(color: t.control.stroke),
-          bottomEdge: t.control.strokeBottom,
+          border: null,
         );
       case TpButtonVariant.text:
         return _TpButtonSkin(

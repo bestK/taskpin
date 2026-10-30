@@ -20,6 +20,15 @@ class TpMotion {
   /// Page transitions and dialogs.
   static const Duration slow = Duration(milliseconds: 250);
 
+  /// Stage entrance: a block rising into place.
+  static const Duration entrance = Duration(milliseconds: 900);
+
+  /// Delay between consecutive rows in a staggered entrance.
+  static const Duration stagger = Duration(milliseconds: 60);
+
+  /// The spotlight's one slow sweep across the stage on open.
+  static const Duration drift = Duration(milliseconds: 9000);
+
   /// Colour changes use a linear curve.
   static const Curve linear = Curves.linear;
 
@@ -28,6 +37,12 @@ class TpMotion {
 
   /// Page transitions and dialogs. Same curve as [standard].
   static const Curve decelerate = Cubic(0.0, 0.0, 0.0, 1.0);
+
+  /// Stage entrance: fast start, long soft landing. CSS cubic-bezier(.2,.8,.2,1).
+  static const Curve stage = Cubic(0.2, 0.8, 0.2, 1.0);
+
+  /// Toggle knob: overshoots and settles. CSS cubic-bezier(.3,1.4,.5,1).
+  static const Curve spring = Cubic(0.3, 1.4, 0.5, 1.0);
 
   /// Whether the platform has asked for reduced motion.
   static bool reduced(BuildContext context) =>

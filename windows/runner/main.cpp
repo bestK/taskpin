@@ -1,11 +1,13 @@
 // TaskPin — Windows runner.
 //
-// This is the stock Flutter 3.47.7 runner with two local changes:
+// This is the stock Flutter 3.47.7 runner with three local changes:
 //
 //   1. The window title is "TaskPin" rather than the project name.
 //   2. The manager window is sized for the management UI (1200x760) instead of
 //      the template's 1280x720. The minimum size (800x560) is enforced in
 //      win32_window.cpp.
+//   3. A second launch shows the running instance's (possibly hidden) manager
+//      window and exits.
 //
 // IMPORTANT: this window is ONLY the manager UI. The taskbar bars are NOT
 // children of it. Each pinned item is a separate native WS_POPUP window created
@@ -27,6 +29,17 @@
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  // A second launch while TaskPin is running: closing the manager only hides
+  // it (the bars keep running in that process), so show the existing window
+  // instead of starting a second engine that the Dart single-instance guard
+  // would just exit. Only the manager uses this window class; dialogs are
+  // `desktop_multi_window` windows with their own.
+  if (HWND existing = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"TaskPin")) {
+    ::ShowWindow(existing, ::IsIconic(existing) ? SW_RESTORE : SW_SHOW);
+    ::SetForegroundWindow(existing);
+    return EXIT_SUCCESS;
+  }
+
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {

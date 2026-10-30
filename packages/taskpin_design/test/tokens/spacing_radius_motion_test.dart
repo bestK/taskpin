@@ -46,25 +46,31 @@ void main() {
       expect(TpControlSize.navWidth, 240);
       expect(TpControlSize.navCompactWidth, 48);
       expect(TpControlSize.titleBar, 32);
-      expect(TpControlSize.switchWidth, 40);
-      expect(TpControlSize.switchHeight, 20);
+      expect(TpControlSize.switchWidth, 46);
+      expect(TpControlSize.switchHeight, 26);
+      expect(TpControlSize.switchKnob, 20);
+      expect(TpControlSize.topNav, 52);
     });
   });
 
   group('radius', () {
     test('values follow spec §3.3', () {
-      expect(TpRadius.controlValue, 4);
-      expect(TpRadius.cardValue, 8);
-      expect(TpRadius.overlayValue, 8);
+      expect(TpRadius.controlValue, 8);
+      expect(TpRadius.cardValue, 16);
+      expect(TpRadius.overlayValue, 16);
       expect(TpRadius.windowValue, 8);
+      expect(TpRadius.slabValue, 16);
+      expect(TpRadius.segmentValue, 11);
       expect(TpRadius.pill, 999);
     });
 
     test('BorderRadius forms use the same values', () {
       expect(TpRadius.control,
-          const BorderRadius.all(Radius.circular(4)));
-      expect(TpRadius.card, const BorderRadius.all(Radius.circular(8)));
-      expect(TpRadius.overlay, const BorderRadius.all(Radius.circular(8)));
+          const BorderRadius.all(Radius.circular(8)));
+      expect(TpRadius.card, const BorderRadius.all(Radius.circular(16)));
+      expect(TpRadius.overlay, const BorderRadius.all(Radius.circular(16)));
+      expect(TpRadius.slab, const BorderRadius.all(Radius.circular(16)));
+      expect(TpRadius.segment, const BorderRadius.all(Radius.circular(11)));
       expect(TpRadius.none, BorderRadius.zero);
     });
 

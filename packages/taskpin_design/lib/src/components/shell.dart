@@ -8,6 +8,7 @@ import 'package:flutter/services.dart'
     show LogicalKeyboardKey, SystemMouseCursors;
 
 import '../theme/taskpin_theme.dart';
+import '../tokens/motion.dart';
 import '../tokens/radius.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -39,296 +40,334 @@ class TpNavDestination {
   final bool badgeCritical;
 }
 
-/// The navigation rail.
+/// The centered top navigation of the stage world.
 ///
-/// No background and no divider; it sits on the window ground. Items are 40
-/// high, radius 8, 16 px icon and body text, 12 px horizontal padding.
-/// Selection is a `nav/active` fill with white text and icon; hover is
-/// `subtle/hover`. There is no indicator bar.
+/// [TpControlSize.topNav] high, on the window ground with a hairline under
+/// it. Destinations are plain 13 px words centred in the bar, the way a
+/// product site names its sections: the selected one is `text.primary` at
+/// 600, the rest `text.secondary`, and a 2 px pill under the selected word
+/// grows in when the route changes. A count follows a label in the critical
+/// colour when [TpNavDestination.badgeCritical] is set; plain counts are not
+/// shown here (the page itself says how many projects there are).
 ///
-/// [destinations] are listed from the top. [footerDestinations] are pinned to
-/// the bottom above the collapse toggle (for Settings).
-///
-/// Sizing: in a bounded height the destination list takes the slack and the
-/// footer stays at the bottom. In an unbounded height the list shrink-wraps.
-class TpNavRail extends StatelessWidget {
-  const TpNavRail({
+/// [leading] and [trailing] sit at the two ends and do not push the centre.
+class TpTopNav extends StatelessWidget {
+  const TpTopNav({
     super.key,
     required this.destinations,
     required this.selectedRoute,
     required this.onSelect,
-    this.footerDestinations = const <TpNavDestination>[],
-    this.collapsed = false,
-    this.onToggleCollapsed,
-    this.header,
-    this.footer,
+    this.leading,
+    this.trailing,
   });
 
   final List<TpNavDestination> destinations;
-
-  /// Destinations pinned to the bottom of the rail.
-  final List<TpNavDestination> footerDestinations;
-
   final String selectedRoute;
   final ValueChanged<String> onSelect;
-  final bool collapsed;
-  final VoidCallback? onToggleCollapsed;
-
-  /// Optional block at the top.
-  final Widget? header;
-
-  /// Optional widget pinned at the bottom, below [footerDestinations].
-  final Widget? footer;
+  final Widget? leading;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
-
-    final double width = collapsed
-        ? TpControlSize.navCompactWidth
-        : TpControlSize.navWidth;
-
-    final double listInset = collapsed ? TpSpacing.s4 : TpSpacing.s12;
-
-    return SizedBox(
-      width: width,
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool boundedHeight = constraints.hasBoundedHeight;
-
-          final Widget list = ListView(
-            shrinkWrap: !boundedHeight,
-            physics:
-                boundedHeight ? null : const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(horizontal: listInset),
-            children: <Widget>[
-              for (final TpNavDestination d in destinations)
-                _TpNavItem(
-                  destination: d,
-                  selected: d.route == selectedRoute,
-                  collapsed: collapsed,
-                  onTap: () => onSelect(d.route),
-                ),
-            ],
-          );
-
-          final Widget footerList = Padding(
-            padding: EdgeInsets.symmetric(horizontal: listInset),
-            child: Column(
+    return Container(
+      height: TpControlSize.topNav,
+      foregroundDecoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: theme.stroke.divider)),
+      ),
+      child: Stack(
+        children: <Widget>[
+          Center(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (final TpNavDestination d in footerDestinations)
-                  _TpNavItem(
-                    destination: d,
-                    selected: d.route == selectedRoute,
-                    collapsed: collapsed,
-                    onTap: () => onSelect(d.route),
+                for (int i = 0; i < destinations.length; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(width: TpSpacing.s8),
+                  _TpTopNavItem(
+                    destination: destinations[i],
+                    selected: destinations[i].route == selectedRoute,
+                    onTap: () => onSelect(destinations[i].route),
                   ),
+                ],
               ],
             ),
-          );
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: boundedHeight ? MainAxisSize.max : MainAxisSize.min,
-            children: <Widget>[
-              if (header != null)
-                Padding(
-                  padding:
-                      EdgeInsets.all(collapsed ? TpSpacing.s4 : TpSpacing.s12),
-                  child: header,
-                ),
-              if (boundedHeight) Expanded(child: list) else list,
-              if (footerDestinations.isNotEmpty) footerList,
-              if (footer != null) footer!,
-              if (onToggleCollapsed != null)
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: listInset),
-                  child: TpFocusRing(
-                    radius: TpRadius.control,
-                    onTap: onToggleCollapsed,
-                    child: SizedBox(
-                      height: TpControlSize.navItem - 4,
-                      child: Center(
-                        child: Icon(
-                          collapsed ? TpIcons.expand : TpIcons.collapse,
-                          size: 16,
-                          color: theme.text.tertiary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: TpSpacing.s8),
-            ],
-          );
-        },
+          ),
+          if (leading != null)
+            Positioned(
+              left: TpSpacing.s24,
+              top: 0,
+              bottom: 0,
+              child: Center(child: leading),
+            ),
+          if (trailing != null)
+            Positioned(
+              right: TpSpacing.s24,
+              top: 0,
+              bottom: 0,
+              child: Center(child: trailing),
+            ),
+        ],
       ),
     );
   }
 }
 
-class _TpNavItem extends StatelessWidget {
-  const _TpNavItem({
+class _TpTopNavItem extends StatelessWidget {
+  const _TpTopNavItem({
     required this.destination,
     required this.selected,
-    required this.collapsed,
     required this.onTap,
   });
 
   final TpNavDestination destination;
   final bool selected;
-  final bool collapsed;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
     final int? count = destination.badgeCount;
-    final bool showBadge = !collapsed && count != null && count > 0;
+    final bool showBadge =
+        destination.badgeCritical && count != null && count > 0;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: TpSpacing.s2),
-      child: TpHoverBuilder(
-        builder: (BuildContext context, bool hovered) {
-          final Color bg = selected
-              ? theme.navActive
-              : (hovered ? theme.subtle.hover : Colors.transparent);
-          final Color fg =
-              selected ? theme.navActiveText : theme.text.secondary;
+    return TpHoverBuilder(
+      builder: (BuildContext context, bool hovered) {
+        final Color fg =
+            selected || hovered ? theme.text.primary : theme.text.secondary;
+        return TpFocusRing(
+          radius: TpRadius.chip,
+          onTap: onTap,
+          child: SizedBox(
+            height: TpControlSize.topNav,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s12),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const SizedBox(height: TpSpacing.s6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        destination.label,
+                        style: TpTypography.body.toTextStyle().copyWith(
+                              fontSize: 13,
+                              color: fg,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                      ),
+                      if (showBadge) ...<Widget>[
+                        const SizedBox(width: TpSpacing.s6),
+                        Text(
+                          '$count',
+                          style: TpTypography.caption
+                              .toTextStyle(tabular: true)
+                              .copyWith(color: theme.status.critical),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: TpSpacing.s4),
+                  AnimatedContainer(
+                    duration: TpMotion.resolve(context, TpMotion.slow),
+                    curve: TpMotion.resolveCurve(context, TpMotion.stage),
+                    width: selected ? 16 : 0,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: theme.text.primary,
+                      borderRadius: TpRadius.chip,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
-          return TpFocusRing(
-            radius: TpRadius.card,
-            onTap: onTap,
-            child: SizedBox(
-              height: TpControlSize.navItem,
+/// The stage behind a page's opening: a soft radial glow on the window
+/// ground, and a spotlight that drifts slowly from side to side.
+///
+/// [animate] false holds the spotlight still, and so does reduced motion. The
+/// drift repeats forever, so widget tests (which wait for the frame to
+/// settle) run with reduced motion or pass false.
+class TpStageBackdrop extends StatefulWidget {
+  const TpStageBackdrop({super.key, this.animate = true});
+
+  final bool animate;
+
+  @override
+  State<TpStageBackdrop> createState() => _TpStageBackdropState();
+}
+
+class _TpStageBackdropState extends State<TpStageBackdrop>
+    with SingleTickerProviderStateMixin {
+  /// One slow sweep from the left edge to the right, then still. A keynote
+  /// spotlight settles; it does not loop, and a window that repaints forever
+  /// is a window that never lets the frame settle (tests included).
+  late final AnimationController _drift =
+      AnimationController(vsync: this, duration: TpMotion.drift, value: 0);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(TpStageBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    final bool run = widget.animate && !TpMotion.reduced(context);
+    if (!run) {
+      if (_drift.isAnimating) _drift.stop();
+      _drift.value = 0.5;
+    } else if (_drift.isDismissed) {
+      _drift.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _drift.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TaskPinTheme theme = TaskPinTheme.of(context);
+    return IgnorePointer(
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0, 0.24),
+                radius: 0.9,
+                colors: <Color>[
+                  theme.stageGlow,
+                  theme.stageMid,
+                  theme.bg.window,
+                ],
+                stops: const <double>[0, 0.62, 1],
+              ),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: _drift,
+            builder: (BuildContext context, Widget? child) {
+              final double t =
+                  Curves.easeInOut.transform(_drift.value) * 2 - 1;
+              return Align(
+                alignment: Alignment(t * 0.16, -1.4),
+                child: child,
+              );
+            },
+            child: FractionallySizedBox(
+              widthFactor: 0.7,
+              heightFactor: 1.3,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: bg,
-                  borderRadius: TpRadius.card,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: TpSpacing.s12,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: collapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.start,
-                    children: <Widget>[
-                      Icon(destination.icon, size: 16, color: fg),
-                      if (!collapsed) ...<Widget>[
-                        const SizedBox(width: TpSpacing.s12),
-                        Expanded(
-                          child: Text(
-                            destination.label,
-                            style: TpTypography.body
-                                .toTextStyle()
-                                .copyWith(color: fg),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (showBadge)
-                          _TpNavBadge(
-                            count: count,
-                            critical: destination.badgeCritical,
-                            selected: selected,
-                          ),
-                      ],
+                  gradient: RadialGradient(
+                    colors: <Color>[
+                      theme.spotlight,
+                      theme.spotlight.withAlpha(0),
                     ],
                   ),
                 ),
               ),
             ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _TpNavBadge extends StatelessWidget {
-  const _TpNavBadge({
-    required this.count,
-    required this.critical,
-    required this.selected,
-  });
-
-  final int count;
-  final bool critical;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    if (critical) {
-      return Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: TpSpacing.s6,
-          vertical: TpSpacing.s2,
-        ),
-        decoration: BoxDecoration(
-          color: theme.status.critical,
-          borderRadius: TpRadius.chip,
-        ),
-        child: Text(
-          '$count',
-          style: TpTypography.caption.toTextStyle(tabular: true).copyWith(
-                color: theme.accent.onFill,
-              ),
-        ),
-      );
-    }
-    return Text(
-      '$count',
-      style: TpTypography.caption.toTextStyle(tabular: true).copyWith(
-            color: selected ? theme.navActiveText : theme.text.tertiary,
           ),
-    );
-  }
-}
-
-/// The management window frame: rail on the left, content on the right.
-class TpAppShell extends StatelessWidget {
-  const TpAppShell({
-    super.key,
-    required this.rail,
-    required this.child,
-    this.overlay,
-  });
-
-  /// The [TpNavRail].
-  final Widget rail;
-
-  /// The routed page.
-  final Widget child;
-
-  /// Anything that floats above everything: toast host, dialogs.
-  final Widget? overlay;
-
-  @override
-  Widget build(BuildContext context) {
-    final TaskPinTheme theme = TaskPinTheme.of(context);
-    final Widget shell = ColoredBox(
-      color: theme.bg.window,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          rail,
-          Expanded(child: child),
         ],
       ),
     );
+  }
+}
 
-    if (overlay == null) {
-      return shell;
+/// Fades a block in while it rises into place, after [delay].
+///
+/// One controller covers delay plus travel, with the delay expressed as an
+/// [Interval], so there is no timer left pending. [lift] adds the slab's
+/// larger rise and a 0.96 to 1 scale. Reduced motion shows the block at rest.
+class TpEntrance extends StatefulWidget {
+  const TpEntrance({
+    super.key,
+    required this.child,
+    this.delay = Duration.zero,
+    this.duration = TpMotion.entrance,
+    this.lift = false,
+  });
+
+  final Widget child;
+  final Duration delay;
+  final Duration duration;
+  final bool lift;
+
+  @override
+  State<TpEntrance> createState() => _TpEntranceState();
+}
+
+class _TpEntranceState extends State<TpEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: widget.delay + widget.duration,
+  );
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _c,
+    curve: Interval(
+      widget.delay.inMicroseconds /
+          (widget.delay + widget.duration).inMicroseconds,
+      1,
+      curve: TpMotion.stage,
+    ),
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (TpMotion.reduced(context)) {
+      _c.value = 1;
+    } else {
+      _c.forward();
     }
-    return Stack(
-      children: <Widget>[
-        shell,
-        overlay!,
-      ],
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double rise = widget.lift ? 40 : 18;
+    return AnimatedBuilder(
+      animation: _t,
+      builder: (BuildContext context, Widget? child) {
+        final double v = _t.value;
+        Widget out = Transform.translate(
+          offset: Offset(0, (1 - v) * rise),
+          child: child,
+        );
+        if (widget.lift) {
+          out = Transform.scale(scale: 0.96 + 0.04 * v, child: out);
+        }
+        return Opacity(opacity: v.clamp(0.0, 1.0), child: out);
+      },
+      child: widget.child,
     );
   }
 }
@@ -344,9 +383,16 @@ class TpBreadcrumbSegment {
 /// Title-sized breadcrumb, for example "Projects > Rich". Earlier segments
 /// are tappable text.secondary. The last segment is text.primary.
 class TpBreadcrumb extends StatelessWidget {
-  const TpBreadcrumb({super.key, required this.segments});
+  const TpBreadcrumb({
+    super.key,
+    required this.segments,
+    this.role = TpTypography.title,
+  });
 
   final List<TpBreadcrumbSegment> segments;
+
+  /// Type role for every segment. Second-level pages pass `headline`.
+  final TpTextStyleSpec role;
 
   @override
   Widget build(BuildContext context) {
@@ -360,13 +406,13 @@ class TpBreadcrumb extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s8),
           child: Text(
             '›',
-            style: TpTypography.title
+            style: role
                 .toTextStyle()
-                .copyWith(color: theme.text.secondary),
+                .copyWith(color: theme.text.tertiary),
           ),
         ));
       }
-      final TextStyle style = TpTypography.title.toTextStyle().copyWith(
+      final TextStyle style = role.toTextStyle().copyWith(
             color: last ? theme.text.primary : theme.text.secondary,
           );
       if (last || s.onTap == null) {
