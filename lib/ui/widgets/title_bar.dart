@@ -253,10 +253,12 @@ class _TitleBarState extends State<TitleBar> {
   }
 }
 
-/// The app mark: a 16 px pin glyph on the accent colour.
+/// The app mark: the app icon's "T" pin, drawn at 16 px.
 ///
-/// A glyph rather than an image because `pubspec.yaml` registers no assets and
-/// this change may not add one. The pin is the app's identity in `TpIcons`.
+/// Painted rather than an image because `pubspec.yaml` registers no assets.
+/// Same geometry as `tool/icon/render_icon.swift` (a pill head over a tapered
+/// needle on a near-black squircle), so the title bar and the Dock/taskbar
+/// icon read as one mark.
 class _AppMark extends StatelessWidget {
   const _AppMark({required this.theme});
 
@@ -264,12 +266,47 @@ class _AppMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return const SizedBox(
       width: 16,
       height: 16,
-      child: Icon(TpIcons.pin, size: 16, color: theme.accent.fill),
+      child: CustomPaint(painter: _AppMarkPainter()),
     );
   }
+}
+
+class _AppMarkPainter extends CustomPainter {
+  const _AppMarkPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // The icon is specified on a 1024 grid with the tile at 100..924; scale
+    // that tile to fill the box (a 16 px mark has no room for a shadow margin).
+    final double k = size.width / 824;
+    canvas.scale(k);
+    canvas.translate(-100, -100);
+
+    canvas.drawRRect(
+      RRect.fromLTRBR(100, 100, 924, 924, const Radius.circular(190)),
+      Paint()..color = const Color(0xFF111111),
+    );
+    final Paint white = Paint()..color = const Color(0xFFFFFFFF);
+    canvas.drawRRect(
+      RRect.fromLTRBR(262, 276, 762, 424, const Radius.circular(74)),
+      white,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(452, 410)
+        ..lineTo(572, 410)
+        ..lineTo(518, 770)
+        ..quadraticBezierTo(512, 786, 506, 770)
+        ..close(),
+      white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_AppMarkPainter oldDelegate) => false;
 }
 
 /// One caption button: 46 x 36, transparent at rest, `control.fillHover` on
