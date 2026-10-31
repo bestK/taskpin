@@ -6,6 +6,11 @@
 //
 // The detail page is its own page, not a pane beside the list. The id is an
 // index into `TaskPinConfig.items`: the config has no per-item id field.
+//
+// Rail destinations swap with no transition (`_tab`). They are siblings, not a
+// stack: the default `MaterialPage` transition (a Cupertino slide on macOS) kept
+// the previous page on screen while the next one slid over it, which read as a
+// ghost of the old page. Only the list -> detail drill-down animates.
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -46,6 +51,13 @@ class AppRoutes {
   }
 }
 
+/// A rail destination's page: swapped in place, no transition.
+///
+/// Keyed by the route's page key so go_router still sees a new page per
+/// location; only the animation is removed.
+Page<void> _tab(GoRouterState state, Widget child) =>
+    NoTransitionPage<void>(key: state.pageKey, child: child);
+
 /// The router. Built once by `TaskPinApp`.
 GoRouter buildRouter() {
   return GoRouter(
@@ -65,8 +77,8 @@ GoRouter buildRouter() {
         routes: <RouteBase>[
           GoRoute(
             path: AppRoutes.signals,
-            builder: (BuildContext context, GoRouterState state) =>
-                const SignalsListPage(),
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _tab(state, const SignalsListPage()),
             routes: <RouteBase>[
               GoRoute(
                 // Relative to the parent: `/signals/:id`.
@@ -84,29 +96,31 @@ GoRouter buildRouter() {
           ),
           GoRoute(
             path: AppRoutes.market,
-            builder: (BuildContext context, GoRouterState state) =>
-                const MarketPage(),
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _tab(state, const MarketPage()),
           ),
           GoRoute(
             path: AppRoutes.settings,
-            builder: (BuildContext context, GoRouterState state) =>
-                const SettingsPage(),
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _tab(state, const SettingsPage()),
           ),
           GoRoute(
             path: AppRoutes.diagnostics,
-            builder: (BuildContext context, GoRouterState state) =>
-                PlaceholderPage(
-              title: context.l10n.navLogs,
-              message: context.l10n.logsEmpty,
-              icon: TpIcons.diagnostics,
+            pageBuilder: (BuildContext context, GoRouterState state) => _tab(
+              state,
+              PlaceholderPage(
+                title: context.l10n.navLogs,
+                message: context.l10n.logsEmpty,
+                icon: TpIcons.diagnostics,
+              ),
             ),
           ),
           // Debug-only: the design system gallery.
           if (kDebugMode)
             GoRoute(
               path: AppRoutes.gallery,
-              builder: (BuildContext context, GoRouterState state) =>
-                  const _GalleryPage(),
+              pageBuilder: (BuildContext context, GoRouterState state) =>
+                  _tab(state, const _GalleryPage()),
             ),
         ],
       ),

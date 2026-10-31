@@ -429,7 +429,7 @@ void main() {
       expect(find.text('取值表达式'), findsOneWidget);
     });
 
-    testWidgets('a lua item offers Open and Open with', (
+    testWidgets('a lua item offers one Open with menu', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -438,11 +438,16 @@ void main() {
         location: '/signals/0',
       );
 
-      // The card under the script path: the OS default app, and the editors
-      // found on this machine.
+      // The card under the script path has ONE button. A separate "Open"
+      // beside it repeated the menu's first entry.
       expect(find.text('打开脚本'), findsOneWidget);
-      expect(find.text('打开'), findsOneWidget);
+      expect(find.text('打开'), findsNothing);
       expect(find.text('打开方式'), findsOneWidget);
+
+      // The menu leads with the OS default app, even when no editor is found.
+      await tester.tap(find.text('打开方式'));
+      await tester.pumpAndSettle();
+      expect(find.text('默认应用'), findsOneWidget);
     });
 
     testWidgets('the preview strip sits on the taskbar colour, 48 high', (
