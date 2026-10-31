@@ -220,6 +220,7 @@ These are choices, not oversights. Each is a candidate for reconciliation.
     two-line layouts or size 8 for secondary badges) are clamped to a legible floor
     of 10 pt (`minFontSize`), sitting between Apple's 9 pt mini and 11 pt small
     system fonts so scripts like `zeeho.lua` remain glanceable without squinting.
+    Two-line mode (item 13) uses its own 8 pt floor instead.
 12. **Menu-bar order is deterministic.** `NSStatusBar` inserts each new status
     item to the LEFT of the existing ones, so creating bars in config order
     displays them reversed. The plugin recreates the system items from the
@@ -227,15 +228,48 @@ These are choices, not oversights. Each is a candidate for reconciliation.
     Views are reused, so content and callbacks survive. `autosaveName` is
     deliberately not set: a persisted ⌘-drag position would fight the config
     order, and there is no API to reorder the other items around it.
-13. **Two-line script horizontal joining and left-to-right flow.** The macOS menu bar is
-    24 pt tall: ONE line only (VISUAL_SPEC §7.1). Rather than silently dropping
-    line 2 and losing critical information (e.g. tire pressure in `zeeho.lua`),
-    multi-line spans are joined horizontally with segment spacing, and embedded
-    newlines are sanitized to spaces. Explicit alignment attributes (e.g. `align: right`,
-    authored for two-line Windows taskbar layouts) are ignored on the single-line menu bar;
-    all spans flow sequentially from left to right in source order so items pack
-    naturally without gaping empty voids. If the joined content exceeds the strip width,
-    `truncateToFit` cleanly ellipsis-truncates (`…`) from the rightmost span.
+13. **Two-line mode for `newline` spans.** A menu bar script that emits a line
+    break (`font("\n")` or `newline: true`) gets two lines, as on the Windows
+    taskbar. Any `newline` span switches the strip to two-line mode, and the
+    rule is: line 1 is the spans before the first break, line 2 is the rest. A
+    third line is joined onto line 2, so no content is lost. Without a `newline`
+    span the strip stays single-line: spans flow left to right in source order,
+    and `align` is ignored, as before.
+
+    Layout, per line:
+    - Left-aligned spans flow from the left edge. Right-aligned spans pack
+      against the right edge, so the two lines form columns (`zeeho.lua`:
+      "81.0%   89.0km" over "F:2.3   R:2.6").
+    - The gap between a line's left run and its right run is `columnGap` (8 pt).
+      No separator is drawn between them. Separators inside one run follow the
+      single-line rule.
+    - Strip width is the widest line's (left run + gap + right run) plus the
+      padding. Nothing is wasted at the edges.
+    - Each line truncates on its own, from its last text span backwards.
+
+    Numbers, for a bar `H` pt tall (`bounds.height`; 24 on external displays,
+    taller on notched MacBooks). The grid is the reference network-meter look
+    ("920 B/s" over "2 KB/s"): fills the bar, tight leading, plain system font.
+    - Grid size = min(band / 1.1, 0.40 x H), rounded down to 0.5 pt. Band =
+      (H - 2) / 2, the half-bar less a 1 pt edge. On 24 pt that is min(10.0, 9.6),
+      so 9.5 pt. On 37 pt it is 14.5 pt.
+    - Line pitch = 1.1 x grid size (10.45 pt on 24 pt). The top line sits one
+      pitch above the bottom line. The two-line block (top cap to bottom
+      baseline) is centred on H/2. On 24 pt the bottom baseline is 3.45 pt up.
+    - Per span: the script's size, mapped as in single-line mode (9 becomes 13),
+      floored at 8 pt (`twoLineMinFontSize`, below the 10 pt single-line floor)
+      and capped at the grid size. A size 4 `zeeho.lua` span is therefore 8 pt,
+      and a default-size span is 9.5 pt.
+    - Each line has one shared baseline, so mixed sizes on a line share it.
+    - Icons are scaled down to the band (11 pt on 24 pt), keeping their aspect
+      ratio, so they cannot overlap the other line.
+    - Status indicator in two-line mode: 2 pt thick at y = 0.5 (top edge 2.5 pt),
+      instead of 3 pt at y = 1. At 3 pt the top edge would reach 4 pt, above the
+      lower line's baseline, and touch its digits. At 2 pt only glyphs with
+      descenders can reach it. Single-line mode is unchanged.
+
+    Visual check still needed on a real menu bar: the 0.5 pt grid rounding, the
+    3.45 pt baseline, and whether the 8 pt floor reads clearly next to a clock.
 14. **Strip width matches content; explicit width is an upper cap.** Strips are
     auto-sized to their content (`requiredWidth()`) so no blank space is left at the end.
     Configured `bar_width` (such as Windows `375`) acts as an upper bound rather than
@@ -283,10 +317,11 @@ Reported, not fixed — these are outside this lane:
    ```
 
    So Windows line 2 starts one span later than the Dart preview's line 2. Line
-   **1** is identical in both (and identical to this file, which stops at the
-   first `newline` since the menu bar has one line), so macOS is unaffected —
-   but the Windows two-line rendering and the preview disagree. Worth aligning
-   one way; the C++ reading ("a marker is not content") looks like the intent.
+   **1** is identical in both. macOS follows the Dart reading for line 2: an
+   empty `newline` marker (the `font("\n")` form) draws nothing, but a `newline`
+   span that carries text starts line 2 with that text, so the text is not lost.
+   The Windows renderer drops that text, so the two-line rendering still differs
+   there. Worth aligning all three on one rule.
 
 ## Highest-risk items to check first on a Mac
 

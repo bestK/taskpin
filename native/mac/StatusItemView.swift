@@ -17,9 +17,10 @@
 //    colour but the first. Drawing the full span list is a strict improvement.
 //
 //  macOS-specific rules from the plan / VISUAL_SPEC §9:
-//    - the menu bar is 24 pt tall: ONE line only. A `newline` span and
-//      everything after it is dropped, and overlong content is
-//      ellipsis-truncated — never clipped mid-glyph.
+//    - the menu bar is ~24 pt tall (taller on a notched display). One line by
+//      default. A `newline` span switches to two lines, each with half the
+//      height, laid out as left/right columns (see `layoutTwoLine`). Overlong
+//      content is ellipsis-truncated per line, never clipped mid-glyph.
 //    - icons are 16 pt; a monochrome source is template-tinted with `bar/icon`.
 //    - the bar uses the SYSTEM font (SF Pro), never Inter.
 //    - tabular figures always: `CPU: 9%` -> `CPU: 100%` must not shift
@@ -150,8 +151,8 @@ struct BarSpan {
 
     var align: BarAlign = .left
 
-    /// This span starts a new line. macOS renders ONE line, so a `newline` span
-    /// and everything after it is dropped (see `buildItems`).
+    /// This span starts a new line. Any `newline` span switches the strip to
+    /// two-line mode (see `isTwoLine`). A third line is joined onto the second.
     var newline: Bool = false
 
     var isImage: Bool = false
@@ -253,8 +254,8 @@ struct BarMetrics {
     let padVertical: CGFloat = 0
     let iconSize: CGFloat = 16
     let radius: CGFloat = 6
-    /// ONE line. A `newline` span is dropped rather than wrapped.
-    let maxLines: Int = 1
+    /// The maximum lines the strip draws. A `newline` beyond this joins the last line.
+    let maxLines: Int = 2
     /// VISUAL_SPEC §7.3: a 1 x 14 rule with 6 pt either side. The Dart
     /// `TpBarMetrics.macOS` still says 1 x 12 / gap 4; this renderer follows
     /// the spec and native/mac/README.md records the divergence.
@@ -302,6 +303,35 @@ struct BarMetrics {
     /// 24 pt menu bar next to the 13 pt system clock.
     let minFontSize: Int = 10
     let maxFontSize: Int = 18
+
+    /// Two-line mode (any `newline` span). Modelled on the menu-bar network
+    /// meters that stack two short readings ("920 B/s" over "2 KB/s") in the
+    /// bar's full height.
+    ///
+    /// Grid size per line: the smaller of
+    ///   - the size whose pitch fits one band: (bar - 2 x edge) / 2 / 1.1, which
+    ///     is 10 pt on a 24 pt bar;
+    ///   - 40% of the bar height (`twoLineFontFraction`), which is 9.6 pt on 24 pt;
+    /// then rounded down to a half point, giving 9.5 pt on a 24 pt bar. A taller
+    /// notched bar scales with the height; a 37 pt bar would give 14.5 pt.
+    /// Each span's own size (script size, mapped as in single-line mode) is then
+    /// floored at 8 pt (`twoLineMinFontSize`) and capped at the grid size.
+    /// Line pitch is `lineHeightFactor` x grid size: 10.45 pt on 24 pt, so the two
+    /// lines sit tight with no visible gap. The two-line block is centred.
+    let twoLineEdge: CGFloat = 1
+    let twoLineFontFraction: CGFloat = 0.40
+    let lineHeightFactor: CGFloat = 1.1
+    let twoLineMinFontSize: CGFloat = 8
+    /// Gap between a line's left run and its right run. Wider than a word space,
+    /// narrower than a separator's 13 pt advance, so the two columns read apart
+    /// without a rule between them.
+    let columnGap: CGFloat = 8
+    /// Status indicator in two-line mode: 2 pt thick at y = 0.5 (top edge 2.5).
+    /// The 3 pt bar at y = 1 would reach 4 pt, above the lower line's baseline
+    /// (about 3.45 pt up on a 24 pt bar), so it would touch the digits. At 2 pt
+    /// only glyphs with descenders can reach it.
+    let twoLineStateIndicatorHeight: CGFloat = 2
+    let twoLineStateIndicatorY: CGFloat = 0.5
 
     /// Gap between an icon and the text that follows it (VISUAL_SPEC §9.2).
     let iconTextGap: CGFloat = 4
@@ -770,15 +800,18 @@ final class StatusItemView: NSView {
         // Positioned at y = 1.0 pt with rounded integer-point coordinates so the
         // bottom pill radius is fully preserved (not clipped by the view boundary)
         // and pixel-crisp on Retina.
+        // Two-line mode drops it to 2 pt at y = 0.5. At 3 pt on y = 1 its top edge
+        // would reach into the lower line's digits (see BarMetrics).
         let indicator = indicatorColor(style.state)
         if barAlpha(indicator) > 0 {
             let indicatorX = ((b.width - metrics.stateIndicatorWidth) / 2).rounded()
-            let indicatorY: CGFloat = 1.0
+            let twoLine = isTwoLine
+            let indicatorY = twoLine ? metrics.twoLineStateIndicatorY : 1.0
             let rect = CGRect(
                 x: indicatorX,
                 y: indicatorY,
                 width: metrics.stateIndicatorWidth,
-                height: metrics.stateIndicatorHeight
+                height: twoLine ? metrics.twoLineStateIndicatorHeight : metrics.stateIndicatorHeight
             )
             ctx.setFillColor(barCGColor(indicator))
             ctx.addPath(CGPath(
@@ -797,8 +830,8 @@ final class StatusItemView: NSView {
         }
 
         // ---- truncation pass ----
-        // macOS gets ONE line and the plan is explicit: ellipsis-truncate, do
-        // not clip. Truncate from the last text span backwards.
+        // The plan is explicit: ellipsis-truncate, do not clip. Each line is
+        // truncated on its own, from its last text span backwards.
         //
         // Measured against `measuredWidth`, not `bounds.width`: the two agree
         // once the plugin has applied the width, but on the frame where content
@@ -882,6 +915,9 @@ final class StatusItemView: NSView {
         var height: CGFloat
         var ascent: CGFloat
         var descent: CGFloat
+        /// Which line the span sits on: 0 for the first, 1 for the second. Two-line
+        /// mode only; a third line is joined onto the second.
+        var lineIndex: Int = 0
         /// Space inserted before this span, replacing the separator.
         ///
         /// Set to `metrics.iconTextGap` for a text span that immediately follows
@@ -922,64 +958,120 @@ final class StatusItemView: NSView {
     /// README.md records that difference until the Dart side catches up.
     private var contentOriginX: CGFloat { metrics.padHorizontal }
 
+    /// Two-line mode is on when any span starts a new line. Otherwise the strip
+    /// renders the single-line flow it always has.
+    private var isTwoLine: Bool { spans.contains { $0.newline } }
+
+    /// The height content is laid out in: the view's own height. Falls back to
+    /// the 24 pt metric before the view has a frame, so measuring and drawing
+    /// agree on the two-line grid.
+    private var barHeight: CGFloat { bounds.height > 1 ? bounds.height : metrics.height }
+
+    /// Height of one line's band in two-line mode: the bar less the 1 pt edges,
+    /// split in two. 11 pt on a 24 pt bar.
+    private var twoLineBandHeight: CGFloat { (barHeight - 2 * metrics.twoLineEdge) / 2 }
+
+    /// Font size of a two-line cell (see `BarMetrics` for the numbers): the
+    /// smaller of the size that fits a band at the line pitch and a fraction of
+    /// the bar, rounded down to a half point. 9.5 pt on a 24 pt bar.
+    private var twoLineGridSize: CGFloat {
+        let fit = twoLineBandHeight / metrics.lineHeightFactor
+        let fraction = barHeight * metrics.twoLineFontFraction
+        return (min(fit, fraction) * 2).rounded(.down) / 2
+    }
+
+    /// Baselines of the top and bottom lines, measured up from the view's bottom
+    /// edge. The block (top line's cap height to bottom baseline) is centred on
+    /// the bar, so the optical centre is the bar's centre. The pitch is
+    /// `lineHeightFactor` x the grid size.
+    private func twoLineBaselines() -> (top: CGFloat, bottom: CGFloat) {
+        let grid = twoLineGridSize
+        let pitch = grid * metrics.lineHeightFactor
+        let cap = CTFontGetCapHeight(font(size: grid, tabular: true))
+        let bottom = barHeight / 2 - (pitch + cap) / 2
+        return (top: bottom + pitch, bottom: bottom)
+    }
+
     /// How much horizontal room the spans have.
     private func contentWidthLimit(_ total: CGFloat) -> CGFloat {
         max(0, total - contentOriginX - metrics.padHorizontal)
     }
 
-    /// Width required to draw `items` with nothing truncated.
+    /// Lines the layout uses: two in two-line mode, one otherwise.
+    private var lineCount: Int { isTwoLine ? metrics.maxLines : 1 }
+
+    /// Width the content needs when nothing is truncated: the widest line.
     ///
-    /// On the single-line macOS menu bar, all spans flow left-to-right in source
-    /// order, matching native menu bar item behavior.
     /// Spans are placed from `contentOriginX` with gaps/separators between
     /// consecutive items. The arithmetic matches `layout`'s cursor arithmetic
     /// exactly so measured width and drawn bounds never disagree.
     private func requiredWidth(_ items: [Item]) -> CGFloat {
+        let content = (0..<lineCount).map { contentLineWidth(items, line: $0) }.max() ?? 0
+        guard content > 0 else { return 0 }
+        return contentOriginX + content + metrics.padHorizontal
+    }
+
+    /// Width of one flow of spans: each span's width, plus the gap before every
+    /// span after the first. Dropped and empty spans take no room.
+    private func flowWidth(_ items: [Item]) -> CGFloat {
         let separatorAdvance = style.showSeparators
             ? metrics.separatorGap * 2 + metrics.separatorWidth
             : 0
 
-        var leftTotal: CGFloat = 0
+        var total: CGFloat = 0
         var sawItem = false
-
-        func gap(before item: Item) -> CGFloat {
-            item.gapBefore > 0 ? item.gapBefore : separatorAdvance
-        }
-
-        for item in items where !item.dropped {
+        for item in items {
             let width = item.effectiveWidth
             guard width > 0 else { continue }
-            if sawItem { leftTotal += gap(before: item) }
-            leftTotal += width
+            if sawItem { total += item.gapBefore > 0 ? item.gapBefore : separatorAdvance }
+            total += width
             sawItem = true
         }
-
-        if !sawItem { return 0 }
-        return contentOriginX + leftTotal + metrics.padHorizontal
+        return total
     }
 
-    /// Build the span list for the macOS menu bar.
+    /// Width one line needs. Single-line mode is one flow. Two-line mode is the
+    /// left run, then the column gap (only when both runs have content), then the
+    /// right run.
+    private func contentLineWidth(_ items: [Item], line: Int) -> CGFloat {
+        guard isTwoLine else { return flowWidth(items) }
+        let row = items.filter { $0.lineIndex == line }
+        let left = flowWidth(row.filter { $0.span.align != .right })
+        let right = flowWidth(row.filter { $0.span.align == .right })
+        return left + (left > 0 && right > 0 ? metrics.columnGap : 0) + right
+    }
+
+    /// Build the span list for the menu bar.
     ///
-    /// The menu bar is 24 pt tall and displays ONE horizontal line (VISUAL_SPEC §7.1).
-    /// When scripts author multi-line content (using `font("\n")` or `newline: true`),
-    /// rather than silently dropping line 2 and losing critical information (e.g. tire
-    /// pressure in `zeeho.lua`), the lines are joined horizontally with a segment break.
-    /// If the joined content exceeds the available width, `truncateToFit` cleanly
-    /// ellipsis-truncates (`…`) the overflow.
+    /// Single-line mode (no `newline` span): spans keep source order, as before.
+    /// Two-line mode: each `newline` span moves the following spans to line 2.
+    /// A newline span that carries text starts line 2 with that text, which is
+    /// how the Dart preview reads it. Dropping the text would lose content. A
+    /// third line is joined onto line 2, so no content is lost.
     private func buildItems() -> [Item] {
         var items: [Item] = []
         var previousWasImage = false
         var afterLineBreak = false
+        var currentLine = 0
+        // Single-line mode keeps every span on line 0, as it always has. Only a
+        // two-line strip has a second line to move to.
+        let twoLine = isTwoLine
+        func breakLine() {
+            afterLineBreak = true
+            if twoLine { currentLine = min(currentLine + 1, metrics.maxLines - 1) }
+        }
 
         for span in spans {
             if span.newline {
-                afterLineBreak = true
+                breakLine()
             }
 
-            // A pure newline span carries no drawable text: record the boundary and continue.
+            // A pure line break carries no drawable text. A bare "\n" span already
+            // advanced the line above, so only a whitespace span with an embedded
+            // newline and no flag needs to advance here.
             let trimmed = span.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !span.isImage && trimmed.isEmpty && (span.newline || span.text.contains("\n")) {
-                afterLineBreak = true
+                if !span.newline { breakLine() }
                 continue
             }
 
@@ -1009,12 +1101,19 @@ final class StatusItemView: NSView {
                 item.gapBefore = 0
             }
             afterLineBreak = false
+            item.lineIndex = currentLine
 
             if effectiveSpan.isImage {
                 guard !effectiveSpan.text.isEmpty else { continue }
                 let image = BarIconCache.shared.image(for: effectiveSpan.text)
-                let w = effectiveSpan.imageWidth > 0 ? CGFloat(effectiveSpan.imageWidth) : metrics.iconSize
-                let h = effectiveSpan.imageHeight > 0 ? CGFloat(effectiveSpan.imageHeight) : metrics.iconSize
+                var w = effectiveSpan.imageWidth > 0 ? CGFloat(effectiveSpan.imageWidth) : metrics.iconSize
+                var h = effectiveSpan.imageHeight > 0 ? CGFloat(effectiveSpan.imageHeight) : metrics.iconSize
+                // An icon cannot be taller than the band its line gets, or it would
+                // run into the other line. Scale it down, keeping its aspect ratio.
+                if isTwoLine, h > twoLineBandHeight {
+                    w *= twoLineBandHeight / h
+                    h = twoLineBandHeight
+                }
                 item.image = image
                 item.naturalWidth = w
                 item.maxWidth = w
@@ -1069,19 +1168,29 @@ final class StatusItemView: NSView {
             for i in items.indices { items[i].dropped = true }
             return
         }
+        // Each line is cut on its own, so a long line 2 never shortens line 1.
+        for line in 0..<lineCount {
+            truncateLine(&items, line: line, available: available)
+        }
+    }
 
-        // Each pass either shrinks a span's allowance (strictly decreasing
-        // `requiredWidth`) or drops one (strictly reducing the span count), so
-        // the loop terminates. The counter is belt and braces against a
-        // rounding edge case where a shrink is a no-op.
+    /// Truncates one line until its content fits `available`.
+    ///
+    /// Each pass either shrinks a span's allowance (strictly decreasing the line's
+    /// width) or drops one (strictly reducing the span count), so the loop
+    /// terminates. The counter is belt and braces against a rounding edge case
+    /// where a shrink is a no-op.
+    private func truncateLine(_ items: inout [Item], line: Int, available: CGFloat) {
         var guardCounter = items.count * 2 + 2
         while guardCounter > 0 {
             guardCounter -= 1
 
-            let excess = requiredWidth(items) - width
+            let excess = contentLineWidth(items, line: line) - available
             if excess <= 0 { break }
 
-            guard let index = items.lastIndex(where: { $0.isText && !$0.dropped }) else {
+            guard let index = items.lastIndex(where: {
+                $0.isText && !$0.dropped && $0.lineIndex == line
+            }) else {
                 break
             }
             let natural = items[index].naturalWidth
@@ -1109,17 +1218,19 @@ final class StatusItemView: NSView {
         }
     }
 
-    /// Position the items in a single left-to-right flow for the macOS menu bar.
-    ///
-    /// On the single-line 24 pt macOS menu bar, all spans flow sequentially from
-    /// left to right in source order. Explicit alignment (e.g. `right` or `center`,
-    /// which scripts author for two-line Windows taskbars) is ignored so spans pack
-    /// tightly without artificial empty voids.
+    /// Position the items. Single-line content flows left to right; two-line
+    /// content is split into two columns per line (see `layoutTwoLine`).
+    private func layout(_ items: [Item], in bounds: CGRect) -> LayoutResult {
+        isTwoLine ? layoutTwoLine(items, in: bounds) : layoutSingleLine(items, in: bounds)
+    }
+
+    /// Single-line layout: all spans flow sequentially from left to right in
+    /// source order. Explicit alignment is ignored on this path.
     ///
     /// A separator is drawn before each span (except after an icon, where the 4 pt
     /// icon-to-text gap is used instead). Layout coordinates mirror `requiredWidth`
     /// exactly so the strip's physical width perfectly bounds its placed content.
-    private func layout(_ items: [Item], in bounds: CGRect) -> LayoutResult {
+    private func layoutSingleLine(_ items: [Item], in bounds: CGRect) -> LayoutResult {
         var result = LayoutResult()
         guard !items.isEmpty else { return result }
 
@@ -1198,6 +1309,83 @@ final class StatusItemView: NSView {
         return result
     }
 
+    /// Two-line layout. Line 0 is drawn on top, line 1 below. Each line has its
+    /// own shared baseline, and mixed sizes within a line share it.
+    ///
+    /// Per line, left-aligned spans flow from the left edge and right-aligned spans
+    /// pack against the right edge, so the two lines form columns. A right run
+    /// keeps source order. Its spans are placed left to right, so the run's start
+    /// depends only on its total width. No separator sits between a left run and
+    /// its right run; `columnGap` does that job. Separators inside a run follow the
+    /// single-line rule, and are sized to the line's cap height so they stay inside
+    /// their line.
+    private func layoutTwoLine(_ items: [Item], in bounds: CGRect) -> LayoutResult {
+        var result = LayoutResult()
+        guard !items.isEmpty else { return result }
+
+        let baselines = twoLineBaselines()
+        let cap = CTFontGetCapHeight(font(size: twoLineGridSize, tabular: true))
+        let separatorAdvance = style.showSeparators
+            ? metrics.separatorGap * 2 + metrics.separatorWidth
+            : 0
+        let separatorHeight = min(metrics.separatorHeight, cap + 2)
+        let rightEdge = bounds.width - metrics.padHorizontal
+
+        for line in 0..<lineCount {
+            let row = items.filter { !$0.dropped && $0.lineIndex == line && $0.effectiveWidth > 0 }
+            let baseline = line == 0 ? baselines.top : baselines.bottom
+            let centreY = baseline + cap / 2
+
+            // Places one run from `startX`, with the gap and separator rules of the
+            // single-line flow. Returns nothing: the run owns its own width.
+            func place(_ run: [Item], startX: CGFloat) {
+                var x = startX
+                var sawItem = false
+                for item in run {
+                    let width = item.effectiveWidth
+                    guard width > 0 else { continue }
+
+                    let gap = item.gapBefore > 0 ? item.gapBefore : separatorAdvance
+                    if sawItem { x += gap }
+
+                    // Separator: only between two spans of the same run, and only
+                    // when an icon-to-text gap is not standing there.
+                    if style.showSeparators && sawItem && item.gapBefore == 0 {
+                        let sepX = (x - (metrics.separatorGap + metrics.separatorWidth)).rounded()
+                        result.separators.append(CGRect(
+                            x: sepX,
+                            y: (centreY - separatorHeight / 2).rounded(),
+                            width: metrics.separatorWidth,
+                            height: separatorHeight
+                        ))
+                    }
+
+                    let rect: CGRect
+                    if item.image != nil {
+                        // An icon is centred on the line's cap centre.
+                        rect = CGRect(x: x, y: (centreY - item.height / 2).rounded(),
+                                      width: width, height: item.height)
+                        result.placed.append(Placed(item: item, rect: rect, baseline: rect.minY, line: nil))
+                    } else {
+                        rect = CGRect(x: x, y: baseline - item.descent, width: width, height: item.height)
+                        result.placed.append(Placed(item: item, rect: rect, baseline: baseline, line: item.line))
+                    }
+
+                    x += width
+                    sawItem = true
+                }
+            }
+
+            let leftRun = row.filter { $0.span.align != .right }
+            let rightRun = row.filter { $0.span.align == .right }
+
+            place(leftRun, startX: contentOriginX)
+            place(rightRun, startX: rightEdge - flowWidth(rightRun))
+        }
+
+        return result
+    }
+
     // MARK: fonts and lines
 
     /// The Core Text font for a span.
@@ -1222,8 +1410,19 @@ final class StatusItemView: NSView {
         if size == metrics.windowsDefaultFontSize {
             size = metrics.labelSize
         }
+        if isTwoLine {
+            // Two-line cells: the script's size, floored at 8 pt and capped at the
+            // grid size so both lines fit the bar. The 8 pt floor is below the
+            // single-line 10 pt floor because density is the point of this mode.
+            let cell = min(twoLineGridSize, max(metrics.twoLineMinFontSize, CGFloat(size)))
+            return font(size: cell, tabular: span.tabular)
+        }
         size = min(metrics.maxFontSize, max(metrics.minFontSize, size))
-        let tabular = span.tabular
+        return font(size: CGFloat(size), tabular: span.tabular)
+    }
+
+    /// The system font at a point size, cached by size and figure style.
+    private func font(size: CGFloat, tabular: Bool) -> CTFont {
         let key = "\(size)|\(tabular ? 1 : 0)"
         if let hit = fonts[key] { return hit }
 
@@ -1234,8 +1433,8 @@ final class StatusItemView: NSView {
         // `as CTFont` is an explicit toll-free bridge: NSFont and CTFont are the
         // same object, but Swift will not implicitly convert between them.
         let base = tabular
-            ? NSFont.monospacedDigitSystemFont(ofSize: CGFloat(size), weight: .regular)
-            : NSFont.systemFont(ofSize: CGFloat(size))
+            ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+            : NSFont.systemFont(ofSize: size)
         let font: CTFont = base as CTFont
         fonts[key] = font
         return font
