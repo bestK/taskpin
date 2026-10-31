@@ -14,8 +14,9 @@ class DialogHrItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      // 4 px above and 4 px below (compact 8 px vertical advance around the 1 px divider).
-      padding: EdgeInsets.symmetric(vertical: TpSpacing.s4),
+      // VISUAL_SPEC §8: the rule sits 8 px above and below. The dialog adds no
+      // gap next to a rule, so this padding is the whole spacing on each side.
+      padding: EdgeInsets.symmetric(vertical: TpSpacing.s8),
       child: TpDivider(),
     );
   }

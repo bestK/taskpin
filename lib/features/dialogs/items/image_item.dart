@@ -9,6 +9,10 @@
 //
 // The last point is why a null provider collapses to `SizedBox.shrink()` rather
 // than a placeholder box: an unloadable image must not leave a 64 px hole.
+//
+// The box is capped at the content width. C has no such cap because its dialog
+// is sized to fit; here a narrow popover can be narrower than the box, so the
+// image shrinks with its aspect ratio rather than overflowing.
 
 import 'package:flutter/widgets.dart';
 import 'package:taskpin_design/taskpin_design.dart';
@@ -51,19 +55,26 @@ class DialogImageItem extends StatelessWidget {
         ? item.imageHeight.toDouble()
         : defaultSize;
 
+    // The box is the requested size, but never wider than the content area: a
+    // narrower area shrinks the width and the height follows the box's aspect
+    // ratio (VISUAL_SPEC §8: 等比缩放不超出内容宽). `SizedBox` takes its width
+    // from the constraints it is given, so it caps; it also reports `w` as its
+    // intrinsic width, which the popover's width measurement depends on.
     return Align(
       alignment: Alignment.centerLeft,
-      child: ClipRRect(
-        borderRadius: TpRadius.control,
-        child: SizedBox(
-          width: w,
-          height: h,
-          child: Image(
-            image: provider,
-            fit: BoxFit.contain,
-            // A failed network fetch must not throw inside the dialog's isolate.
-            errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-                const SizedBox.shrink(),
+      child: SizedBox(
+        width: w,
+        child: AspectRatio(
+          aspectRatio: w / h,
+          child: ClipRRect(
+            borderRadius: TpRadius.control,
+            child: Image(
+              image: provider,
+              fit: BoxFit.contain,
+              // A failed network fetch must not throw inside the dialog's isolate.
+              errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+                  const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

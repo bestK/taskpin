@@ -183,10 +183,6 @@ class _DialogViewState extends State<DialogView> {
     return false;
   }
 
-  /// Shift+scroll resizes, plain scroll scrolls the content.
-  ///
-  /// C parity (`lib/script_dialog.c:589-613`): the Shift branch returns before
-  /// the scroll branch, so a Shift+scroll never scrolls.
   /// The window height we last asked for, so repeated layout passes that
   /// agree do not issue another resize.
   double? _requestedHeight;
@@ -292,27 +288,29 @@ class _DialogViewState extends State<DialogView> {
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  void _onScroll(PointerScrollEvent event) {
-    // Shift+scroll resizes. This used to be gated on `spec.borderless`, but
-    // the window is now ALWAYS borderless at the OS level (the panel draws its
-    // own chrome — see `DialogController.applyWindowEffects`), so the gate was
-    // reading the script's flag and disabling resize for every normal dialog.
-    // Resizing is useful for those most of all: they are the ones with tables
-    // that can overflow.
+  /// Shift+scroll resizes the window. Plain scroll is not handled here: the
+  /// `SingleChildScrollView` owns the wheel, so handling it again would move the
+  /// content twice per event.
+  ///
+  /// C parity (`lib/script_dialog.c:589-613`): the Shift branch returns before
+  /// the scroll branch, so a Shift+scroll never scrolls the content. That is
+  /// enforced by [_scrollPhysics], which refuses the wheel while Shift is down.
+  ///
+  /// Resizing is not gated on `spec.borderless`. The window is always borderless
+  /// at the OS level (the panel draws its own chrome; see
+  /// `DialogController.applyWindowEffects`), so that flag only means "no title
+  /// row". Resizing matters most for normal dialogs, which are the ones with
+  /// tables that can overflow.
+  void _onPointerSignal(PointerScrollEvent event) {
     if (_shiftDown) {
       applyShiftScrollResize(widget.controller.windowApi, event.scrollDelta.dy);
-      return;
     }
-    if (!_scroll.hasClients) {
-      return;
-    }
-    // C: `scroll_y -= delta / 2` (`:604`).
-    final double next = (_scroll.offset - event.scrollDelta.dy / 2).clamp(
-      _scroll.position.minScrollExtent,
-      _scroll.position.maxScrollExtent,
-    );
-    _scroll.jumpTo(next);
   }
+
+  /// While Shift is held the content must not scroll, so the wheel goes to the
+  /// resize instead. A `Scrollable` ignores pointer-scroll its physics refuses.
+  ScrollPhysics? get _scrollPhysics =>
+      _shiftDown ? const NeverScrollableScrollPhysics() : null;
 
   /// The explicit background a popover paints behind its content, or null for
   /// the default, which is transparent so the popover material shows through.
@@ -412,6 +410,7 @@ class _DialogViewState extends State<DialogView> {
     }
     Widget scrollView = SingleChildScrollView(
       controller: _scroll,
+      physics: _scrollPhysics,
       padding: _contentPadding(widget.hostDrawsSurface),
       child: body,
     );
@@ -544,7 +543,7 @@ class _DialogViewState extends State<DialogView> {
           child: Listener(
             onPointerSignal: (PointerSignalEvent e) {
               if (e is PointerScrollEvent) {
-                _onScroll(e);
+                _onPointerSignal(e);
               }
             },
             child: framed,
@@ -557,8 +556,14 @@ class _DialogViewState extends State<DialogView> {
   /// Compute deliberate vertical rhythm between adjacent dialog items.
   ///
   /// Text-to-text lines stay compact at 4 px, while structured blocks (tables)
-  /// and buttons receive 8 px before them.
+  /// and buttons receive 8 px before them. A rule (`hr`) supplies its own 8 px
+  /// on each side (`DialogHrItem`), so no gap is added next to one; that keeps
+  /// the rule at 8 px whatever item it sits between.
   double _verticalSpacing(DialogItem prev, DialogItem current) {
+    if (current.kind == TpDialogItemKind.hr ||
+        prev.kind == TpDialogItemKind.hr) {
+      return 0;
+    }
     if (current.kind == TpDialogItemKind.table ||
         current.kind == TpDialogItemKind.button) {
       return TpSpacing.s8;
@@ -617,6 +622,9 @@ class _DialogViewState extends State<DialogView> {
                 style: TpTypography.bodyStrong.toTextStyle().copyWith(
                   color: theme.text.primary,
                 ),
+                // One line, so a long title ellipsizes and the close button
+                // stays on the same row.
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -897,8 +905,9 @@ class _RenderSizeWatcher extends RenderProxyBox {
   }
 }
 
-/// Height of the dialog's own caption band, in logical pixels.
+/// Height of the window-mode caption band, in logical pixels.
 ///
-/// Matches `_titleBar`: 8 px padding above and below plus a 28 px row. The
-/// window's height must include it, or the content would be that much short.
-const double _kTitleBarHeight = 44;
+/// Matches `_titleBar` plus the rule under it: 4 px padding above and below, a
+/// 28 px row (the band's minimum height), and the 1 px `TpDivider`. The window's
+/// height must include it, or the content would be that much short.
+const double _kTitleBarHeight = 37;

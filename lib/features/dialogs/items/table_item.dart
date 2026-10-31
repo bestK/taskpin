@@ -32,6 +32,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Colors, Tooltip;
+import 'package:flutter/rendering.dart' show RenderParagraph, RenderProxyBox;
 import 'package:flutter/widgets.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
@@ -48,6 +49,9 @@ class DialogTableItem extends StatelessWidget {
 
   /// The C width of the per-row "Open" button (`lib/script_dialog.c:277`).
   static const double actionColumnWidth = 50;
+
+  /// The minimum height of a body row, padding included (VISUAL_SPEC §8: 行高 32).
+  static const double rowMinHeight = 32;
 
   @override
   Widget build(BuildContext context) {
@@ -144,8 +148,9 @@ class DialogTableItem extends StatelessWidget {
           // rather than alternating fills now that hairline dividers delineate
           // the rows cleanly.
           color: hovered ? theme.subtle.hover : Colors.transparent,
+          // The minimum applies to the padded row, so the text sits centred in it.
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 28),
+            constraints: const BoxConstraints(minHeight: rowMinHeight),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: TpSpacing.s8,
@@ -156,10 +161,10 @@ class DialogTableItem extends StatelessWidget {
                   for (int c = 0; c < item.colCount; c++)
                     Expanded(
                       flex: c < flexes.length ? flexes[c] : 1,
-                      child: _cellText(
-                        theme,
-                        c < cells.length ? cells[c] : '',
-                        isNumeric: c < numericCols.length && numericCols[c],
+                      child: _CellText(
+                        text: c < cells.length ? cells[c] : '',
+                        theme: theme,
+                        alignRight: c < numericCols.length && numericCols[c],
                       ),
                     ),
                   if (reserveAction)
@@ -178,41 +183,13 @@ class DialogTableItem extends StatelessWidget {
     );
   }
 
-  Widget _cellText(
-    TaskPinTheme theme,
-    String text, {
-    required bool isNumeric,
-  }) {
-    final bool numeric = isNumeric || _isNumeric(text);
-    final Widget content = Text(
-      text,
-      // Numeric and metric data uses tabular figures so numbers align cleanly down columns.
-      style: TpTypography.body.toTextStyle(tabular: numeric).copyWith(
-        color: theme.text.primary,
-      ),
-      textAlign: isNumeric ? TextAlign.right : TextAlign.left,
-      overflow: TextOverflow.ellipsis,
-      maxLines: 1,
-    );
-
-    // Provide a tooltip on hover for long text (e.g. process names) that might truncate.
-    if (!numeric && text.length > 14) {
-      return Tooltip(
-        message: text,
-        waitDuration: const Duration(milliseconds: 500),
-        child: content,
-      );
-    }
-    return content;
-  }
-
   /// Pattern matching numeric values, percentages, currencies, or metric speeds (e.g. "1.2M/s").
   static final RegExp _kNumericPattern = RegExp(
     r'^[+-]?[$€¥£]?\d+(?:[.,]\d+)*(?:\s*(?:%|[a-zA-Z/°]+(?:\s*/\s*[a-zA-Z/°]+)*))?$',
   );
 
   /// Whether a cell string represents numeric, currency, percentage, or metric data.
-  static bool _isNumeric(String text) {
+  static bool isNumericValue(String text) {
     final String s = text.trim();
     if (s.isEmpty) {
       return false;
@@ -231,7 +208,7 @@ class DialogTableItem extends StatelessWidget {
           final String val = row[c].trim();
           if (val.isNotEmpty && val != '-' && val != '?') {
             totalCount++;
-            if (_isNumeric(val)) {
+            if (isNumericValue(val)) {
               numericCount++;
             }
           }
@@ -305,5 +282,109 @@ class DialogTableItem extends StatelessWidget {
     if (r < item.rowCmds.length && item.rowCmds[r].isNotEmpty) {
       runner.runCommand(item.rowCmds[r]);
     }
+  }
+}
+
+/// One table cell: a single line, with the full text on hover only when the
+/// line is actually ellipsized at the column width.
+///
+/// The width is only known at layout, and a `LayoutBuilder` would fail the
+/// intrinsic-width queries the popover makes to size itself. So the check runs
+/// in a render object after layout, through `RenderParagraph.didExceedMaxLines`.
+class _CellText extends StatefulWidget {
+  const _CellText({
+    required this.text,
+    required this.theme,
+    required this.alignRight,
+  });
+
+  final String text;
+  final TaskPinTheme theme;
+
+  /// Right-aligned because the column is numeric.
+  final bool alignRight;
+
+  @override
+  State<_CellText> createState() => _CellTextState();
+}
+
+class _CellTextState extends State<_CellText> {
+  bool _truncated = false;
+
+  void _onLaidOut(bool truncated) {
+    if (truncated == _truncated) {
+      return;
+    }
+    // Reached from layout, where `setState` is not allowed. Apply the change in
+    // the next frame, once, and only when the answer differs.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && truncated != _truncated) {
+        setState(() => _truncated = truncated);
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Numeric and metric data uses tabular figures so numbers align down a column.
+    final bool numeric =
+        widget.alignRight || DialogTableItem.isNumericValue(widget.text);
+    final Widget text = _TruncationHook(
+      onLaidOut: _onLaidOut,
+      child: Text(
+        widget.text,
+        style: TpTypography.body.toTextStyle(tabular: numeric).copyWith(
+          color: widget.theme.text.primary,
+        ),
+        textAlign: widget.alignRight ? TextAlign.right : TextAlign.left,
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      ),
+    );
+    // Numbers are short and aligned; the tooltip is for text that gets cut off.
+    if (numeric || !_truncated) {
+      return text;
+    }
+    return Tooltip(
+      message: widget.text,
+      waitDuration: const Duration(milliseconds: 500),
+      child: text,
+    );
+  }
+}
+
+/// Passes layout straight through to a `Text` child and reports whether that
+/// text was ellipsized at the width it was given. The `Text` is the direct
+/// child, so the child render object is the paragraph.
+class _TruncationHook extends SingleChildRenderObjectWidget {
+  const _TruncationHook({required this.onLaidOut, required Widget child})
+      : super(child: child);
+
+  final ValueChanged<bool> onLaidOut;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderTruncationHook(onLaidOut);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderTruncationHook renderObject,
+  ) {
+    renderObject.onLaidOut = onLaidOut;
+  }
+}
+
+class _RenderTruncationHook extends RenderProxyBox {
+  _RenderTruncationHook(this.onLaidOut);
+
+  ValueChanged<bool> onLaidOut;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final RenderObject? c = child;
+    onLaidOut(c is RenderParagraph && c.didExceedMaxLines);
   }
 }

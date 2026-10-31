@@ -130,13 +130,15 @@ void main() {
       );
       expect(processCol.flex, greaterThan(connCol.flex));
 
-      // Tooltip is present for long process names.
+      // A tooltip only appears when the cell is actually truncated. This cell
+      // fits in the test surface, so there is none (see dialog_fixes_test.dart
+      // for the truncated case).
       expect(
         find.ancestor(
           of: find.text('Google Chrome Helper'),
           matching: find.byType(Tooltip),
         ),
-        findsOneWidget,
+        findsNothing,
       );
     });
   });

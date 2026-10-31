@@ -31,6 +31,9 @@ const int kDialogMaxCols = 6;
 const int kDialogMaxRows = 24;
 
 /// Default dialog size when the script asks for 0. `lib/script_dialog.c:75-76`.
+///
+/// This is also the popover's default width (`native/mac/PopoverHost.swift`
+/// mirrors it): the parser fills it in, so every spec carries one.
 const int kDialogDefaultWidth = 400;
 const int kDialogDefaultHeight = 300;
 
@@ -40,13 +43,10 @@ const int kClickDialog = 1;
 
 /// The kinds of dialog item.
 ///
-/// `taskpin_design` already has `TpDialogItemType` (text/hr/table/image/button)
-/// for `TpDialogSpecPreview`. That enum has no `webview`, and the design package
-/// belongs to another agent, so this is a deliberate superset rather than an
-/// edit to theirs. `toPreviewItems()` below converts back down for the preview,
-/// which is the reconciliation point: the only thing this enum adds is
-/// [webview] (carried by the ABI, rendered from Phase 9) and [unknown] (a type
-/// a future engine emits that this build does not know).
+/// This is a superset of the design package's item types: the enum adds
+/// [webview] (carried by the ABI, rendered from Phase 9) and [unknown] (a type a
+/// future engine emits that this build does not know). The manager's schematic
+/// preview has no case for either, so it renders its own placeholder for them.
 enum TpDialogItemKind {
   text,
   hr,

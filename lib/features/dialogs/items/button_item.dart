@@ -107,14 +107,13 @@ class _SpecStyledButtonState extends State<_SpecStyledButton> {
       }
     }
 
-    // VISUAL_SPEC §8: "脚本指定背景色时文字取黑或白中对比度高的一个"
+    // VISUAL_SPEC §8: "脚本指定背景色时文字取黑或白中对比度高的一个". Measured
+    // against the colour actually painted, so a hover tint can flip the pick.
     final Color foreground;
     if (widget.customFg != null) {
       foreground = widget.customFg!;
     } else if (widget.customBg != null) {
-      foreground = widget.customBg!.computeLuminance() > 0.5
-          ? const Color(0xFF000000)
-          : const Color(0xFFFFFFFF);
+      foreground = contrastingTextColor(background);
     } else {
       foreground = theme.text.primary;
     }

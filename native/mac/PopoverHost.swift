@@ -34,10 +34,13 @@ import FlutterMacOS
 
 /// The popover's default content size.
 ///
-/// VISUAL_SPEC §11.1: "默认宽 360；最小 240，最大 720". The height is the
-/// plan's dialog default (`kDialogDefaultHeight` on the Dart side); the popover
-/// then sizes to the spec once it arrives.
-private let kDefaultPopoverWidth: CGFloat = 360
+/// The width matches `kDialogDefaultWidth` (400) in
+/// `lib/features/dialogs/dialog_spec.dart`, the value the Dart parser gives every
+/// spec that asks for no width, so the popover never shows a different default
+/// from the dialog window. The height is `kDialogDefaultHeight` (300); the
+/// popover then sizes to the spec once it arrives. The 240 and 720 limits are an
+/// implementation choice; the spec does not set a popover width range.
+private let kDefaultPopoverWidth: CGFloat = 400
 private let kDefaultPopoverHeight: CGFloat = 300
 private let kMinPopoverWidth: CGFloat = 240
 private let kMaxPopoverWidth: CGFloat = 720
@@ -294,7 +297,7 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         // `resize({width, height})` is the isolate reporting its content's
         // natural size in logical points. The spec's width/height is only a
         // guess made before layout; without this the popover clips any dialog
-        // whose items do not fit the nominal 360 x 300.
+        // whose items do not fit the nominal 400 x 300.
         //
         // `close()` is the dialog's X (or Escape). It goes through
         // `performClose` like a click outside, so `popoverDidClose` still does
@@ -318,6 +321,12 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         return controller
     }
 
+    /// The screen the popover is on: its own window's screen, falling back to
+    /// `NSScreen.main` before it has a window.
+    private func popoverScreen() -> NSScreen? {
+        popover?.contentViewController?.view.window?.screen ?? NSScreen.main
+    }
+
     /// Apply a `resize` from the popover isolate.
     private func applyMeasuredSize(_ args: [String: Any]) {
         guard let width = (args["width"] as? NSNumber)?.doubleValue,
@@ -326,8 +335,7 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         // The cap is the screen the popover is actually on: on a multi-monitor
         // setup `NSScreen.main` is the key window's screen, which need not be
         // the one under this status item.
-        let screen = popover?.contentViewController?.view.window?.screen ?? NSScreen.main
-        let visible = screen?.visibleFrame.height ?? 800
+        let visible = popoverScreen()?.visibleFrame.height ?? 800
         let size = CGSize(
             width: min(kMaxPopoverWidth, max(kMinPopoverWidth, CGFloat(width))),
             height: min(visible * 0.8, max(80, CGFloat(height)))
@@ -345,12 +353,12 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
     /// The size a spec asks for, clamped to the popover's usable range.
     ///
     /// A popover taller than the screen is useless, so the height is also capped
-    /// at 80 % of the visible frame — the same rule VISUAL_SPEC §11.1 gives the
-    /// dialog window ("最大高 屏幕工作区 80%").
+    /// at 80 % of the visible frame. This is the popover's own rule; the
+    /// dialog-window rule in VISUAL_SPEC §8 does not name a cap.
     private func contentSize(from spec: [String: Any]?) -> CGSize {
         let width = CGFloat((spec?["width"] as? NSNumber)?.doubleValue ?? Double(kDefaultPopoverWidth))
         let height = CGFloat((spec?["height"] as? NSNumber)?.doubleValue ?? Double(kDefaultPopoverHeight))
-        let visible = NSScreen.main?.visibleFrame.height ?? 800
+        let visible = popoverScreen()?.visibleFrame.height ?? 800
         return CGSize(
             width: min(kMaxPopoverWidth, max(kMinPopoverWidth, width)),
             height: min(visible * 0.8, max(80, height))

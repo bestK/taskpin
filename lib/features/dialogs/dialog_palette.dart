@@ -1,18 +1,15 @@
-// The dart:ui half of the dialog model: wire colour strings -> `Color`, and
-// the conversion into `taskpin_design`'s preview item.
+// The dart:ui half of the dialog model: wire colour strings -> `Color`, and the
+// WCAG contrast helpers the item widgets use.
 //
 // Kept separate from `dialog_spec.dart` so the model itself stays importable
 // from a bare Dart VM (see `test/dialogs/spec_parse_selftest.dart`). Everything
-// that needs `dart:ui` or the design package lives here.
+// that needs `dart:ui` lives here.
 
 import 'dart:math' as math;
 import 'dart:ui' show Color;
 
 import 'package:flutter/painting.dart' show HSLColor;
 import 'package:flutter/widgets.dart' show BuildContext, InheritedWidget;
-import 'package:taskpin_design/taskpin_design.dart';
-
-import 'dialog_spec.dart';
 
 /// Approximate background surface colors of macOS NSPopover translucent material.
 ///
@@ -55,15 +52,23 @@ class DialogSurfaceContext extends InheritedWidget {
       surfaceColor != oldWidget.surfaceColor;
 }
 
-/// Parse a dialog colour string the way the C engine does.
+/// Hex digits only. `int.tryParse` alone also takes a sign ("-0FF00").
+final RegExp _kHexDigits = RegExp(r'^[0-9a-fA-F]+$');
+
+/// Parse a dialog colour string the way the C engine does, plus alpha.
 ///
 /// `parse_color_str` (`lib/scripting.c:149-161`) accepts:
 ///   - `#RGB`   — each digit doubled (`#ABC` -> `#AABBCC`), line 154-156
 ///   - `#RRGGBB` — as-is, line 157-159
 ///   - anything else, or `""` — the "use the default" sentinel
 ///
-/// Returns null for the sentinel, which is the Dart-idiomatic spelling of the
-/// same idea (the C side uses `0xFFFFFFFF`).
+/// This build also accepts `#RRGGBBAA` (CSS order, alpha last) so a script can
+/// ask for a translucent fill. The C parser has no alpha; this is the one
+/// deliberate extension.
+///
+/// Returns null for the sentinel and for anything that is not hex digits, which
+/// is the Dart-idiomatic spelling of the same idea (the C side uses
+/// `0xFFFFFFFF`).
 ///
 /// Deliberately NOT `TpBarSpan.parseWireColor`: that one requires exactly
 /// `#RRGGBB` and rejects the 3-digit form the dialog DSL accepts, and it lives
@@ -74,34 +79,32 @@ Color? parseDialogColor(String wire) {
   if (wire.isEmpty) {
     return null;
   }
-  String s = wire;
-  if (s.startsWith('#')) {
-    s = s.substring(1);
-  }
-  int r;
-  int g;
-  int b;
-  if (s.length == 3) {
-    final int? v = int.tryParse(s, radix: 16);
-    if (v == null) {
-      return null;
-    }
-    // Each nibble doubled, matching `r *= 17` in the C parser.
-    r = ((v >> 8) & 0xF) * 17;
-    g = ((v >> 4) & 0xF) * 17;
-    b = (v & 0xF) * 17;
-  } else if (s.length == 6) {
-    final int? v = int.tryParse(s, radix: 16);
-    if (v == null) {
-      return null;
-    }
-    r = (v >> 16) & 0xFF;
-    g = (v >> 8) & 0xFF;
-    b = v & 0xFF;
-  } else {
+  final String s = wire.startsWith('#') ? wire.substring(1) : wire;
+  if (!_kHexDigits.hasMatch(s)) {
     return null;
   }
-  return Color.fromARGB(255, r, g, b);
+  final int v = int.parse(s, radix: 16);
+  switch (s.length) {
+    case 3:
+      // Each nibble doubled, matching `r *= 17` in the C parser.
+      return Color.fromARGB(
+        255,
+        ((v >> 8) & 0xF) * 17,
+        ((v >> 4) & 0xF) * 17,
+        (v & 0xF) * 17,
+      );
+    case 6:
+      return Color.fromARGB(255, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+    case 8:
+      return Color.fromARGB(
+        v & 0xFF,
+        (v >> 24) & 0xFF,
+        (v >> 16) & 0xFF,
+        (v >> 8) & 0xFF,
+      );
+    default:
+      return null;
+  }
 }
 
 /// WCAG 2.1 contrast ratio between two colours.
@@ -115,6 +118,18 @@ double contrastRatio(Color a, Color b) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+const Color _kBlack = Color(0xFF000000);
+const Color _kWhite = Color(0xFFFFFFFF);
+
+/// Black or white, whichever has the higher contrast against [background].
+///
+/// Used for a button's label on a script-chosen fill, and as the last resort
+/// when [ensureContrast] cannot reach its target.
+Color contrastingTextColor(Color background) =>
+    contrastRatio(_kWhite, background) > contrastRatio(_kBlack, background)
+    ? _kWhite
+    : _kBlack;
+
 /// Ensure [foreground] has at least [minContrast] against [surface].
 ///
 /// In popover mode, scripts often hard-code light colours like `#FFFFFF` or
@@ -123,8 +138,11 @@ double contrastRatio(Color a, Color b) {
 ///
 /// This principled adaptation preserves the script author's chosen hue and
 /// saturation in HSL space, shifting only lightness until the target contrast
-/// ratio is met. If the colour already satisfies [minContrast] (or on dark
-/// surfaces where contrast is already high), it is returned unmodified.
+/// ratio is met. The search runs toward whichever of black or white contrasts
+/// more with [surface], so a mid-grey surface is approached from the side that
+/// can reach the target at all. If even that extreme falls short, the extreme
+/// itself is returned: it is the most legible colour available. If the colour
+/// already satisfies [minContrast], it is returned unmodified.
 Color ensureContrast(
   Color foreground,
   Color surface, {
@@ -146,60 +164,28 @@ Color ensureContrast(
     }
   }
 
-  double low = surfaceIsLight ? 0.0 : hsl.lightness;
-  double high = surfaceIsLight ? hsl.lightness : 1.0;
-  Color best = foreground;
+  // Search toward the extreme with more contrast. Lightness 1 is white and 0 is
+  // black, so the extreme is the most legible lightness this hue can reach.
+  final Color extreme = contrastingTextColor(surface);
+  if (contrastRatio(extreme, surface) < minContrast) {
+    return extreme;
+  }
+  final double extremeLightness = extreme == _kWhite ? 1.0 : 0.0;
 
-  // Binary search for the closest lightness that satisfies the contrast threshold.
+  // Binary search between the original lightness (known to fail) and the
+  // extreme (known to pass), for the lightness nearest the original that passes.
+  double fails = hsl.lightness;
+  double passes = extremeLightness;
   for (int i = 0; i < 16; i++) {
-    final double mid = (low + high) / 2;
-    final Color candidate = hsl.withLightness(mid).toColor();
-    final double ratio = contrastRatio(candidate, surface);
-
-    if (ratio >= minContrast) {
-      best = candidate;
-      if (surfaceIsLight) {
-        // Try higher lightness (closer to original color)
-        low = mid;
-      } else {
-        // Try lower lightness (closer to original color)
-        high = mid;
-      }
+    final double mid = (fails + passes) / 2;
+    if (contrastRatio(hsl.withLightness(mid).toColor(), surface) >= minContrast) {
+      passes = mid;
     } else {
-      if (surfaceIsLight) {
-        // Too light, must be darker
-        high = mid;
-      } else {
-        // Too dark, must be lighter
-        low = mid;
-      }
+      fails = mid;
     }
   }
-
-  return best;
+  return hsl.withLightness(passes).toColor();
 }
-
-/// Resolve an item's foreground against the theme default.
-///
-/// The C renderer's default is `RGB(220,220,220)` (`DIALOG_FG`,
-/// `lib/script_dialog.c:11`). In TaskPin, body text resolves to `theme.text.primary`,
-/// while label or caption-like text resolves to `theme.text.secondary`.
-/// An explicit script colour wins when provided.
-Color dialogForeground(
-  TaskPinTheme theme,
-  String wire, {
-  bool isLabel = false,
-}) =>
-    parseDialogColor(wire) ??
-    (isLabel ? theme.text.secondary : theme.text.primary);
-
-/// Resolve a button background against the theme default.
-///
-/// When the script specifies no explicit background, standard buttons rest on
-/// `theme.control.fill` to fit the Aurora control silhouette. An explicit
-/// script background (`#RRGGBB` or `#RGB`) takes precedence.
-Color dialogButtonBackground(TaskPinTheme theme, String wire) =>
-    parseDialogColor(wire) ?? theme.control.fill;
 
 /// Point size -> logical pixels, matching `create_dialog_font`.
 ///
@@ -212,53 +198,3 @@ double dialogFontPixels(int pointSize) =>
 
 /// The C layer's "default point size" for dialog text (`lib/script_dialog.c:123`).
 const int kDialogDefaultPointSize = 10;
-
-/// Convert a parsed item into `TpDialogSpecPreview`'s item shape.
-///
-/// Returns null for [TpDialogItemKind.webview] and
-/// [TpDialogItemKind.unknown]: the design package's preview enum has no case
-/// for either, and its own doc comment calls it "deliberately schematic", so
-/// the manager window renders its own placeholder rather than a wrong-shaped
-/// preview. This is the single reconciliation point with `taskpin_design` —
-/// if that package later grows `webview`, only this function changes.
-TpDialogSpecItem? toPreviewItem(DialogItem item) {
-  switch (item.kind) {
-    case TpDialogItemKind.text:
-      return TpDialogSpecItem(type: TpDialogItemType.text, text: item.value);
-    case TpDialogItemKind.hr:
-      return const TpDialogSpecItem(type: TpDialogItemType.hr);
-    case TpDialogItemKind.image:
-      return TpDialogSpecItem(
-        type: TpDialogItemType.image,
-        text: item.image,
-        width: item.imageWidth,
-        height: item.imageHeight,
-      );
-    case TpDialogItemKind.button:
-      return TpDialogSpecItem(
-        type: TpDialogItemType.button,
-        text: item.value,
-        url: item.url,
-        cmd: item.cmd,
-      );
-    case TpDialogItemKind.table:
-      // Row 0 of the preview's `rows` is its header, so the columns are
-      // prepended — see `TpDialogSpecPreview._table`.
-      return TpDialogSpecItem(
-        type: TpDialogItemType.table,
-        rows: <List<String>>[
-          if (item.columns.isNotEmpty) item.columns,
-          ...item.cells,
-        ],
-      );
-    case TpDialogItemKind.webview:
-    case TpDialogItemKind.unknown:
-      return null;
-  }
-}
-
-/// Every item of a spec that the preview can represent, dropping the rest.
-List<TpDialogSpecItem> toPreviewItems(DialogSpec spec) => spec.items
-    .map(toPreviewItem)
-    .whereType<TpDialogSpecItem>()
-    .toList(growable: false);

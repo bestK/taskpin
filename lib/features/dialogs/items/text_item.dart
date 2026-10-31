@@ -35,13 +35,24 @@ class DialogTextItem extends StatelessWidget {
     // (`hostDrawsSurface == true`), where native vibrant material or explicit
     // fill shows through. In Windows window mode (`hostDrawsSurface == false`),
     // script colours must stay strictly untouched.
+    // The C default is 10 pt; a script that asks for a size gets exactly that
+    // (lib/script_dialog.c:123, :185). The type scale is only used for the
+    // default, so a script's `size = 24` is not silently re-rounded to a token.
+    final double size = item.fontSize > 0
+        ? dialogFontPixels(item.fontSize)
+        : TpTypography.body.size;
+
+    // WCAG 2.1 large text is at least 18.66 px bold or 24 px regular. Only
+    // that gets the 3:1 floor; everything else needs 4.5:1.
+    final bool largeText = item.bold ? size >= 18.66 : size >= 24;
+
     final Color? explicitColor;
     if (parsedColor != null) {
       if (surfaceContext != null && surfaceContext.hostDrawsSurface) {
         explicitColor = ensureContrast(
           parsedColor,
           surfaceContext.surfaceColor,
-          minContrast: item.bold ? 3.0 : 4.5,
+          minContrast: largeText ? 3.0 : 4.5,
         );
       } else {
         explicitColor = parsedColor;
@@ -53,13 +64,6 @@ class DialogTextItem extends StatelessWidget {
     final Color defaultColor =
         isLabel ? theme.text.secondary : theme.text.primary;
     final bool hasIcon = item.image.isNotEmpty;
-
-    // The C default is 10 pt; a script that asks for a size gets exactly that
-    // (lib/script_dialog.c:123, :185). The type scale is only used for the
-    // default, so a script's `size = 24` is not silently re-rounded to a token.
-    final double size = item.fontSize > 0
-        ? dialogFontPixels(item.fontSize)
-        : TpTypography.body.size;
 
     final TextStyle baseStyle = TpTypography.body.toTextStyle().copyWith(
       fontSize: size,
@@ -143,9 +147,11 @@ class DialogTextItem extends StatelessWidget {
   }
 
   /// Pattern matching a leading field/key label followed by its value, e.g.
-  /// "Status: Active" or "会话: session-1". Does not match timestamps or URLs.
+  /// "Status: Active" or "会话: session-1". Does not match a line that starts
+  /// with a digit (a timestamp such as "12:30") or a URL (`https://…`, where the
+  /// text after the colon starts with `//`).
   static final RegExp _kLabelValuePattern = RegExp(
-    r'^([^\d:\n\r][^:\n\r]{0,31}[:：])(\s*)(.+)$',
+    r'^([^\d:\n\r][^:\n\r]{0,31}[:：])(?!\s*//)(\s*)(.+)$',
   );
 
   /// Determine if a text item represents a standalone label or secondary caption.
