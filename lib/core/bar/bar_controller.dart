@@ -16,12 +16,14 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Locale, PlatformDispatcher;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 import 'package:taskpin_engine/taskpin_engine.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../config/config_providers.dart';
 import '../config/config_schema.dart';
 import '../engine/engine_provider.dart';
@@ -684,6 +686,8 @@ class BarNotifier extends Notifier<BarState> {
         unawaited(_onWheel(event));
       case BarContextMenuEvent():
         unawaited(_onContextMenu(event));
+      case BarMenuRequestEvent(:final int barId):
+        unawaited(_showContextMenu(barId));
       case BarHoverEvent():
         // Purely visual: the native side already repainted with
         // `bar/bgHover`. Nothing to do, but the event is part of the frozen
@@ -822,6 +826,23 @@ class BarNotifier extends Notifier<BarState> {
       }
     });
     await notifier.flush();
+  }
+
+  /// macOS right click: build the menu here so its titles come from the l10n
+  /// bundle, and let native present it. Windows builds its own menu natively.
+  Future<void> _showContextMenu(int barId) async {
+    final AppLocalizations l10n = lookupAppLocalizations(
+      AppLocalizations.supportedLocales.firstWhere(
+        (Locale l) =>
+            l.languageCode == PlatformDispatcher.instance.locale.languageCode,
+        orElse: () => const Locale('en'),
+      ),
+    );
+    await ref.read(barApiProvider).showContextMenu(<({String title, int tag})>[
+      (title: l10n.barManageItems, tag: BarMenuAction.manage.tagFor(barId)),
+      (title: l10n.barUnpin, tag: BarMenuAction.unpin.tagFor(barId)),
+      (title: l10n.barExit, tag: BarMenuAction.exit.tagFor(barId)),
+    ]);
   }
 
   /// Right click: Unpin / Manage Items... / Exit.

@@ -26,6 +26,7 @@
 //     toggleMaximize() -> void
 //     close() -> void        hides the window; the process (and the bars) stay
 //     show() -> void         un-hides / restores and raises it
+//     quit() -> void         macOS only: terminate through AppKit
 //     isMaximized() -> bool
 //
 //   taskpin/main_window/events   EventChannel, Stream<bool>
@@ -69,6 +70,11 @@ abstract class MainWindowApi {
 
   /// Show the manager window again after [close] or a minimize, and raise it.
   Future<void> show();
+
+  /// Quit the whole app (manager and bars). macOS answers it with
+  /// `NSApp.terminate`; returns false where there is no native half, so the
+  /// caller can fall back to `exit(0)`.
+  Future<bool> quit();
 
   /// Whether the window is maximized.
   ///
@@ -132,6 +138,18 @@ class MethodChannelMainWindowApi implements MainWindowApi {
   Future<void> show() => _invoke('show');
 
   @override
+  Future<bool> quit() async {
+    try {
+      await _channel.invokeMethod<void>('quit');
+      return true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  @override
   Future<bool?> isMaximized() async {
     try {
       return await _channel.invokeMethod<bool>('isMaximized');
@@ -158,6 +176,8 @@ class NoopMainWindowApi implements MainWindowApi {
   Future<void> close() async {}
   @override
   Future<void> show() async {}
+  @override
+  Future<bool> quit() async => false;
 
   /// Null = "not supported", so the title bar hides its buttons.
   @override
@@ -197,6 +217,11 @@ class RecordingMainWindowApi implements MainWindowApi {
   Future<void> toggleMaximize() async => calls.add('toggleMaximize');
   @override
   Future<void> close() async => calls.add('close');
+  @override
+  Future<bool> quit() async {
+    calls.add('quit');
+    return supported;
+  }
   @override
   Future<void> show() async => calls.add('show');
 

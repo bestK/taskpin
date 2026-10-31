@@ -5,7 +5,29 @@ import FlutterMacOS
 import taskpin_bar
 
 class MainFlutterWindow: NSWindow {
+  /// The manager window. There is exactly one; the AppDelegate's Dock reopen
+  /// and the `taskpin/main_window` channel reach it through this.
+  private(set) static weak var shared: MainFlutterWindow?
+
+  private var mainWindowChannel: FlutterMethodChannel?
+
+  /// The red traffic light and ⌘W hide the manager rather than closing it,
+  /// matching Windows (`WM_CLOSE` -> `SW_HIDE`): the Flutter engine keeps
+  /// running, so the menu-bar strips keep refreshing.
+  override func performClose(_ sender: Any?) {
+    orderOut(sender)
+  }
+
+  /// Un-hide, de-miniaturise and raise the manager.
+  func showManager() {
+    if isMiniaturized { deminiaturize(nil) }
+    makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
   override func awakeFromNib() {
+    MainFlutterWindow.shared = self
+
     // ── Self-drawn title bar (docs/UI_REFACTOR_PLAN.md §5.2) ──────────────
     //
     // The manager window paints its own 36 px title bar in Flutter
@@ -20,8 +42,9 @@ class MainFlutterWindow: NSWindow {
     // The traffic lights stay where they are — that is the point of
     // fullSizeContentView — and the Dart side reserves 72 pt on the left for
     // them. There are no right-side buttons on macOS: the native half of
-    // `taskpin/main_window` does not exist, so `isMaximized()` returns null and
-    // TitleBar hides the Windows-style button row.
+    // `taskpin/main_window` below answers `isMaximized()` with
+    // NotImplemented, so it reads as null and TitleBar hides the
+    // Windows-style button row.
     //
     // This must be set before `super.awakeFromNib()` so the first layout pass
     // already sees the full-size content view; doing it afterwards causes a
@@ -50,6 +73,36 @@ class MainFlutterWindow: NSWindow {
     TaskpinBarPluginRegistrar.register(
       with: flutterViewController.registrar(forPlugin: "TaskpinBarPlugin")
     )
+
+    // The macOS half of `taskpin/main_window`
+    // (lib/core/window/main_window_channel.dart). Only what macOS needs:
+    //   show()   un-hide and raise (the strip menu's "Manage items...")
+    //   close()  hide; the process and the strips stay
+    //   quit()   terminate through AppKit, so the app quits the normal way
+    //            (status items removed, engines shut down) instead of exit(0)
+    // minimize / toggleMaximize / isMaximized stay NotImplemented: the traffic
+    // lights own those, and a null isMaximized keeps TitleBar's Windows buttons
+    // hidden.
+    let channel = FlutterMethodChannel(
+      name: "taskpin/main_window",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "show":
+        self?.showManager()
+        result(nil)
+      case "close":
+        self?.orderOut(nil)
+        result(nil)
+      case "quit":
+        result(nil)
+        NSApp.terminate(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    mainWindowChannel = channel
 
     super.awakeFromNib()
   }

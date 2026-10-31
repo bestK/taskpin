@@ -38,6 +38,18 @@ enum BarMenuAction {
 
   final String wireValue;
 
+  /// Pack [barId] and this action into one `NSMenuItem.tag`, so a selection
+  /// says which bar it was for without native-side bookkeeping.
+  int tagFor(int barId) => barId * 8 + index;
+
+  /// The inverse of [tagFor]; null for a tag this build did not send.
+  static (int, BarMenuAction)? fromTag(int tag) {
+    if (tag < 0) return null;
+    final int i = tag % 8;
+    if (i >= BarMenuAction.values.length) return null;
+    return (tag ~/ 8, BarMenuAction.values[i]);
+  }
+
   /// Parse the wire string. An unrecognised value is null: a menu id this
   /// build does not know about must not be silently treated as "unpin".
   static BarMenuAction? fromWire(String value) {
@@ -212,8 +224,22 @@ sealed class BarEvent {
           x: _int(args['x']),
         );
       case 'onContextMenu':
+        // Windows resolves the menu natively and sends the choice. macOS sends
+        // the bare right-click and lets Dart build the (localised) menu.
+        if (args['action'] == null) return BarMenuRequestEvent(barId);
         final BarMenuAction? action = BarMenuAction.fromWire('${args['action']}');
         return action == null ? null : BarContextMenuEvent(barId, action);
+      case 'onContextMenuSelection':
+        // The answer to [BarApi.showContextMenu]: the tag is the bar id and
+        // action packed by [BarMenuAction.tagFor].
+        final int tag = switch (args['tag']) {
+          final num v => v.toInt(),
+          _ => -1,
+        };
+        final (int, BarMenuAction)? decoded = BarMenuAction.fromTag(tag);
+        return decoded == null
+            ? null
+            : BarContextMenuEvent(decoded.$1, decoded.$2);
       case 'onHoverChange':
         return BarHoverEvent(barId, hover: args['hover'] == true);
       default:
@@ -260,6 +286,12 @@ final class BarContextMenuEvent extends BarEvent {
   const BarContextMenuEvent(super.barId, this.action);
 
   final BarMenuAction action;
+}
+
+/// Right click with no choice yet (macOS): Dart answers with
+/// [BarApi.showContextMenu].
+final class BarMenuRequestEvent extends BarEvent {
+  const BarMenuRequestEvent(super.barId);
 }
 
 /// The pointer entered or left a bar.
@@ -326,6 +358,10 @@ abstract class BarApi {
 
   /// Close the popover for [barId], if open.
   Future<void> hidePopover(int barId);
+
+  /// Show a native menu at the last right-click point (macOS). Each entry is a
+  /// title and a tag; the choice comes back as `onContextMenuSelection`.
+  Future<void> showContextMenu(List<({String title, int tag})> items);
 
   /// Tear one bar down.
   Future<void> remove(int barId);
@@ -434,6 +470,15 @@ class MethodChannelBarApi implements BarApi {
       _invoke('hidePopover', <String, dynamic>{'barId': barId});
 
   @override
+  Future<void> showContextMenu(List<({String title, int tag})> items) =>
+      _invoke('showContextMenu', <String, dynamic>{
+        'items': <Map<String, dynamic>>[
+          for (final ({String title, int tag}) i in items)
+            <String, dynamic>{'title': i.title, 'tag': i.tag},
+        ],
+      });
+
+  @override
   Future<void> remove(int barId) =>
       _invoke('remove', <String, dynamic>{'barId': barId});
 
@@ -485,6 +530,8 @@ class NoopBarApi implements BarApi {
   }) async {}
   @override
   Future<void> hidePopover(int barId) async {}
+  @override
+  Future<void> showContextMenu(List<({String title, int tag})> items) async {}
   @override
   Future<void> remove(int barId) async {}
   @override
@@ -555,6 +602,15 @@ class RecordingBarApi implements BarApi {
   Future<void> hidePopover(int barId) async {
     popovers.remove(barId);
     calls.add('hidePopover($barId)');
+  }
+
+  /// The last menu shown, for asserting titles and tags.
+  List<({String title, int tag})> lastMenu = <({String title, int tag})>[];
+
+  @override
+  Future<void> showContextMenu(List<({String title, int tag})> items) async {
+    lastMenu = items;
+    calls.add('showContextMenu(${items.length})');
   }
 
   @override

@@ -134,7 +134,11 @@ Future<void> _managerMain(List<String> args) async {
           repository: repository,
           config: config,
           dialogHost: dialogHost,
-          exitRequest: () => exit(0),
+          // macOS quits through AppKit so the app terminates the normal way;
+          // Windows (and a missing native half) keeps the plain exit.
+          exitRequest: () => unawaited(() async {
+            if (!await MethodChannelMainWindowApi().quit()) exit(0);
+          }()),
           // Closing the manager only hides it (the bars must keep running),
           // so "Manage Items..." / a bar double-click brings it back.
           managerRaiser: () => unawaited(MethodChannelMainWindowApi().show()),
