@@ -6,12 +6,13 @@
 // UI isolate never calls FFI — it only sends messages, which is why every
 // method on `EngineApi` is async.
 //
-// Why the app can use the same code the tests use: `packages/taskpin_engine`
-// loads the engine from a DLL. The SHIPPED app links the identical sources
-// STATICALLY into the Windows runner (`windows/CMakeLists.txt`), so there is no
-// runtime DLL to carry — the dynamic load exists only because `dart test` has
-// no runner to link against. `library_loader.dart` handles both, preferring the
-// directory of the running executable.
+// Why the app can use the same code the tests use: the engine sources are
+// identical everywhere, but the shipped app does not load a file. Windows
+// links them STATICALLY into the runner (`windows/CMakeLists.txt`); macOS
+// compiles them into the embedded `taskpin_engine.framework` pod, so the `tp_*`
+// symbols are already in the process and `DynamicLibrary.process()` resolves
+// them. The file search in `library_loader.dart` exists only for `dart test`,
+// which has no runner to link against.
 //
 // Lifecycle: this is deliberately NOT `autoDispose`. Those tear down the moment
 // the last listener goes away — which happens whenever the editor closes while

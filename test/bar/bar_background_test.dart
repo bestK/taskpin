@@ -10,6 +10,12 @@
 // The fix sends 0xFFFFFFFF as a sentinel instead, which native resolves by
 // sampling the taskbar's own pixels (`kColorFollowTaskbar`). These tests pin
 // the Dart half of that contract.
+//
+// macOS differs on purpose (VISUAL_SPEC §7.1: the menu bar is transparent by
+// default): the GLOBAL `bg_color` is a Windows taskbar colour and is ignored
+// there; only an explicit per-item `bar_bg_color` paints. `flutter test` runs
+// on macOS too, so every case pins `barMenuBarProvider` rather than inheriting
+// the host OS.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +47,7 @@ List<Override> _noEngine() {
 Future<BarStyleSpec> _styleFor({
   required PinItem item,
   String? globalBg,
+  bool macMenuBar = false,
 }) async {
   final RecordingBarApi api = RecordingBarApi();
   final Directory dir = Directory.systemTemp.createTempSync('tp_bg');
@@ -58,6 +65,7 @@ Future<BarStyleSpec> _styleFor({
   final ProviderContainer container = ProviderContainer(
     overrides: <Override>[
       barApiProvider.overrideWithValue(api),
+      barMenuBarProvider.overrideWithValue(macMenuBar),
       configRepositoryProvider.overrideWithValue(repository),
       initialConfigProvider.overrideWithValue(
         TaskPinConfig(
@@ -135,5 +143,32 @@ void main() {
       globalBg: '00000000',
     );
     expect(style.background, kFollowTaskbarArgb);
+  });
+
+  group('macOS menu bar', () {
+    test('an explicit global colour does NOT paint the menu bar', () async {
+      // The shape a config migrated from the old Swift app has: its shell
+      // colour `1D1D1D` ended up in the global as `001D1D1D`.
+      final BarStyleSpec style = await _styleFor(
+        item: PinItem(name: 'clock', pinned: true, luaPath: 'clock.lua'),
+        globalBg: '001D1D1D',
+        macMenuBar: true,
+      );
+      expect(style.background, kFollowTaskbarArgb);
+    });
+
+    test('an explicit item colour still paints', () async {
+      final BarStyleSpec style = await _styleFor(
+        item: PinItem(
+          name: 'clock',
+          pinned: true,
+          luaPath: 'clock.lua',
+          barBgColor: 'FF0000',
+        ),
+        globalBg: '001D1D1D',
+        macMenuBar: true,
+      );
+      expect(style.background, 0xFF0000FF);
+    });
   });
 }

@@ -60,6 +60,18 @@ void main() {
       expect(ps.map((BarPlacement p) => p.offset), <int>[0, 152]);
     });
 
+    test('on the macOS menu bar, bar_width 0 means size to content', () {
+      // The global width is a Windows taskbar default (320); applying it to a
+      // menu-bar item is what made every item 320 pt wide.
+      final TaskPinConfig cfg = _config(
+        <PinItem>[_item('a'), _item('b', barWidth: 90)],
+        width: 320,
+      );
+
+      final List<BarPlacement> ps = computeBarPlacements(cfg, macMenuBar: true);
+      expect(ps.map((BarPlacement p) => p.width), <int>[0, 90]);
+    });
+
     test('unpinned items get no bar and take no offset', () {
       final TaskPinConfig cfg = _config(<PinItem>[
         _item('a', barWidth: 100),

@@ -42,6 +42,22 @@ final Provider<BarApi> barApiProvider = Provider<BarApi>((Ref ref) {
   return api;
 });
 
+/// True when the bars are macOS menu-bar items rather than Windows taskbar
+/// buttons.
+///
+/// A provider rather than a bare `Platform.isMacOS` because `flutter test` runs
+/// on macOS: the Windows expectations in `test/bar` must still be testable, so
+/// a test pins this to false. The production default follows the real OS.
+///
+/// The three places macOS diverges:
+///   * width: a bar sizes to its content unless the ITEM set `bar_width`
+///     (a Windows taskbar default of 320 pt would be a huge menu-bar item);
+///   * background: only an explicit per-item `bar_bg_color` paints; the global
+///     `bg_color` is a Windows taskbar colour (VISUAL_SPEC §7.1);
+///   * a dialog click opens the native popover instead of an inline panel.
+final Provider<bool> barMenuBarProvider =
+    Provider<bool>((Ref ref) => Platform.isMacOS);
+
 /// Whether the user has turned the taskbar bars off.
 ///
 /// A kill switch matters because the bars are native windows in someone else's
@@ -143,7 +159,17 @@ class BarPlacement {
 /// Mirrors the native tiling: pinned items only, capped at
 /// [ConfigLimits.maxBars], auto bars accumulate `width + 2` while explicit
 /// bars contribute no offset (they sit where the user put them).
-List<BarPlacement> computeBarPlacements(TaskPinConfig config) {
+///
+/// [macMenuBar] switches the WIDTH rule only. The menu bar sizes a bar to its
+/// content unless the item itself asked for a width, so an unset `bar_width`
+/// yields 0 ("size to content") rather than the global `width` — which is a
+/// Windows-taskbar default (320 pt) and would make every menu-bar item huge.
+/// The tiling offset is irrelevant on macOS (the system places the items) but
+/// is still computed so the two platforms share one pure function.
+List<BarPlacement> computeBarPlacements(
+  TaskPinConfig config, {
+  bool macMenuBar = false,
+}) {
   final List<BarPlacement> out = <BarPlacement>[];
   int pinnedIndex = 0;
   int autoOffset = 0;
@@ -153,7 +179,9 @@ List<BarPlacement> computeBarPlacements(TaskPinConfig config) {
     if (!item.pinned) {
       continue;
     }
-    final int width = item.barWidth > 0 ? item.barWidth : config.width;
+    final int width = item.barWidth > 0
+        ? item.barWidth
+        : (macMenuBar ? 0 : config.width);
     final bool auto = item.barX < 0;
     out.add(
       BarPlacement(
@@ -174,8 +202,17 @@ List<BarPlacement> computeBarPlacements(TaskPinConfig config) {
 
 /// The placement of [itemIndex], or null when it is not pinned (or is past the
 /// bar cap).
-BarPlacement? placementFor(TaskPinConfig config, int itemIndex) {
-  for (final BarPlacement p in computeBarPlacements(config)) {
+///
+/// [macMenuBar] has the same meaning as in [computeBarPlacements].
+BarPlacement? placementFor(
+  TaskPinConfig config,
+  int itemIndex, {
+  bool macMenuBar = false,
+}) {
+  for (final BarPlacement p in computeBarPlacements(
+    config,
+    macMenuBar: macMenuBar,
+  )) {
     if (p.itemIndex == itemIndex) {
       return p;
     }
@@ -229,6 +266,9 @@ final NotifierProvider<BarNotifier, BarState> barControllerProvider =
     NotifierProvider<BarNotifier, BarState>(BarNotifier.new);
 
 class BarNotifier extends Notifier<BarState> {
+  /// Whether these bars live in the macOS menu bar. See [barMenuBarProvider].
+  bool get _macMenuBar => ref.read(barMenuBarProvider);
+
   /// bar id -> the `PinItem` instance it was last built from, so a config
   /// change can tell "same item, new content" from "a different item now owns
   /// this id" (which is exactly what `moveItem` does, because bar ids are
@@ -308,7 +348,11 @@ class BarNotifier extends Notifier<BarState> {
     // the config index: `moveItem` renumbers every config index, and a key
     // that changed on every reorder would not describe a stable order. The
     // placement helper is pure, so the rule is unit-tested.
-    final List<BarPlacement> placements = computeBarPlacements(config);
+    final bool macMenuBar = _macMenuBar;
+    final List<BarPlacement> placements = computeBarPlacements(
+      config,
+      macMenuBar: macMenuBar,
+    );
     final Set<int> wantedSet = <int>{
       for (final BarPlacement p in placements) p.itemIndex,
     };
@@ -366,7 +410,10 @@ class BarNotifier extends Notifier<BarState> {
       }
 
       if (isNew) {
-        await api.setStyle(index, _styleFor(item, config));
+        await api.setStyle(
+          index,
+          _styleFor(item, config, macMenuBar: macMenuBar),
+        );
         // A placeholder so a bar appears immediately, before its first script
         // run finishes — otherwise a slow script means no bar at all for
         // several seconds, which reads as "pinning did nothing".
@@ -477,7 +524,15 @@ class BarNotifier extends Notifier<BarState> {
 
       final BarItemState itemState =
           failed ? BarItemState.error : BarItemState.running;
-      await api.setStyle(index, _styleFor(item, config, state: itemState));
+      await api.setStyle(
+        index,
+        _styleFor(
+          item,
+          config,
+          macMenuBar: _macMenuBar,
+          state: itemState,
+        ),
+      );
       await api.setSpans(
         index,
         contentToWire(content, defaultFontSize: _fontSizeFor(item, config)),
@@ -507,10 +562,15 @@ class BarNotifier extends Notifier<BarState> {
     } on Object catch (e) {
       // A single item must never take the loop down.
       if (!identical(_itemForBar[index], item)) return;
-      final BarPlacement? placement = placementFor(config, index);
+      final BarPlacement? placement = placementFor(
+        config,
+        index,
+        macMenuBar: _macMenuBar,
+      );
       _lastPushed[index] = BarSnapshot(
         itemIndex: index,
-        width: _geometry[index]?.width ?? _widthFor(item, config),
+        width: _geometry[index]?.width ??
+            _widthFor(item, config, macMenuBar: _macMenuBar),
         // An auto bar's x is native's to choose, so never report a made-up 0.
         x: _geometry[index]?.x ??
             ((placement != null && placement.isAuto) ? -1 : item.barX),
@@ -553,19 +613,25 @@ class BarNotifier extends Notifier<BarState> {
     TaskPinConfig config,
   ) {
     final BarGeometrySnapshot? sent = _geometry[index];
+    final bool macMenuBar = _macMenuBar;
 
     // An explicit bar stays explicit: its x is whatever is on screen (the
     // cache) or, before the first send, the config.
     if (item.barX >= 0) {
       return BarGeometrySnapshot(
-        width: sent?.width ?? _widthFor(item, config),
+        width: sent?.width ??
+            _widthFor(item, config, macMenuBar: macMenuBar),
         x: sent?.x ?? item.barX,
         autoIndex: -1,
       );
     }
 
     // An auto bar: native owns x, Dart owns the ordering key and width.
-    final BarPlacement? p = placementFor(config, index);
+    final BarPlacement? p = placementFor(
+      config,
+      index,
+      macMenuBar: macMenuBar,
+    );
     if (p != null) {
       return BarGeometrySnapshot(
         width: sent?.width ?? p.width,
@@ -574,7 +640,7 @@ class BarNotifier extends Notifier<BarState> {
       );
     }
     return BarGeometrySnapshot(
-      width: sent?.width ?? _widthFor(item, config),
+      width: sent?.width ?? _widthFor(item, config, macMenuBar: macMenuBar),
       x: -1,
       autoIndex: -1,
     );
@@ -635,11 +701,18 @@ class BarNotifier extends Notifier<BarState> {
     final int? index = _indexFor(barId);
     if (index == null) return;
     final PinItem item = ref.read(configProvider).items[index];
-    if (!item.clickEnabled) return;
 
-    if (item.clickUrl.isNotEmpty) {
-      await _openUrl(item.clickUrl);
-      return;
+    // `click_enabled` / `click_url` are URL-mode fields (`src/bar_window.c`
+    // only reads them when a URL item has no script). A Lua item decides for
+    // itself through the result's `clickable`, so gating it on
+    // `click_enabled` — false in every Lua item on disk — made no script
+    // dialog ever open.
+    if (item.type != PinItemType.lua) {
+      if (!item.clickEnabled) return;
+      if (item.clickUrl.isNotEmpty) {
+        await _openUrl(item.clickUrl);
+        return;
+      }
     }
 
     // No URL configured: the script itself decides, and its dialog is the
@@ -647,7 +720,31 @@ class BarNotifier extends Notifier<BarState> {
     final ScriptResult? result = _lastResult[index];
     if (result == null || !result.clickable) return;
     if (result.clickAction == ClickAction.dialog) {
-      // Inline dialogs are the default presentation (see
+      final ui.DialogSpec? uiSpec = uiSpecFromEngine(result.dialog);
+      if (uiSpec == null) return;
+
+      // macOS: the dialog is an `NSPopover` anchored to the menu-bar item, so
+      // it belongs to the native plugin rather than to the manager window.
+      // ONLY this path opens it — the native click handler no longer opens a
+      // popover on every click, so an item whose result is not a dialog does
+      // nothing (the old behaviour showed an empty popover).
+      //
+      // The script identity rides along so the popover engine can re-run the
+      // script on the dialog's own `@refresh` interval.
+      if (_macMenuBar) {
+        await ref.read(barApiProvider).showPopover(
+          index,
+          uiSpec.toJson(),
+          luaPath: resolveScriptPath(
+            item.luaPath,
+            ref.read(configRepositoryProvider).paths.baseDir,
+          ),
+          argsJson: buildArgsJson(item),
+        );
+        return;
+      }
+
+      // Inline dialogs are the default presentation on Windows (see
       // `features/dialogs/inline_dialog_provider.dart` for why a second window
       // was abandoned). The seam stays: a test or an alternative host can
       // override `dialogOpenerProvider` and take the click instead.
@@ -782,12 +879,20 @@ class BarNotifier extends Notifier<BarState> {
 
   // ---- style / geometry helpers -------------------------------------------
 
-  /// The configured width: `bar_width` when set, else the global `width`.
+  /// The width a bar should take.
   ///
-  /// `bar_width` of 0 means "use global" (`src/bar_window.c:453`), which is why
-  /// this cannot just use the item's value.
-  static int _widthFor(PinItem item, TaskPinConfig config) =>
-      item.barWidth > 0 ? item.barWidth : config.width;
+  /// Windows: `bar_width` when set, else the global `width` (`bar_width` of 0
+  /// means "use global", `src/bar_window.c:453`).
+  ///
+  /// macOS: `bar_width` when set, else 0 — "size to content". The global
+  /// `width` is a Windows taskbar default (320 pt) and would make every
+  /// menu-bar item enormous.
+  static int _widthFor(
+    PinItem item,
+    TaskPinConfig config, {
+    bool macMenuBar = false,
+  }) =>
+      item.barWidth > 0 ? item.barWidth : (macMenuBar ? 0 : config.width);
 
   /// The point size for spans that do not carry one.
   static int _fontSizeFor(PinItem item, TaskPinConfig config) =>
@@ -819,7 +924,26 @@ class BarNotifier extends Notifier<BarState> {
     return t == '00000000' || t == '0X00000000';
   }
 
-  static int? _backgroundFor(PinItem item, TaskPinConfig config) {
+  static int? _backgroundFor(
+    PinItem item,
+    TaskPinConfig config, {
+    required bool macMenuBar,
+  }) {
+    // macOS: VISUAL_SPEC §7.1 makes the menu bar transparent by default. Only
+    // an explicit per-item `bar_bg_color` paints a background; the global
+    // `bg_color` is a Windows taskbar colour and is ignored. This matters for
+    // configs migrated from the old macOS app: it wrote its shell colour
+    // (`bgColor: "1D1D1D"`, migrated to `001D1D1D`) into the global, but never
+    // painted that on the menu bar — it only set `button.attributedTitle`.
+    if (macMenuBar) {
+      if (ConfigColor.isUseGlobal(item.barBgColor) ||
+          _isUnsetColor(item.barBgColor)) {
+        return kFollowTaskbarArgb;
+      }
+      final int? raw = ConfigColor.tryParse(item.barBgColor);
+      return raw == null ? kFollowTaskbarArgb : ConfigColor.colorrefToArgb(raw);
+    }
+
     // The sentinel means different things at the two levels:
     //
     //   item  `FFFFFFFF` -> "defer to the global setting"
@@ -851,9 +975,10 @@ class BarNotifier extends Notifier<BarState> {
   static BarStyleSpec _styleFor(
     PinItem item,
     TaskPinConfig config, {
+    required bool macMenuBar,
     BarItemState state = BarItemState.none,
   }) => BarStyleSpec(
-    background: _backgroundFor(item, config),
+    background: _backgroundFor(item, config, macMenuBar: macMenuBar),
     fontSize: _fontSizeFor(item, config),
     state: state,
     scrollEnabled: config.scrollEnabled,

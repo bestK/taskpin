@@ -26,11 +26,10 @@
 //      everything to its right. This is the bar's most important typographic
 //      rule (VISUAL_SPEC §4.3).
 //
-//  NOT COMPILED. There is no macOS host on this machine (no Xcode, no Swift
-//  compiler), so this file has never been through a compiler. It is written to
-//  the AppKit/Core Text API and cross-checked against the frozen token values.
-//  The uncompiled/risk list and the full `taskpin/bar` contract live in
-//  `native/mac/README.md`.
+//  TYPECHECKED, NOT RUN. This file imports only AppKit/Core Text, so it can be
+//  checked with `xcrun swiftc -typecheck -target arm64-apple-macos12.0`; it has
+//  never been run inside a real menu bar. The risk list and the full
+//  `taskpin/bar` contract live in `native/mac/README.md`.
 //
 
 import AppKit
@@ -64,10 +63,14 @@ enum BarTokens {
     static let label: UInt32 = 0xFFA2ACBA        // bar/label
     static let value: UInt32 = 0xFFE6EAF0        // bar/value
 
-    /// `kColorTextDefault` in `bar_tokens.h`: the fallback for a span whose
-    /// colour is the "use default" sentinel. Same VALUE as `value`, but its own
-    /// name so a Swift-side parity check can look for both, and so a future
-    /// change to one is not silently a change to the other.
+    /// `kColorTextDefault` in `bar_tokens.h`: the Windows fallback for a span
+    /// whose colour is the "use default" sentinel. Same VALUE as `value`, but
+    /// its own name so a Swift-side parity check can look for both, and so a
+    /// future change to one is not silently a change to the other.
+    ///
+    /// NOT USED ON macOS: an uncoloured span resolves the system menu-bar text
+    /// colour instead (VISUAL_SPEC §7.1), so a light menu bar stays readable.
+    /// Kept because the token list is frozen and three-way.
     static let textDefault: UInt32 = 0xFFE6EAF0  // bar/value (kColorTextDefault)
 }
 
@@ -88,7 +91,11 @@ enum BarAlign: Int {
     }
 }
 
-/// Drives the 2 pt left state stripe.
+/// Drives the bottom-centred state indicator.
+///
+/// VISUAL_SPEC §7.2: a healthy item shows nothing; stale/error draw a small
+/// rounded bar under the content. The old 2 pt full-height left stripe was a
+/// Windows-10-era cue and is deliberately gone (see native/mac/README.md).
 ///
 /// PARITY: the raw values are `taskpin::bar::ItemState` in
 /// `native/win/bar_types.h` (None=0, Running=1, Error=2, Stale=3).
@@ -100,7 +107,7 @@ enum BarAlign: Int {
 /// bare int unless both sides agree on which enum it is. `from(_:)` therefore
 /// accepts the C++ ints AND the Dart names as strings.
 enum BarState: Int {
-    /// `ItemState::StateNone` — no stripe at all.
+    /// `ItemState::StateNone` — no indicator at all.
     ///
     /// Deliberately NOT named `none`: a case called `none` in a non-optional
     /// enum shadows `Optional.none` in pattern position, which makes
@@ -164,17 +171,37 @@ struct BarSpan {
     var tabular: Bool = true
 
     /// Parse one span from the MethodChannel payload.
+    ///
+    /// KEY NAMES: the Dart controller (`spanToWire` in
+    /// `lib/core/bar/bar_channel.dart`) sends the C-ABI short names —
+    /// `size`, `image`, `img_w`, `img_h` — while the older contract documented
+    /// here used the camelCase model names. Both are accepted so the channel
+    /// stays compatible with either producer; the wire contract itself is
+    /// unchanged.
     static func from(_ json: [String: Any]) -> BarSpan {
+        func intValue(_ keys: String...) -> Int {
+            for key in keys {
+                if let n = json[key] as? NSNumber { return n.intValue }
+            }
+            return 0
+        }
+        func boolValue(_ keys: String...) -> Bool? {
+            for key in keys {
+                if let n = json[key] as? NSNumber { return n.boolValue }
+            }
+            return nil
+        }
+
         var s = BarSpan()
         s.text = (json["text"] as? String) ?? ""
         s.color = parseHexColor(json["color"])
-        s.fontSize = (json["fontSize"] as? NSNumber)?.intValue ?? 0
+        s.fontSize = intValue("fontSize", "size")
         s.align = BarAlign.from(json["align"])
-        s.newline = (json["newline"] as? NSNumber)?.boolValue ?? false
-        s.isImage = (json["isImage"] as? NSNumber)?.boolValue ?? false
-        s.imageWidth = (json["imageWidth"] as? NSNumber)?.intValue ?? 0
-        s.imageHeight = (json["imageHeight"] as? NSNumber)?.intValue ?? 0
-        s.tabular = (json["tabular"] as? NSNumber)?.boolValue ?? true
+        s.newline = boolValue("newline") ?? false
+        s.isImage = boolValue("isImage", "image") ?? false
+        s.imageWidth = intValue("imageWidth", "img_w")
+        s.imageHeight = intValue("imageHeight", "img_h")
+        s.tabular = boolValue("tabular") ?? true
         return s
     }
 }
@@ -190,7 +217,11 @@ struct BarSpan {
 /// `BarMetrics` is a `let` with an initialiser), so this default is a compile
 /// time constant, not a shared-instance lookup at init.
 struct BarStyle {
-    var bg: UInt32 = BarTokens.bg
+    /// `useDefault` means "no background": VISUAL_SPEC §7.1 makes the macOS
+    /// menu-bar strip transparent unless the user picked a colour. The Dart
+    /// controller sends `0xFFFFFFFF` (`kFollowTaskbarArgb`) for that case, so
+    /// the sentinel maps to "draw nothing" here rather than to `bar/bg`.
+    var bg: UInt32 = BarTokens.useDefault
     var bgHover: UInt32 = BarTokens.bgHover
     var label: UInt32 = BarTokens.label
     var value: UInt32 = BarTokens.value
@@ -224,10 +255,19 @@ struct BarMetrics {
     let radius: CGFloat = 6
     /// ONE line. A `newline` span is dropped rather than wrapped.
     let maxLines: Int = 1
+    /// VISUAL_SPEC §7.3: a 1 x 14 rule with 6 pt either side. The Dart
+    /// `TpBarMetrics.macOS` still says 1 x 12 / gap 4; this renderer follows
+    /// the spec and native/mac/README.md records the divergence.
     let separatorWidth: CGFloat = 1
-    let separatorHeight: CGFloat = 12
-    let separatorGap: CGFloat = 4
-    let stateStripWidth: CGFloat = 2
+    let separatorHeight: CGFloat = 14
+    let separatorGap: CGFloat = 6
+
+    /// VISUAL_SPEC §7.2: a bottom-centred rounded bar, 16 pt long and 3 pt
+    /// thick ("3 x 16" in the spec, read as thickness x length like the
+    /// separator's "1 x 14").
+    let stateIndicatorWidth: CGFloat = 16
+    let stateIndicatorHeight: CGFloat = 3
+    let stateIndicatorRadius: CGFloat = 1.5
 
     /// Scroll-wheel width clamping, mirroring the Windows clamp
     /// (`kWidthMin` / `kWidthMax` / `kWheelWidthStep`).
@@ -235,8 +275,17 @@ struct BarMetrics {
     let maxWidth: Int = 600
     let widthStep: Int = 5
 
-    /// Default label / value size, from `TpBarTypography.labelSize`.
-    let labelSize: Int = 11
+    /// VISUAL_SPEC §7.1: the macOS menu bar draws SF Pro at 13 pt. The Dart
+    /// controller still sends 9 (`kBarDefaultFontSize`) when the config has no
+    /// opinion, because 9 pt is the Windows value; [windowsDefaultFontSize]
+    /// is how that sentinel is recognised and replaced.
+    let labelSize: Int = 13
+
+    /// `kBarDefaultFontSize` on the Dart side. A wire size equal to this is
+    /// treated as "unspecified" and rendered at [labelSize] instead: 9 pt next
+    /// to the system clock would be visibly foreign. An explicit other size
+    /// (12, 14, ...) is still honoured. See native/mac/README.md.
+    let windowsDefaultFontSize: Int = 9
 
     /// Font size clamp. The plan says "字号钳制": at 24 pt with no vertical
     /// padding, 18 pt (line height ~22.5) is the largest that still leaves the
@@ -277,7 +326,17 @@ func barAlpha(_ argb: UInt32) -> CGFloat {
 /// `"RRGGBB"`, and the 8-digit `"AARRGGBB"` form that `lib/config.c` and
 /// `taskpin::bar::ParseHexColor` use. Empty or malformed yields the
 /// "use default" sentinel, exactly like `ParseHexColor`.
+///
+/// Also accepts a numeric `0xAARRGGBB`: the Dart controller serialises
+/// `TpBarSpan.color.toARGB32()` and `BarStyleSpec`'s colours as ints, and the
+/// standard method codec delivers those as `NSNumber`. Without this branch
+/// every script-specified colour would silently become the default.
 func parseHexColor(_ any: Any?) -> UInt32 {
+    if let n = any as? NSNumber {
+        // Truncate rather than trap: a 32-bit ARGB arrives as a positive
+        // 64-bit NSNumber, and the mask is exactly what is wanted.
+        return UInt32(truncatingIfNeeded: n.int64Value)
+    }
     guard let raw = any as? String else { return BarTokens.useDefault }
     var digits = raw
     if digits.hasPrefix("#") { digits.removeFirst() }
@@ -651,8 +710,9 @@ final class StatusItemView: NSView {
         let b = bounds
         guard b.width > 1, b.height > 1 else { return }
 
-        // Clip everything to the strip's rounded rect so the state stripe and
-        // the hover fill cannot bleed into the corners.
+        // Clip everything to the strip's rounded rect so a user-set background
+        // and the state indicator cannot bleed into the corners. On the default
+        // transparent background this clip paints nothing by itself.
         ctx.saveGState()
         ctx.addPath(CGPath(
             roundedRect: b,
@@ -662,27 +722,43 @@ final class StatusItemView: NSView {
         ))
         ctx.clip()
 
-        // ---- background: bar/bg, or the item's bar_bg_color override ----
-        let bg = style.bg == BarTokens.useDefault ? BarTokens.bg : style.bg
-        ctx.setFillColor(barCGColor(bg))
-        ctx.fill(b)
-
-        // ---- hover: bar/bgHover + 1pt hairlines top and bottom ----
-        if hovered {
-            ctx.setFillColor(barCGColor(style.bgHover))
+        // ---- background: transparent unless the user chose a colour ----
+        // VISUAL_SPEC §7.1. The Dart controller sends 0xFFFFFFFF for "follow
+        // the taskbar", which maps to `useDefault`; macOS has no taskbar colour
+        // to follow, so the menu bar itself shows through. `bar/bg` is only
+        // the Windows resting fill and is never painted here.
+        if style.bg != BarTokens.useDefault && barAlpha(style.bg) > 0 {
+            ctx.setFillColor(barCGColor(style.bg))
             ctx.fill(b)
-            ctx.setFillColor(barCGColor(BarTokens.hairline))
-            ctx.fill(CGRect(x: 0, y: b.height - 1, width: b.width, height: 1))
-            ctx.fill(CGRect(x: 0, y: 0, width: b.width, height: 1))
         }
 
-        // ---- 2pt full-height left state stripe ----
-        // bar/state.running is fully transparent on purpose: a healthy item
-        // shows nothing, so the eye is drawn only to problems.
-        let stripe = stripeColor(style.state)
-        if barAlpha(stripe) > 0 {
-            ctx.setFillColor(barCGColor(stripe))
-            ctx.fill(CGRect(x: 0, y: 0, width: metrics.stateStripWidth, height: b.height))
+        // ---- hover / pressed: the NSStatusBarButton's own highlight ----
+        // Nothing is painted here. The view is transparent, so the button's
+        // native highlight (driven from mouseDown/mouseUp below) shows through
+        // instead of a custom rounded fill — VISUAL_SPEC §7.1 "系统高亮".
+        // `bar/bgHover` stays in the frozen token list for Windows, where a
+        // taskbar segment has no system highlight of its own.
+
+        // ---- state indicator: bottom-centred rounded bar ----
+        // VISUAL_SPEC §7.2. `state.running` is fully transparent on purpose: a
+        // healthy item shows nothing, so the eye is drawn only to problems.
+        // Replaces the old 2 pt full-height left stripe.
+        let indicator = indicatorColor(style.state)
+        if barAlpha(indicator) > 0 {
+            let rect = CGRect(
+                x: (b.width - metrics.stateIndicatorWidth) / 2,
+                y: 0,
+                width: metrics.stateIndicatorWidth,
+                height: metrics.stateIndicatorHeight
+            )
+            ctx.setFillColor(barCGColor(indicator))
+            ctx.addPath(CGPath(
+                roundedRect: rect,
+                cornerWidth: metrics.stateIndicatorRadius,
+                cornerHeight: metrics.stateIndicatorRadius,
+                transform: nil
+            ))
+            ctx.fillPath()
         }
 
         var items = buildItems()
@@ -706,9 +782,11 @@ final class StatusItemView: NSView {
 
         // ---- separators ----
         // Painted before the content so an icon's own pixels can never sit on
-        // top of a rule. 1 x 12pt, bar/separator (white 20%).
+        // top of a rule. 1 x 14 pt; the colour follows the menu bar's
+        // light/dark appearance (VISUAL_SPEC §7.3), which is why it is
+        // resolved here rather than taken straight from `bar/separator`.
         if !result.separators.isEmpty {
-            ctx.setFillColor(barCGColor(BarTokens.separator))
+            ctx.setFillColor(separatorColor())
             for rect in result.separators { ctx.fill(rect) }
         }
 
@@ -726,14 +804,39 @@ final class StatusItemView: NSView {
         ctx.restoreGState()
     }
 
-    /// The colour of the left state stripe for a state.
-    private func stripeColor(_ state: BarState) -> UInt32 {
+    /// The colour of the bottom state indicator for a state.
+    ///
+    /// The frozen tokens are used as-is; they are the Windows palette and are
+    /// also what the Dart preview draws, so the two shells agree on what
+    /// "stale" and "error" look like.
+    private func indicatorColor(_ state: BarState) -> UInt32 {
         switch state {
         case .noState, .running: return BarTokens.stateRunning
         case .error: return BarTokens.stateError
         case .stale: return BarTokens.stateStale
         }
     }
+
+    /// True when the menu bar is currently dark.
+    ///
+    /// `bestMatch` rather than `name == .darkAqua`: the menu bar can be a
+    /// vibrant variant (`vibrantDark`, `accessibilityHighContrastDarkAqua`),
+    /// and comparing the name would misclassify those.
+    private var menuBarIsDark: Bool {
+        effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// The separator rule's colour: white 20% on a dark menu bar, black 12% on
+    /// a light one (VISUAL_SPEC §7.3). Resolved at draw time because the menu
+    /// bar's appearance can change without the app's.
+    private func separatorColor() -> CGColor {
+        barCGColor(menuBarIsDark ? BarTokens.separator : StatusItemView.separatorLight)
+    }
+
+    /// `#1F000000`: the light-menu-bar separator. Not a frozen `bar/*` token —
+    /// it is the macOS-only counterpart of `bar/separator`, kept private so the
+    /// three-way token list stays untouched.
+    private static let separatorLight: UInt32 = 0x1F00_0000
 
     // MARK: layout
 
@@ -782,11 +885,13 @@ final class StatusItemView: NSView {
         var separators: [CGRect] = []
     }
 
-    /// The x the first span starts at. The state stripe sits at 0, so the
-    /// content is inset past it and then by the horizontal padding. This
-    /// matches `TpBarPreviewStrip`'s `stripWidth + m.padHorizontal` (the Dart
-    /// reference), NOT the Windows renderer's bare `kMetricPadH`.
-    private var contentOriginX: CGFloat { metrics.stateStripWidth + metrics.padHorizontal }
+    /// The x the first span starts at: the horizontal padding alone.
+    ///
+    /// There is no left state stripe any more (§7.2 moved the state cue to the
+    /// bottom edge), so the content is not inset past one. The Dart preview
+    /// strip still reserves `stateStripWidth + padHorizontal`; native/mac/
+    /// README.md records that difference until the Dart side catches up.
+    private var contentOriginX: CGFloat { metrics.padHorizontal }
 
     /// How much horizontal room the spans have.
     private func contentWidthLimit(_ total: CGFloat) -> CGFloat {
@@ -1076,6 +1181,13 @@ final class StatusItemView: NSView {
     /// native/mac/README.md rather than faked with a synthetic bold.
     private func font(for span: BarSpan) -> CTFont {
         var size = span.fontSize > 0 ? span.fontSize : style.fontSize
+        // The Dart controller sends the Windows default (9 pt) when the config
+        // has no font size. On macOS that means "use the menu-bar size", not a
+        // literal 9 pt: next to the system clock, 9 pt reads as a foreign,
+        // shrunken strip (VISUAL_SPEC §7.1).
+        if size == metrics.windowsDefaultFontSize {
+            size = metrics.labelSize
+        }
         size = min(metrics.maxFontSize, max(metrics.minFontSize, size))
         let tabular = span.tabular
         let key = "\(size)|\(tabular ? 1 : 0)"
@@ -1097,16 +1209,36 @@ final class StatusItemView: NSView {
 
     /// The colour a span's text is drawn in.
     ///
-    /// A span that did not set a colour falls back to `bar/value` — the
-    /// brightest default, because values are the point of the strip.
-    private func textColor(_ span: BarSpan) -> UInt32 {
-        span.color == BarTokens.useDefault ? BarTokens.textDefault : span.color
+    /// A span that did not set a colour uses the SYSTEM menu-bar text colour,
+    /// not the frozen `bar/value`: the bar has to be legible on both a light
+    /// and a dark menu bar, and only the system colour follows that switch
+    /// (VISUAL_SPEC §7.1). Script-specified span colours are used as-is.
+    ///
+    /// Resolved at draw time, against this view's `effectiveAppearance` (the
+    /// status button's, not the app's). `viewDidChangeEffectiveAppearance`
+    /// schedules a repaint when the menu bar switches.
+    private func textColor(_ span: BarSpan) -> CGColor {
+        span.color == BarTokens.useDefault ? systemTextColor() : barCGColor(span.color)
     }
 
-    private func makeLine(_ text: String, font: CTFont, color: UInt32) -> CTLine? {
+    /// `NSColor.labelColor` resolved against the menu bar's appearance.
+    ///
+    /// `performAsCurrentDrawingAppearance` is the supported way to resolve a
+    /// semantic NSColor: `cgColor` alone would resolve against whatever
+    /// appearance happens to be current, which is not necessarily the status
+    /// item's (the app can be light while the menu bar is dark).
+    private func systemTextColor() -> CGColor {
+        var resolved = NSColor.labelColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.labelColor.cgColor
+        }
+        return resolved
+    }
+
+    private func makeLine(_ text: String, font: CTFont, color: CGColor) -> CTLine? {
         let attributes: [String: Any] = [
             kCTFontAttributeName as String: font,
-            kCTForegroundColorAttributeName as String: barCGColor(color),
+            kCTForegroundColorAttributeName as String: color,
         ]
         guard let attributed = CFAttributedStringCreate(
             kCFAllocatorDefault,
@@ -1188,15 +1320,40 @@ final class StatusItemView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         hovered = false
+        // A press that dragged off the item must not leave the system
+        // highlight stuck on.
+        (superview as? NSButton)?.highlight(false)
+    }
+
+    /// The menu bar switched light/dark (or the item moved to a display with a
+    /// different appearance). The system text and separator colours are
+    /// resolved at draw time, so a repaint is all that is needed.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     // MARK: mouse
 
+    override func mouseDown(with event: NSEvent) {
+        // Drive the NSStatusBarButton's own highlight rather than painting a
+        // rounded fill ourselves (VISUAL_SPEC §7.1 "系统高亮"). Not calling
+        // super keeps the button's tracking loop from consuming the matching
+        // mouseUp, which is what fires `onClick`.
+        (superview as? NSButton)?.highlight(true)
+    }
+
     override func mouseUp(with event: NSEvent) {
+        (superview as? NSButton)?.highlight(false)
         onClick?()
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        (superview as? NSButton)?.highlight(true)
+    }
+
     override func rightMouseUp(with event: NSEvent) {
+        (superview as? NSButton)?.highlight(false)
         // `event.locationInWindow` is in window coordinates; the plugin needs
         // screen coordinates to place an NSMenu.
         let inWindow = event.locationInWindow

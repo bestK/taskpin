@@ -11,22 +11,30 @@ item with a custom `NSView` drawn with Core Text, and the *same* channel contrac
 so the Dart `BarController` stays platform-agnostic
 (`docs/FLUTTER_REWRITE_PLAN.md`, "macOS 菜单栏条").
 
-## ⚠️ NOTHING HERE HAS BEEN COMPILED
+## ⚠️ NOTHING HERE HAS BEEN BUILT OR RUN
 
-There is no macOS host on the development machine: no Xcode, no Swift compiler,
-no `FlutterMacOS` SDK (the local Flutter install has only the `windows-x64`
-engine artifacts). **Every line of Swift in this directory is uncompiled and
-unrun.** Treat it as a careful first draft to be built and debugged on a Mac or
-in CI, not as working code.
+There is no `FlutterMacOS` SDK on the development machine (no Flutter install
+here at all), so the files that import it — `StatusItemPlugin.swift`,
+`PopoverHost.swift`, `DialogWindowStyles.swift` — are **uncompiled and unrun**.
+`StatusItemView.swift` imports only AppKit/Core Text and is typechecked with
+`xcrun swiftc -typecheck` (see below); it has still never been run inside a
+menu bar. Treat the whole directory as a careful draft to be built and debugged
+on a Mac or in CI, not as working code.
 
 What *has* been verified on this machine:
 
 | Check | How | Result |
 |---|---|---|
+| `StatusItemView.swift` typechecks | `xcrun swiftc -typecheck -target arm64-apple-macos12.0` | **passes** |
 | Frozen token names + values match C++ and Dart | text parse of all three files, 10/10 tokens compared | **agree** |
 | Bracket balance of all four `.swift` files | string/comment-stripped brace count | balanced |
 | AppKit/Core Text API spellings | read against the AppKit API and `desktop_multi_window`'s own macOS sources | see risk list |
-| Dart-side contract | read against `dialog_window.dart` / `window_channel.dart` | matches |
+| Dart-side contract | read against `bar_controller.dart` / `bar_channel.dart` | matches (with the key aliases below) |
+
+`StatusItemPlugin.swift` still cannot be typechecked here: it imports
+`FlutterMacOS` and `PopoverHost.swift`, and no `FlutterMacOS.framework` exists
+on this machine. Its changes are reviewed by hand; the full integrated build is
+the first real check.
 
 ## Files
 
@@ -75,16 +83,21 @@ Channel name: `taskpin/bar`.
 
 ### Span payload keys
 
-`text`, `color` (`"#RRGGBB"` / `"AARRGGBB"` / `""` = default), `fontSize`
-(`0` = default), `align` (`0` left / `1` right / `2` center), `newline`,
-`isImage`, `imageWidth`, `imageHeight`, `tabular`.
+`text`, `color`, `size` (`0` = default), `align` (`0` left / `1` right / `2`
+center), `newline`, `image`, `img_w`, `img_h`, plus the optional `tabular`.
 
-These are camelCase because they are the **Dart model's** field names
-(`TpBarSpan`), which is the shape the plan describes for the payload
-("`setSpans(barId, spans)`"). The C ABI (`TPSpan`) uses snake_case and a
-`char color[16]`; the Dart layer is expected to marshal between them. **If the
-Windows plugin chose the C ABI's snake_case for the channel payload instead, the
-two must be reconciled — pick one and change the other.**
+**Colour is a number, not a string.** The Dart controller serialises
+`TpBarSpan.color.toARGB32()` and `BarStyleSpec`'s colours as 32-bit ints, and
+the standard method codec delivers them as `NSNumber`. The renderer accepts
+both the numeric ARGB form and the older `"#RRGGBB"` / `"AARRGGBB"` string
+form; a colour it cannot parse means "use the default".
+
+The short key names above are what `spanToWire` in
+`lib/core/bar/bar_channel.dart` actually sends. The older contract documented
+`fontSize` / `isImage` / `imageWidth` / `imageHeight` (the Dart model's
+camelCase names). `BarSpan.from` accepts **both** spellings, so a Windows
+plugin that emits either shape keeps working. The channel contract itself is
+unchanged.
 
 ### State value
 
@@ -105,7 +118,9 @@ the same four members and disagree on every value:
 
 A bare `3` means "stale" to C++ and "loading" to Dart. The string form is
 unambiguous and is what the Dart side should send; the int form is accepted only
-so a C++-shaped payload does not silently mis-colour the stripe.
+so a C++-shaped payload does not silently mis-colour the bottom state
+indicator. In practice the Dart controller sends `BarItemState.wireValue`,
+which uses the C++ numbering, so the int path is the one in use.
 
 ## The pod decision
 
@@ -168,36 +183,69 @@ These are choices, not oversights. Each is a candidate for reconciliation.
    The menu bar places its own items; `x` comes back as `-1`, the same "auto"
    sentinel `bar_x` uses in config.json.
 5. **No font weight distinction.** `TpBarTypography` gives values weight 500 and
-   labels 400. macOS distinguishes them by **colour** (`bar/label` vs
-   `bar/value`) only, matching what `TpBarPreviewStrip` actually draws. Weight
-   selection would need a per-span weight on the wire, which the ABI does not
-   carry.
+   labels 400. Weight selection would need a per-span weight on the wire, which
+   the ABI does not carry. The bar therefore distinguishes labels from values by
+   colour — and on macOS an *uncoloured* span uses the system menu-bar colour
+   (item 8), not `bar/label` / `bar/value`.
 6. **Icon-to-text gap.** VISUAL_SPEC §9.2 gives macOS a 4 pt gap where Windows
    has 6. Implemented via `metrics.iconTextGap`, and a text span right after an
    icon gets that gap *instead of* a separator (VISUAL_SPEC §9.5 rule 1: the text
    an icon introduces is the same segment).
+7. **Transparent by default.** VISUAL_SPEC §7.1: `bar/bg` is never painted.
+   The Dart controller sends `0xFFFFFFFF` (`kFollowTaskbarArgb`) when the user
+   has not chosen a colour, and that sentinel maps to "draw no background", so
+   the menu bar shows through. A user-set `bar_bg_color` is drawn as the rounded
+   fill, alpha included.
+8. **System text and separator colours.** An uncoloured span resolves
+   `NSColor.labelColor` against the status button's `effectiveAppearance` at
+   draw time; script-specified span colours are used as-is. The separator uses
+   `bar/separator` (`#33FFFFFF`) on a dark menu bar and `#1F000000` on a light
+   one (VISUAL_SPEC §7.3). `viewDidChangeEffectiveAppearance` repaints on a
+   light/dark switch, because the menu bar can differ from the app's appearance.
+9. **Bottom state indicator, not the left stripe.** VISUAL_SPEC §7.2: stale and
+   error draw a bottom-centred 16 x 3 rounded bar (`status/caution` /
+   `status/critical`); a healthy item draws nothing. The old 2 pt full-height
+   left stripe is gone. The Dart preview still draws the stripe — a divergence
+   for the Dart lane to close.
+10. **Hover uses the system highlight.** No `bar/bgHover` fill or `bar/hairline`
+    is painted; the view is transparent and drives the `NSStatusBarButton`'s own
+    `highlight(_:)` from `mouseDown` / `mouseUp` (VISUAL_SPEC §7.1 "系统高亮").
+    The two tokens stay frozen for Windows, where a taskbar segment has no
+    system highlight of its own.
+11. **Font size 13, not 9.** VISUAL_SPEC §7.1 gives macOS SF Pro 13. The Dart
+    controller sends `kBarDefaultFontSize` (9) when the config has no opinion;
+    the renderer treats 9 as "unspecified" and draws 13 instead. Any other
+    explicit size is honoured. The Dart preview's `TpBarTypography.labelSize`
+    is 11, so the preview and the menu bar differ until that is reconciled.
+12. **Menu-bar order is deterministic.** `NSStatusBar` inserts each new status
+    item to the LEFT of the existing ones, so creating bars in config order
+    displays them reversed. The plugin recreates the system items from the
+    highest bar id down, giving left-to-right = ascending bar id (config order).
+    Views are reused, so content and callbacks survive. `autosaveName` is
+    deliberately not set: a persisted ⌘-drag position would fight the config
+    order, and there is no API to reorder the other items around it.
 
 ## Known value disagreements in others' files (not changed here)
 
 Reported, not fixed — these are outside this lane:
 
 1. **`fontSize` default.** `taskpin::bar::BarStyle::font_size = 9`
-   (`native/win/bar_types.h`) vs `TpBarTypography.labelSize = 11`
-   (`bar_tokens.dart`) and VISUAL_SPEC §4.3 ("字号 标签 11"). This file uses 11
-   (the design value, and what the Dart preview draws). If the Windows renderer
-   really defaults to 9 pt, the preview and the taskbar disagree.
-2. **Separator geometry differs per platform on purpose** and the Dart model
-   already encodes both (`TpBarMetrics.windows` 1×14 gap 6 vs `.macOS` 1×12 gap
-   4). No action — recorded so it is not mistaken for drift.
+   (`native/win/bar_types.h`), `kBarDefaultFontSize = 9` (Dart controller) vs
+   `TpBarTypography.labelSize = 11` (`bar_tokens.dart`) and VISUAL_SPEC §7.1
+   (macOS SF Pro 13). This file maps the 9 sentinel to 13 and honours any other
+   value; the Dart preview draws 11. All three should eventually agree per
+   platform.
+2. **Separator geometry.** VISUAL_SPEC §7.3 says 1×14 with 6 pt either side.
+   This renderer uses that. `TpBarMetrics.macOS` still says 1×12 gap 4, so the
+   Dart preview and the menu bar disagree until the Dart lane catches up.
 3. **`bar/bg` alpha sentinel.** `native/win/bar_types.h`'s `WantsLayered()` uses
    `bgAlpha < 255` to pick the layered-window path, and
    `BarStyle::bg` defaults to `kColorBg` (opaque). But `lib/config.c`'s
    "use the default" sentinel is `0xFFFFFFFF`, which is also alpha 255 — so an
    item that explicitly wants *fully transparent* cannot express it through
-   `bar_bg_color`. This file treats `0xFFFFFFFF` as "use `bar/bg`" (matching
-   `bar_render_d2d.cpp`'s `style.bg == 0xFFFFFFFF ? ... ` handling of span
-   colours) and honours any other alpha. Worth confirming the Windows side
-   agrees.
+   `bar_bg_color`. This file treats `0xFFFFFFFF` as "no background" (which is
+   the macOS default anyway) and honours any other alpha. Worth confirming the
+   Windows side agrees.
 4. **`newline` spans are drawn on Windows and dropped by Dart.** A span with
    `newline: true` is a line-break *marker*, not content:
    `BarRenderer::DrawFrame` does `if (sp.newline) { cur_line = 1; continue; }`
@@ -246,6 +294,20 @@ In rough order of "most likely to fail the build or look wrong":
    `main(List<String> args)` ignores `args` entirely: it loads config and calls
    `runApp` unconditionally, so a popover engine would render the manager shell
    instead of the dialog.
+7. **The menu-bar ordering rebuild.** `rebuildStatusItems` removes and re-adds
+   every status item to defeat macOS's "new items go left" rule. The assumption
+   to verify is that re-adding in descending id order really does display
+   ascending id order, and that reusing a view across status items leaves its
+   `autoresizingMask`/frame intact. A brief reflow on the first pin is expected;
+   items appearing duplicated or in the old order means this pass is wrong.
+8. **The native pressed highlight.** The view is transparent and calls
+   `NSStatusBarButton.highlight(_:)`; if a click shows no highlight at all, the
+   button is drawing its highlight above the subview (or not drawing one without
+   its tracking loop), and this is the place to fix it.
+9. **Transparent background.** If the strip still paints an opaque rectangle,
+   look for a fill left in `draw(_:)` or for the button drawing its own
+   background; the view must leave its layer transparent when
+   `style.bg == useDefault`.
 
    `lib/` is outside this lane, so it was not changed. The required change is the
    branch already sketched in `lib/app/windows/dialog_window.dart`'s header

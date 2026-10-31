@@ -178,11 +178,11 @@ Future<void> dialogWindowMain(
   // spec has a `@refresh` interval.
   final _DialogWindowBridge bridge = _DialogWindowBridge(args);
   await bridge.listen();
-  runApp(_DialogWindowApp(bridge: bridge));
+  runApp(DialogSpecApp(source: bridge, windowApi: bridge.windowApi));
 }
 
 /// Receives the spec from the manager window and keeps the running controller.
-class _DialogWindowBridge {
+class _DialogWindowBridge implements DialogSpecSource {
   _DialogWindowBridge(this._arguments);
 
   /// The window's launch arguments.
@@ -196,8 +196,15 @@ class _DialogWindowBridge {
   /// The script this window currently represents, for the refresh loop.
   DialogWindowArguments get arguments => _arguments;
 
+  @override
+  String get luaPath => _arguments.luaPath;
+
+  @override
+  String get argsJson => _arguments.argsJson;
+
   /// Called when the script identity changes, so the app can (re)build the
   /// re-run callback for the new script.
+  @override
   void Function()? onIdentityChanged;
 
   /// Whether the window has been shown at least once.
@@ -210,18 +217,26 @@ class _DialogWindowBridge {
   bool _shown = false;
 
   /// Called by the scaffold once the window is on screen.
+  @override
   void markShown() => _shown = true;
 
   DialogSpec? _spec;
   final MethodChannelDialogWindowApi _windowApi =
       MethodChannelDialogWindowApi();
 
+  /// The window-effect API the renderer uses. A popover supplies
+  /// `PopoverDialogWindowApi` instead (no-ops except `close`): an `NSPopover`
+  /// is not an `NSWindow` this app may resize or restyle.
+  DialogWindowApi get windowApi => _windowApi;
+
   /// Completes when the first spec arrives. The app waits on this rather than
   /// showing an empty frame.
   final Completer<void> _firstSpec = Completer<void>();
 
+  @override
   DialogSpec? get spec => _spec;
 
+  @override
   Future<void> get ready => _firstSpec.future;
 
   Future<void> listen() async {
@@ -316,22 +331,74 @@ DialogRerun? dialogRerun({
   };
 }
 
-/// The dialog window's app.
+/// What a dialog-rendering engine needs from its host.
 ///
-/// Stateful because the window is REUSED: it outlives the dialog it shows, and
-/// a later dialog may come from a different script. Two things therefore change
-/// at runtime — the script identity (from the bridge) and, the first time a
-/// refreshing spec arrives, the engine. Both are owned here.
-class _DialogWindowApp extends StatefulWidget {
-  const _DialogWindowApp({required this.bridge});
+/// Two hosts exist: a `desktop_multi_window` child window (specs arrive on the
+/// cross-engine [kDialogSpecChannel]) and the macOS menu-bar `NSPopover`
+/// (specs arrive on a plain `taskpin/dialog_spec` MethodChannel). Both feed the
+/// same [DialogSpecApp], so the decoder and renderer are written once.
+abstract class DialogSpecSource {
+  /// Completes when the first spec has arrived.
+  Future<void> get ready;
 
-  final _DialogWindowBridge bridge;
+  /// The spec currently on screen, or null before the first one.
+  DialogSpec? get spec;
 
-  @override
-  State<_DialogWindowApp> createState() => _DialogWindowAppState();
+  /// The script that produced [spec], for the refresh loop. Empty disables it.
+  String get luaPath;
+
+  /// The `args` JSON to bind when re-running [luaPath].
+  String get argsJson;
+
+  /// Called when [luaPath] / [argsJson] change, so the app rebuilds the rerun.
+  void Function()? onIdentityChanged;
+
+  /// Called once the host has shown the content.
+  void markShown();
 }
 
-class _DialogWindowAppState extends State<_DialogWindowApp> {
+/// The dialog-rendering app, shared by a dialog window and the macOS popover.
+///
+/// Stateful because the host is REUSED: it outlives the dialog it shows, and a
+/// later dialog may come from a different script. Two things therefore change
+/// at runtime — the script identity (from the source) and, the first time a
+/// refreshing spec arrives, the engine. Both are owned here.
+class DialogSpecApp extends StatefulWidget {
+  const DialogSpecApp({
+    super.key,
+    required this.source,
+    required this.windowApi,
+    this.showScrollbar = false,
+    this.onNaturalSize,
+    this.hostDrawsSurface = false,
+  });
+
+  final DialogSpecSource source;
+
+  /// Native window effects. A dialog window supplies the real `taskpin/window`
+  /// API; the popover supplies `PopoverDialogWindowApi` (no-ops except
+  /// `close`).
+  final DialogWindowApi windowApi;
+
+  /// See [DialogView.showScrollbar]. Only the popover sets it.
+  final bool showScrollbar;
+
+  /// See [DialogView.onNaturalSize]. Only the popover sets it: a dialog
+  /// window fits itself through [DialogWindowApi.setHeight] instead.
+  final ValueChanged<Size>? onNaturalSize;
+
+  /// The host (the macOS popover) draws the frame and the material, and the
+  /// app follows the system light/dark setting.
+  ///
+  /// A dialog window keeps the dark theme and paints its own rounded card. Only
+  /// the popover sets this; see [DialogView.hostDrawsSurface].
+  final bool hostDrawsSurface;
+
+  @override
+  State<DialogSpecApp> createState() => _DialogSpecAppState();
+}
+
+class _DialogSpecAppState extends State<DialogSpecApp> {
   /// Started on demand: a warmed window that only ever shows a non-refreshing
   /// dialog never pays for a Lua isolate.
   engine_ffi.EngineApi? _engine;
@@ -343,20 +410,20 @@ class _DialogWindowAppState extends State<_DialogWindowApp> {
   @override
   void initState() {
     super.initState();
-    _luaPath = widget.bridge.arguments.luaPath;
-    widget.bridge.onIdentityChanged = _onIdentityChanged;
+    _luaPath = widget.source.luaPath;
+    widget.source.onIdentityChanged = _onIdentityChanged;
   }
 
   @override
   void dispose() {
-    widget.bridge.onIdentityChanged = null;
+    widget.source.onIdentityChanged = null;
     _engine?.dispose();
     super.dispose();
   }
 
   void _onIdentityChanged() {
     setState(() {
-      _luaPath = widget.bridge.arguments.luaPath;
+      _luaPath = widget.source.luaPath;
     });
   }
 
@@ -397,29 +464,41 @@ class _DialogWindowAppState extends State<_DialogWindowApp> {
       darkTheme: TaskPinTheme.dark().toThemeData().copyWith(
         scaffoldBackgroundColor: Colors.transparent,
       ),
-      themeMode: ThemeMode.dark,
+      // A popover's text must match the system appearance the NSPopover uses;
+      // a dialog window stays dark, as it always has.
+      themeMode: widget.hostDrawsSurface ? ThemeMode.system : ThemeMode.dark,
       // A dialog has no chrome to title, and the OS window carries the title.
       title: '',
       home: FutureBuilder<void>(
-        future: widget.bridge.ready,
+        future: widget.source.ready,
         builder: (BuildContext context, AsyncSnapshot<void> snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            // `hiddenAtLaunch` means this frame is not visible in practice; it
-            // exists so the engine has something to render while the spec
-            // crosses the channel.
-            return const SizedBox.shrink();
+            // A dialog WINDOW is hidden until its spec arrives, so this frame
+            // is never seen there. The macOS popover is already on screen when
+            // its engine boots, and it must not paint a flat block over the
+            // popover's own material while it waits for the spec.
+            if (widget.hostDrawsSurface) {
+              return const SizedBox.expand();
+            }
+            return ColoredBox(
+              color: TaskPinTheme.of(context).bg.flyout,
+              child: const SizedBox.expand(),
+            );
           }
-          final DialogSpec spec = widget.bridge.spec!;
+          final DialogSpec spec = widget.source.spec!;
           return _EngineBoundScaffold(
-            // Keyed by script identity: when the window is reused for another
+            // Keyed by script identity: when the host is reused for another
             // bar, the scaffold is rebuilt from scratch, so the old
             // `DialogController` (with its timer and its stale rerun callback)
             // is disposed rather than left pointing at the previous script.
             key: ValueKey<String>('${_luaPath}\u0000${spec.title}'),
             spec: spec,
-            windowApi: widget.bridge._windowApi,
-            bridge: widget.bridge,
+            windowApi: widget.windowApi,
+            source: widget.source,
             engineFor: _engineFor,
+            showScrollbar: widget.showScrollbar,
+            onNaturalSize: widget.onNaturalSize,
+            hostDrawsSurface: widget.hostDrawsSurface,
           );
         },
       ),
@@ -430,7 +509,7 @@ class _DialogWindowAppState extends State<_DialogWindowApp> {
 /// Binds a [DialogWindowScaffold] to an engine that may not exist yet.
 ///
 /// The engine is started only when the spec asks for a refresh (see
-/// `_DialogWindowAppState._engineFor`), so the scaffold cannot receive it at
+/// `_DialogSpecAppState._engineFor`), so the scaffold cannot receive it at
 /// construction. It resolves it in `initState` and holds the scaffold back
 /// until it is ready, which is one frame at most after the first refresh.
 class _EngineBoundScaffold extends StatefulWidget {
@@ -438,14 +517,20 @@ class _EngineBoundScaffold extends StatefulWidget {
     super.key,
     required this.spec,
     required this.windowApi,
-    required this.bridge,
+    required this.source,
     required this.engineFor,
+    this.showScrollbar = false,
+    this.onNaturalSize,
+    this.hostDrawsSurface = false,
   });
 
   final DialogSpec spec;
   final DialogWindowApi windowApi;
-  final _DialogWindowBridge bridge;
+  final DialogSpecSource source;
   final Future<engine_ffi.EngineApi?> Function(DialogSpec spec) engineFor;
+  final bool showScrollbar;
+  final ValueChanged<Size>? onNaturalSize;
+  final bool hostDrawsSurface;
 
   @override
   State<_EngineBoundScaffold> createState() => _EngineBoundScaffoldState();
@@ -473,7 +558,12 @@ class _EngineBoundScaffoldState extends State<_EngineBoundScaffold> {
     if (!mounted) return;
     setState(() {
       _rerun = dialogRerun(
-        arguments: widget.bridge.arguments,
+        // The source carries the CURRENT script identity: a reused host may
+        // have adopted a different script since this state was built.
+        arguments: DialogWindowArguments(
+          luaPath: widget.source.luaPath,
+          argsJson: widget.source.argsJson,
+        ),
         engine: engine,
       );
     });
@@ -485,7 +575,10 @@ class _EngineBoundScaffoldState extends State<_EngineBoundScaffold> {
       spec: widget.spec,
       windowApi: widget.windowApi,
       rerun: _rerun,
-      onShown: widget.bridge.markShown,
+      onShown: widget.source.markShown,
+      showScrollbar: widget.showScrollbar,
+      onNaturalSize: widget.onNaturalSize,
+      hostDrawsSurface: widget.hostDrawsSurface,
     );
   }
 }
@@ -538,7 +631,7 @@ Map<String, dynamic> _dialogItemToMap(engine_ffi.DialogItem i) => <String, dynam
 
 /// Wires a [DialogController] to a [DialogView] for one spec.
 ///
-/// Separate from [_DialogWindowApp] so a widget test can drive the whole
+/// Separate from [DialogSpecApp] so a widget test can drive the whole
 /// controller/view pair without a secondary window.
 class DialogWindowScaffold extends StatefulWidget {
   const DialogWindowScaffold({
@@ -549,6 +642,9 @@ class DialogWindowScaffold extends StatefulWidget {
     this.actions,
     this.baseDirectory,
     this.onShown,
+    this.showScrollbar = false,
+    this.onNaturalSize,
+    this.hostDrawsSurface = false,
   });
 
   final DialogSpec spec;
@@ -568,6 +664,15 @@ class DialogWindowScaffold extends StatefulWidget {
   /// after the first frame may show the window immediately (repeat click, or a
   /// click after the dialog's X hid it).
   final VoidCallback? onShown;
+
+  /// See [DialogView.showScrollbar].
+  final bool showScrollbar;
+
+  /// See [DialogView.onNaturalSize].
+  final ValueChanged<Size>? onNaturalSize;
+
+  /// See [DialogView.hostDrawsSurface].
+  final bool hostDrawsSurface;
 
   @override
   State<DialogWindowScaffold> createState() => _DialogWindowScaffoldState();
@@ -666,6 +771,9 @@ class _DialogWindowScaffoldState extends State<DialogWindowScaffold> {
         child: DialogView(
           controller: _controller,
           onClose: _controller.close,
+          showScrollbar: widget.showScrollbar,
+          onNaturalSize: widget.onNaturalSize,
+          hostDrawsSurface: widget.hostDrawsSurface,
         ),
       ),
     );

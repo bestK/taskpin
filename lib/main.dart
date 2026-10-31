@@ -8,10 +8,12 @@
 //
 // Responsibilities, in order:
 //   1. Bind the Flutter engine.
-//   2. Decide which window this engine is (manager vs dialog).
-//   3. Manager only: single-instance guard, load config (with migration), bring
+//   2. Decide which window this engine is (macOS popover vs dialog vs manager).
+//   3. Popover only: hand off to `popoverMain`, which renders one dialog and
+//      touches no config, no single-instance lock and no bars.
+//   4. Manager only: single-instance guard, load config (with migration), bring
 //      up the manager shell and start the update loop.
-//   4. Dialog only: hand off to `dialogWindowMain`, which renders nothing but
+//   5. Dialog only: hand off to `dialogWindowMain`, which renders nothing but
 //      the dialog.
 //
 // The taskbar bars are NOT widgets: they are native child windows of
@@ -30,6 +32,7 @@ import 'app/shell/app_shell.dart';
 import 'app/shell/routes.dart';
 import 'app/startup.dart';
 import 'app/windows/dialog_window.dart';
+import 'app/windows/popover_window.dart';
 import 'core/app/single_instance.dart';
 import 'core/config/config_repository.dart';
 import 'core/config/config_schema.dart';
@@ -54,6 +57,17 @@ void _bootLog(String message) {
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // A macOS menu-bar popover is a secondary engine started by
+  // `native/mac/PopoverHost.swift` with the positional argument `popover`.
+  // This branch must come BEFORE the dialog/multi-window probe and before any
+  // manager setup: a popover renders one script dialog and must not take the
+  // single-instance lock, load config, or start a BarController. Doing the
+  // latter is what made the popover render the whole manager shell.
+  if (args.contains('popover')) {
+    await popoverMain();
+    return;
+  }
 
   // Which window is this engine? `dialogWindowArguments` returns non-null ONLY
   // for a window the manager created as a dialog; the manager window's argument

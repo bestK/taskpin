@@ -73,8 +73,8 @@ if(WIN32)
         tp_sysinfo_win.c
     )
 elseif(APPLE)
-    # Objective-C: NSURLSession / mach / sysctl. Currently #error stubs —
-    # see tp_http_mac.m and tp_sysinfo_mac.m for status.
+    # Objective-C: NSURLSession / mach / sysctl / IOKit / libproc.
+    # See tp_http_mac.m and tp_sysinfo_mac.m for the implementation notes.
     enable_language(OBJC)
     list(APPEND TP_PLATFORM_SOURCES
         tp_http_mac.m
@@ -106,6 +106,18 @@ if(WIN32)
     # the locale calls are in kernel32, which is always linked. Listed
     # explicitly rather than relying on the toolchain's default libs.
     target_link_libraries(taskpin_engine PRIVATE winhttp iphlpapi psapi user32)
+elseif(APPLE)
+    # The macOS platform TUs are Objective-C: Foundation for NSURLSession and
+    # NSLocale, IOKit for the power-source query, CoreGraphics for
+    # CGEventSourceKeyState, and libproc for proc_listpids/proc_pidinfo.
+    # (The shipped app reaches this code through the CocoaPods podspec, but
+    # keeping the CMake target linkable also keeps engine_cli buildable.)
+    target_link_libraries(taskpin_engine PRIVATE
+        "-framework Foundation"
+        "-framework IOKit"
+        "-framework CoreGraphics"
+        proc
+    )
 endif()
 
 if(MSVC)
@@ -189,6 +201,13 @@ if(TP_BUILD_SHARED)
     if(WIN32)
         target_compile_definitions(taskpin_engine_shared PRIVATE WIN32_LEAN_AND_MEAN)
         target_link_libraries(taskpin_engine_shared PRIVATE winhttp iphlpapi psapi user32)
+    elseif(APPLE)
+        target_link_libraries(taskpin_engine_shared PRIVATE
+            "-framework Foundation"
+            "-framework IOKit"
+            "-framework CoreGraphics"
+            proc
+        )
     endif()
 
     if(MSVC)

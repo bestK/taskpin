@@ -7,7 +7,7 @@
  *
  * Implementations:
  *   tp_http_win.c  WinHTTP, ported from lib/httputil.c + lib/fetcher.c
- *   tp_http_mac.m  NSURLSession (semaphore), TODO — macOS phase
+ *   tp_http_mac.m  NSURLSession + dispatch_semaphore
  */
 
 #ifndef TP_HTTP_H

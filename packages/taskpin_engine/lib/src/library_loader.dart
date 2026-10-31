@@ -1,13 +1,15 @@
 /// Locating and loading the engine's shared library.
 ///
-/// **The shipped app does not use this file.** Per `docs/FLUTTER_REWRITE_PLAN.md`
-/// ("C 库的构建方式") the engine is compiled as a STATIC library and linked into
-/// the Flutter runner, so the product stays a single artifact with no runtime
-/// dependency and `tp_*` symbols resolve through [DynamicLibrary.process]. This
-/// loader exists for the one case that cannot work that way: **the tests**, which
-/// run under plain `dart test` with no Flutter runner to link against, and
-/// therefore need `taskpin_engine.dll` on disk.
+/// **The shipped app does not load a file.** The engine is linked into the
+/// runner rather than shipped beside it: Windows links it statically through
+/// `windows/CMakeLists.txt`, and macOS compiles it into the embedded
+/// `taskpin_engine.framework` via `native/engine/taskpin_engine.podspec`. In
+/// both cases the `tp_*` symbols are already in the process, so
+/// `DynamicLibrary.process()` is the correct handle (see [loadEngineLibrary]).
 ///
+/// The file-path search below exists for the one case that cannot work that
+/// way: **the tests**, which run under plain `dart test` with no Flutter
+/// runner to link against, and therefore need `taskpin_engine.dll` on disk.
 /// See `tool/build_dll.sh` to produce it.
 library;
 
@@ -51,8 +53,9 @@ final class EngineLibraryNotFoundException implements Exception {
       ..writeln('Build it with:')
       ..writeln('  bash packages/taskpin_engine/tool/build_dll.sh')
       ..writeln()
-      ..writeln('(The SHIPPED app links this engine statically and does not use '
-          'this loader at all; it is only for `dart test`.)');
+      ..writeln('(The SHIPPED app links this engine into the runner — '
+          'statically on Windows, through the taskpin_engine pod on macOS — '
+          'and does not use the file search; it is only for `dart test`.)');
     if (cause != null) {
       buffer
         ..writeln()
@@ -71,18 +74,30 @@ String get engineLibraryFileName {
 
 /// Load the engine library.
 ///
-/// [explicitPath] wins if given. Otherwise `TP_ENGINE_LIB`, then a list of
-/// conventional build-output locations. The first path that opens wins; a path
-/// that exists but fails to load does not stop the search, so a broken
-/// build-dll output cannot shadow a good one.
+/// [explicitPath] wins if given. Otherwise `TP_ENGINE_LIB`, then — on macOS —
+/// the symbols already linked into the process, then a list of conventional
+/// build-output locations. The first path that opens wins; a path that exists
+/// but fails to load does not stop the search, so a broken build-dll output
+/// cannot shadow a good one.
 ///
 /// Throws [EngineLibraryNotFoundException] listing everything tried.
 DynamicLibrary loadEngineLibrary({String? explicitPath}) {
+  final String fromEnv = Platform.environment['TP_ENGINE_LIB'] ?? '';
+
+  // macOS ships the engine inside the app (the `taskpin_engine` pod), so the
+  // symbols are in the process and there is no file to open. Checked before
+  // the path search, but only when the caller did not pin a library: tests
+  // pass `explicitPath`, and a `TP_ENGINE_LIB` build is a dylib on purpose.
+  // Windows is untouched — it links the engine into the runner statically and
+  // is not a process-symbol platform for this loader.
+  if (Platform.isMacOS && explicitPath == null && fromEnv.isEmpty) {
+    final DynamicLibrary process = DynamicLibrary.process();
+    if (process.providesSymbol('tp_engine_create')) return process;
+  }
+
   final candidates = <String>[
     if (explicitPath != null) p.absolute(explicitPath),
-    if (Platform.environment['TP_ENGINE_LIB'] case final fromEnv?
-        when fromEnv.isNotEmpty)
-      p.absolute(fromEnv),
+    if (fromEnv.isNotEmpty) p.absolute(fromEnv),
     ..._defaultSearchPaths(),
   ];
 
@@ -127,7 +142,19 @@ List<String> _defaultSearchPaths() {
     paths.add(p.join(root, 'native', 'engine', 'build', name));
   }
 
-  // 4. Wherever the running process lives, and the CWD — covers a test runner
+  // 4. macOS: the pod's dynamic framework, embedded beside the runner binary.
+  //    `DynamicLibrary.process()` normally resolves the symbols first; opening
+  //    the image directly is the deterministic fallback if it does not.
+  if (Platform.isMacOS) {
+    final frameworks =
+        p.join(p.dirname(Platform.resolvedExecutable), '..', 'Frameworks');
+    paths.add(p.join(
+        frameworks, 'taskpin_engine.framework', 'taskpin_engine'));
+    paths.add(p.join(frameworks, 'taskpin_engine.framework', 'Versions', 'A',
+        'taskpin_engine'));
+  }
+
+  // 5. Wherever the running process lives, and the CWD — covers a test runner
   //    invoked from an unusual directory.
   paths.add(p.join(p.dirname(Platform.resolvedExecutable), name));
   paths.add(p.join(Directory.current.path, name));

@@ -44,6 +44,16 @@ target 'Runner' do
   # See native/mac/taskpin_bar.podspec for the full reasoning.
   pod 'taskpin_bar', :path => '../native/mac'
 
+  # The Lua engine itself (native/engine): taskpin_lua.c, tp_engine.c,
+  # tp_json.c, the macOS platform TUs and the vendored Lua sources. Linked as
+  # a dynamic framework so its `tp_*` entry points are in the process and
+  # Dart's `DynamicLibrary.process()` can resolve them.
+  #
+  # The podspec sits at the repo root because CocoaPods only globs files under
+  # the pod root, and the engine needs both native/engine/* and lib/lua/*;
+  # their common ancestor is the root. See taskpin_engine.podspec.
+  pod 'taskpin_engine', :path => '..'
+
   target 'RunnerTests' do
     inherit! :search_paths
   end

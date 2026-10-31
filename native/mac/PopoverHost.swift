@@ -42,12 +42,15 @@ private let kDefaultPopoverHeight: CGFloat = 300
 private let kMinPopoverWidth: CGFloat = 240
 private let kMaxPopoverWidth: CGFloat = 720
 
-/// Hosts one lazily-created Flutter engine behind one `NSPopover` per bar.
+/// Hosts one lazily-created Flutter engine behind one shared `NSPopover`.
 ///
-/// ONE ENGINE, MANY POPOVERS. A popover is transient and shows one item at a
-/// time in practice, so a per-bar engine would be several hundred MB of RSS for
-/// no benefit — the same reasoning the plan applies to the Windows side when it
-/// refuses one Flutter engine per taskbar strip.
+/// ONE ENGINE, ONE POPOVER. Only one popover is ever on screen, so a per-bar
+/// engine would be several hundred MB of RSS for no benefit — the same
+/// reasoning the plan applies to the Windows side when it refuses one Flutter
+/// engine per taskbar strip. The popover itself is shared too and re-anchored
+/// per click: handing the one `FlutterViewController` to a fresh `NSPopover`
+/// on every open moved its view between popover windows, and the reopened
+/// popover came up as an empty grey panel.
 ///
 /// NOT the same thing as `desktop_multi_window`'s child windows: those are
 /// top-level `NSWindow`s with their own window id and a cross-engine method
@@ -56,8 +59,8 @@ private let kMaxPopoverWidth: CGFloat = 720
 /// native host rather than `WindowController.create`.
 final class PopoverHost: NSObject, NSPopoverDelegate {
 
-    /// barId -> the popover currently open for it.
-    private var popovers: [Int: NSPopover] = [:]
+    /// The popover, created with the engine on the first click.
+    private var popover: NSPopover?
 
     /// The shared Flutter engine, created on the first click.
     ///
@@ -76,6 +79,10 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
     /// not free, and a `refresh`ing dialog re-sends on every tick.
     private var specChannel: FlutterMethodChannel?
 
+    /// Set once the popover isolate has registered its handler and called
+    /// `ready`. Before that, specs are only remembered.
+    private var engineReady = false
+
     /// Which bar the open popover belongs to.
     private var openBarId: Int?
 
@@ -84,38 +91,76 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
     /// wants to stop a refresh loop when its popover goes away can.
     var onClosed: ((Int) -> Void)?
 
-    // MARK: - Presentation
+    /// The bar whose popover closed most recently, and when.
+    ///
+    /// A `.transient` popover closes on the mouse-DOWN of a click on its own
+    /// status item, so by the time that click's mouse-up reaches
+    /// `StatusItemPlugin` the popover is already gone and a plain "is it open?"
+    /// check would reopen it. Remembering the close lets the second click on a
+    /// bar mean "close" instead of "close and reopen".
+    private var lastClosed: (barId: Int, at: TimeInterval)?
 
-    /// Open the popover for `barId`, or close it if it is already open.
-    func toggle(for barId: Int, relativeTo anchor: NSView) {
-        if let existing = popovers[barId], existing.isShown {
-            existing.performClose(nil)
-            return
-        }
-        show(for: barId, relativeTo: anchor)
+    /// The content's natural size as last reported by the popover isolate
+    /// (`resize`), and the bar it was measured for.
+    ///
+    /// Remembered so that neither a reopen nor a refreshing dialog's `setSpec`
+    /// snaps the popover back to the spec's nominal size before the isolate
+    /// re-measures — that snap-then-grow would show as a visible bounce on
+    /// every refresh tick.
+    private var measured: (barId: Int, size: CGSize)?
+
+    // MARK: - Lifecycle
+
+    /// Create the engine and the shared popover ahead of the first click,
+    /// without showing anything.
+    ///
+    /// A cold Flutter engine takes a noticeable moment to boot, and doing it on
+    /// the first click is what made opening feel slow. The `ready` handshake
+    /// does not depend on a spec existing: an isolate that boots before any
+    /// click gets `nil` in the reply and waits for `setSpec`.
+    func prewarm() {
+        guard popover == nil else { return }
+        // `makeContentViewController` touches `controller.view`, which is what
+        // actually launches the engine; a controller whose view was never
+        // loaded would leave the isolate unstarted until the first show.
+        popover = makePopover(size: contentSize(from: lastSpec))
     }
 
-    /// Show (or re-show) the popover for `barId`.
+    // MARK: - Presentation
+
+    /// Whether a click on `barId` right now should only close its popover:
+    /// it is open, or it was dismissed by this same click's mouse-down.
+    func clickShouldClose(for barId: Int) -> Bool {
+        if isOpen(for: barId) { return true }
+        guard let closed = lastClosed, closed.barId == barId else { return false }
+        return ProcessInfo.processInfo.systemUptime - closed.at < 0.3
+    }
+
+    /// Show the popover under `barId`'s status item.
     func show(for barId: Int, relativeTo anchor: NSView) {
-        // One popover at a time: two anchored popovers would fight over the
-        // status bar's anchor rect.
-        if let open = openBarId, open != barId {
-            popovers[open]?.performClose(nil)
+        // Reopening the same bar starts at its measured size; another bar's
+        // measurement says nothing about this content, so the spec's size is
+        // used until the isolate reports a fresh one.
+        if let m = measured, m.barId != barId { measured = nil }
+        let size = measured?.size ?? contentSize(from: lastSpec)
+        let popover = self.popover ?? makePopover(size: size)
+        self.popover = popover
+
+        // One popover at a time: a click on another bar re-anchors it. The
+        // close is immediate (no animation) so it cannot finish after the
+        // reopen below, and the previous bar is told here rather than through
+        // `popoverDidClose`, which would also mark the engine hidden.
+        if popover.isShown {
+            let previous = openBarId
+            openBarId = nil
+            let animates = popover.animates
+            popover.animates = false
+            popover.close()
+            popover.animates = animates
+            if let previous = previous { onClosed?(previous) }
         }
 
-        let popover = popovers[barId] ?? makePopover()
-        popovers[barId] = popover
-
-        // `.transient`: closes when the user clicks anywhere else, and when the
-        // app deactivates. That is the plan's "点击外部关闭".
-        popover.behavior = .transient
-        popover.delegate = self
-        popover.animates = true
-
-        let size = contentSize(from: lastSpec)
         popover.contentSize = size
-        popover.contentViewController = makeContentViewController(size: size)
-
         openBarId = barId
         popover.show(
             relativeTo: anchor.bounds,
@@ -124,27 +169,38 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         )
         // A menu-bar popover should take focus so keyboard input works.
         NSApp.activate(ignoringOtherApps: true)
+        setEngineVisible(true)
     }
 
-    /// Whether a popover for `barId` is on screen.
+    /// Whether `barId`'s popover is on screen.
     func isOpen(for barId: Int) -> Bool {
-        popovers[barId]?.isShown ?? false
+        openBarId == barId && (popover?.isShown ?? false)
     }
 
-    /// Close the popover for one bar, if open.
+    /// Close the popover if it belongs to `barId`.
     func close(for barId: Int) {
-        popovers[barId]?.performClose(nil)
-        popovers.removeValue(forKey: barId)
-        if openBarId == barId { openBarId = nil }
+        guard openBarId == barId else { return }
+        popover?.performClose(nil)
     }
 
-    /// Close everything (bar removed, engine shutting down).
+    /// Close the popover whichever bar it belongs to (bar removed, shutdown).
     func closeAll() {
-        for popover in popovers.values where popover.isShown {
-            popover.performClose(nil)
-        }
-        popovers.removeAll()
-        openBarId = nil
+        popover?.performClose(nil)
+    }
+
+    /// Tell the popover engine whether its view is on screen.
+    ///
+    /// The engine derives its lifecycle from the APP (active, occluded), not
+    /// from this popover. After a close the app is often hidden or inactive,
+    /// the engine is told `hidden`, Flutter stops producing frames, and the
+    /// next open shows nothing — the setSpec arrives, the widgets rebuild, but
+    /// no frame is drawn. The popover's own visibility is what matters here,
+    /// so it is reported on the engine's lifecycle channel directly, using the
+    /// same message `FlutterEngine.setApplicationState` sends.
+    private func setEngineVisible(_ visible: Bool) {
+        guard let engine = flutterViewController?.engine else { return }
+        let state = visible ? "AppLifecycleState.resumed" : "AppLifecycleState.hidden"
+        engine.binaryMessenger.send(onChannel: "flutter/lifecycle", message: state.data(using: .utf8))
     }
 
     // MARK: - Content
@@ -157,21 +213,33 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
     /// answers asynchronously with the spec — works without a second click.
     func send(spec: [String: Any]) {
         lastSpec = spec
-        guard let channel = specChannel else { return }
+        // Until the popover isolate has said `ready`, a push can land on an
+        // engine that is not running yet ("Invalid engine handle") and is lost.
+        // The spec is kept in `lastSpec` and handed over in the `ready` reply.
+        guard engineReady, let channel = specChannel else { return }
         // The popover may already be up showing an older spec: an auto-refreshing
         // dialog (`refresh` in the dialog spec) works this way — the window
-        // stays, the items are swapped. A new size moves the popover too.
+        // stays, the items are swapped. A new size moves the popover too —
+        // unless the isolate has already measured this bar's content, in which
+        // case it re-reports via `resize` and the spec's nominal size would
+        // only make the popover bounce.
         channel.invokeMethod("setSpec", arguments: spec)
-        if let barId = openBarId, let popover = popovers[barId] {
+        if let barId = openBarId, measured?.barId != barId,
+           let popover = popover, popover.isShown {
             popover.contentSize = contentSize(from: spec)
         }
     }
 
-    private func makePopover() -> NSPopover {
+    private func makePopover(size: CGSize) -> NSPopover {
         let popover = NSPopover()
+        // `.transient`: closes when the user clicks anywhere else, and when the
+        // app deactivates. That is the plan's "点击外部关闭".
         popover.behavior = .transient
-        popover.contentSize = CGSize(width: kDefaultPopoverWidth, height: kDefaultPopoverHeight)
+        popover.animates = true
+        popover.contentSize = size
         popover.delegate = self
+        // Assigned once and never again; see the type comment.
+        popover.contentViewController = makeContentViewController(size: size)
         return popover
     }
 
@@ -185,8 +253,8 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         }
 
         let project = FlutterDartProject()
-        // The same Dart `main` as the manager window; `dialog_window.dart`
-        // branches on this argument to run `dialogWindowMain` instead of the
+        // The same Dart `main` as the manager window; `lib/main.dart`
+        // branches on this argument to run `popoverMain` instead of the
         // shell.
         project.dartEntrypointArguments = ["popover"]
 
@@ -197,6 +265,13 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         // some SDK versions and would need an unwrap whose failure mode is
         // unclear.
         let controller = FlutterViewController(project: project)
+        // Clear, not Flutter's default. A `FlutterViewController` paints its view
+        // black until the first frame, and that black showed through the
+        // popover's rounded frame as a black border and corners. The popover's
+        // own material is what should show, so the Flutter view must be see-
+        // through. Set on the controller, not only on the view's layer, because
+        // the controller's value is the one Flutter applies to its surface.
+        controller.backgroundColor = .clear
         controller.view.frame = NSRect(origin: .zero, size: size)
         flutterViewController = controller
 
@@ -208,16 +283,63 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
         )
         specChannel = channel
 
-        // The child engine registers its `taskpin/dialog_spec` handler at
-        // startup (`_DialogWindowBridge.listen` in
-        // `lib/app/windows/dialog_window.dart`), so nothing has to be pushed
-        // there — but a spec that arrived BEFORE the engine existed is replayed
-        // now that there is somewhere to send it.
-        if let spec = lastSpec {
-            channel.invokeMethod("setSpec", arguments: spec)
+        // A spec cannot be pushed now: the engine is not running until the
+        // view loads, and the isolate has no handler until `popoverMain` runs.
+        // Instead the isolate PULLS: once its handler is registered it calls
+        // `ready` (`_PopoverSpecSource.listen` in
+        // `lib/app/windows/popover_window.dart`) and gets the current spec as
+        // the reply — `nil` when the engine was pre-warmed before any click.
+        // Later specs are pushed with `setSpec`.
+        //
+        // `resize({width, height})` is the isolate reporting its content's
+        // natural size in logical points. The spec's width/height is only a
+        // guess made before layout; without this the popover clips any dialog
+        // whose items do not fit the nominal 360 x 300.
+        //
+        // `close()` is the dialog's X (or Escape). It goes through
+        // `performClose` like a click outside, so `popoverDidClose` still does
+        // the bookkeeping: engine hidden, Dart told `onPopoverClosed`.
+        channel.setMethodCallHandler { [weak self] call, result in
+            switch call.method {
+            case "ready":
+                self?.engineReady = true
+                result(self?.lastSpec)
+            case "resize":
+                self?.applyMeasuredSize(call.arguments as? [String: Any] ?? [:])
+                result(nil)
+            case "close":
+                self?.popover?.performClose(nil)
+                result(nil)
+            default:
+                result(FlutterMethodNotImplemented)
+            }
         }
 
         return controller
+    }
+
+    /// Apply a `resize` from the popover isolate.
+    private func applyMeasuredSize(_ args: [String: Any]) {
+        guard let width = (args["width"] as? NSNumber)?.doubleValue,
+              let height = (args["height"] as? NSNumber)?.doubleValue,
+              width.isFinite, height.isFinite else { return }
+        // The cap is the screen the popover is actually on: on a multi-monitor
+        // setup `NSScreen.main` is the key window's screen, which need not be
+        // the one under this status item.
+        let screen = popover?.contentViewController?.view.window?.screen ?? NSScreen.main
+        let visible = screen?.visibleFrame.height ?? 800
+        let size = CGSize(
+            width: min(kMaxPopoverWidth, max(kMinPopoverWidth, CGFloat(width))),
+            height: min(visible * 0.8, max(80, CGFloat(height)))
+        )
+        // Only an open popover's measurement is worth remembering; one taken
+        // while hidden (a pre-warmed engine laying out an empty spec) belongs
+        // to no bar.
+        if let barId = openBarId {
+            measured = (barId, size)
+        }
+        guard let popover = popover, popover.contentSize != size else { return }
+        popover.contentSize = size
     }
 
     /// The size a spec asks for, clamped to the popover's usable range.
@@ -238,8 +360,12 @@ final class PopoverHost: NSObject, NSPopoverDelegate {
     // MARK: - NSPopoverDelegate
 
     func popoverDidClose(_ notification: Notification) {
-        guard let barId = openBarId else { return }
+        // A re-anchor (`show`) has already done this bookkeeping; a close that
+        // lands while the popover is up again belongs to it and is ignored.
+        guard let barId = openBarId, !(popover?.isShown ?? false) else { return }
         openBarId = nil
+        lastClosed = (barId, ProcessInfo.processInfo.systemUptime)
+        setEngineVisible(false)
         onClosed?(barId)
     }
 }

@@ -1,0 +1,27 @@
+PODS:
+  - FlutterMacOS (1.0.0)
+  - taskpin_bar (0.0.1):
+    - FlutterMacOS
+  - taskpin_engine (0.0.1)
+
+DEPENDENCIES:
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - taskpin_bar (from `../native/mac`)
+  - taskpin_engine (from `..`)
+
+EXTERNAL SOURCES:
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  taskpin_bar:
+    :path: "../native/mac"
+  taskpin_engine:
+    :path: ".."
+
+SPEC CHECKSUMS:
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
+  taskpin_bar: 36c3f21562030491e48b8aaa05ecc206e71e5723
+  taskpin_engine: ed1fdd8bf7886d351ffea3bf4bc7880da16b2c59
+
+PODFILE CHECKSUM: df73db51e4e33f0aa7270b1a87c8b1984fb80094
+
+COCOAPODS: 1.16.2

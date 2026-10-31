@@ -7,7 +7,7 @@
  *
  * Implementations:
  *   tp_sysinfo_win.c  ported from lib/sysinfo.c
- *   tp_sysinfo_mac.m  mach/sysctl, TODO — macOS phase
+ *   tp_sysinfo_mac.m  mach/sysctl/IOKit/libproc + NSLocale
  */
 
 #ifndef TP_SYSINFO_H

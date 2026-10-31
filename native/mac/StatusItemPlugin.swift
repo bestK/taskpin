@@ -42,12 +42,19 @@ let kBarChannel = "taskpin/bar"
 /// `kDialogSpecChannel` / `_DialogWindowBridge` in
 /// `lib/app/windows/dialog_window.dart`, so the Dart side can reuse that
 /// bridge verbatim rather than growing a second spec-decoding path.
+///
+/// Popover isolate -> native: `ready()` (reply: current spec or nil),
+/// `resize({width, height})` (content's natural size, logical points) and
+/// `close()` (the dialog's X / Escape; closes the open popover).
+/// Native -> isolate: `setSpec(spec)`. See `PopoverHost`.
 let kPopoverSpecChannel = "taskpin/dialog_spec"
 
 /// One live bar: the status item, its custom view, and the item's own state.
 private final class BarEntry {
     let barId: Int
-    let statusItem: NSStatusItem
+    /// Recreated by `rebuildStatusItems` when the set of bars changes, so that
+    /// the menu-bar order can be made deterministic. The view is reused.
+    var statusItem: NSStatusItem
     let view: StatusItemView
     var width: Int
     /// Whether a hover notification is currently "open" on the Dart side, so
@@ -73,6 +80,17 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     private var bars: [Int: BarEntry] = [:]
     private let channel: FlutterMethodChannel
     private lazy var popoverHost = PopoverHost()
+
+    /// Whether the popover engine's pre-warm has been queued (once per plugin).
+    private var prewarmScheduled = false
+
+    /// When each bar last accepted a click (`systemUptime`).
+    private var lastClickAt: [Int: TimeInterval] = [:]
+
+    /// Bars whose `onClick` is still waiting on Dart, mapped to a token so a
+    /// stale timeout cannot clear a newer click's pending state.
+    private var pendingClicks: [Int: Int] = [:]
+    private var nextClickToken = 0
 
     private init(channel: FlutterMethodChannel) {
         self.channel = channel
@@ -151,9 +169,10 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     /// `setSpans(barId, spans, state?, tabular?)`
     ///
     /// Creates the status item on first use and updates the span list after.
-    /// The status item's length is recomputed from the new content every time,
-    /// because `NSStatusItem` has no intrinsic sizing of its own — nothing
-    /// auto-lays-out a custom subview in the menu bar.
+    /// The status item's length is recomputed every time, because
+    /// `NSStatusItem` has no intrinsic sizing of its own — nothing
+    /// auto-lays-out a custom subview in the menu bar. A positive `width` is
+    /// the configured width; `<= 0` sizes to the content.
     private func setSpans(_ args: [String: Any]) {
         guard let barId = intValue(args["barId"]) else { return }
         let entry = bars[barId] ?? createBar(barId: barId)
@@ -174,6 +193,14 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
             entry.view.style.state = BarState.from(state)
         }
 
+        // The configured width (`bar_width`, else the global `width`) rides on
+        // every setSpans, not only on setGeometry, because a newly created bar
+        // has never had a geometry call. `<= 0` means "size to content" and
+        // leaves the current mode alone — the same sentinel `setGeometry` uses.
+        let requestedWidth = intValue(args["width"]) ?? 0
+        if requestedWidth > 0 {
+            entry.view.explicitWidth = BarGeometryMath.clampWidth(requestedWidth)
+        }
         applyWidth(entry, width: entry.view.measuredWidth)
     }
 
@@ -231,6 +258,8 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     private func showPopover(_ args: [String: Any]) {
         guard let barId = intValue(args["barId"]),
               let entry = bars[barId] else { return }
+        // Dart has answered this bar's click.
+        pendingClicks[barId] = nil
 
         if let spec = args["spec"] as? [String: Any] {
             popoverHost.send(spec: spec)
@@ -246,6 +275,7 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     /// `hidePopover(barId)`
     private func hidePopover(_ args: [String: Any]) {
         guard let barId = intValue(args["barId"]) else { return }
+        pendingClicks[barId] = nil
         popoverHost.close(for: barId)
     }
 
@@ -271,6 +301,8 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     private func remove(_ args: [String: Any]) {
         guard let barId = intValue(args["barId"]),
               let entry = bars.removeValue(forKey: barId) else { return }
+        lastClickAt[barId] = nil
+        pendingClicks[barId] = nil
         // The popover belongs to the bar, so it goes with it.
         popoverHost.close(for: barId)
         NSStatusBar.system.removeStatusItem(entry.statusItem)
@@ -283,6 +315,8 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
             NSStatusBar.system.removeStatusItem(entry.statusItem)
         }
         bars.removeAll()
+        lastClickAt.removeAll()
+        pendingClicks.removeAll()
         popoverHost.closeAll()
     }
 
@@ -290,28 +324,12 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
 
     private func createBar(barId: Int) -> BarEntry {
         let view = StatusItemView(frame: NSRect(x: 0, y: 0, width: 100, height: BarMetrics.shared.height))
-        // Variable length: the width is driven from `measuredWidth` after every
-        // content change, and a fixed length would clip the content instead.
-        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
-        // The custom view is a subview of the button rather than `statusItem.view`:
-        // `NSStatusItem.view` is deprecated, and the button is what modern macOS
-        // gives the status item. Making the view the mouse target (below) stops
-        // the button's own highlight from drawing underneath our render.
-        if let button = statusItem.button {
-            button.addSubview(view)
-            // Track the button's bounds: `applyWidth` sets `statusItem.length`,
-            // which AppKit applies to the button, and the view has to follow.
-            // Without this the view would keep its creation-time frame and the
-            // strip would draw at the wrong size.
-            view.autoresizingMask = [.width, .height]
-            // Take the mouse instead of letting the button handle it, so the
-            // button's own pressed/highlight state never draws under our render.
-            button.target = nil
-            button.action = nil
-        }
-
-        let entry = BarEntry(barId: barId, statusItem: statusItem, view: view, width: 100)
+        let entry = BarEntry(
+            barId: barId,
+            statusItem: makeStatusItem(for: view),
+            view: view,
+            width: 100
+        )
 
         // All four native -> Dart events.
         view.onHoverChange = { [weak self] hovered in
@@ -329,17 +347,42 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
             // view, so a closure holding the entry would be a retain cycle
             // (entry -> view -> closure -> entry) and leak a status item per bar
             // removed.
-            guard let self = self, let entry = self.bars[barId] else { return }
-            // The popover is opened natively on click, because the plan's Phase 8
-            // deliverable is "点击开 Flutter 承载的 popover" — the click has to
-            // work even when the manager window is not running a Dart handler.
-            // The Dart side also gets `onClick` and may override the behaviour
-            // (open a URL, run a command) by calling back.
-            self.popoverHost.toggle(for: barId, relativeTo: entry.view)
+            guard let self = self, self.bars[barId] != nil else { return }
+            // Debounce: rapid clicks on one bar otherwise queue several
+            // open/close round-trips that land out of order and fight each
+            // other. Only ACCEPTED clicks restart the window, so a fast series
+            // still lets one click through every 350 ms instead of being
+            // swallowed whole.
+            let now = ProcessInfo.processInfo.systemUptime
+            if let last = self.lastClickAt[barId], now - last < 0.35 { return }
+            // A click on a bar whose popover is up only closes it. Anything else
+            // is Dart's call: it opens the popover with `showPopover` when the
+            // script's click action is a dialog, opens a URL, or does nothing.
+            // Opening natively on every click showed an empty popover for items
+            // that have no dialog at all. Closing is checked before the pending
+            // guard so it is never blocked.
+            if self.popoverHost.clickShouldClose(for: barId) {
+                self.lastClickAt[barId] = now
+                self.popoverHost.close(for: barId)
+                return
+            }
+            // One Dart round-trip per bar at a time.
+            guard self.pendingClicks[barId] == nil else { return }
+            self.lastClickAt[barId] = now
+            self.nextClickToken += 1
+            let token = self.nextClickToken
+            self.pendingClicks[barId] = token
             self.channel.invokeMethod("onClick", arguments: [
                 "barId": barId,
                 "button": "left",
             ])
+            // Dart answers a dialog click with `showPopover`, which clears the
+            // flag; a click it acts on otherwise (a URL) or ignores (an item
+            // with no action) sends nothing back, so the flag also expires.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self = self, self.pendingClicks[barId] == token else { return }
+                self.pendingClicks[barId] = nil
+            }
         }
 
         view.onContextMenu = { [weak self] point in
@@ -372,8 +415,107 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
         }
 
         bars[barId] = entry
+        // The system put this item to the LEFT of the existing ones; queue a
+        // pass that puts the whole set back into config order.
+        scheduleOrderingRebuild()
+        schedulePopoverPrewarm()
         return entry
     }
+
+    /// Boot the popover engine shortly after the first bar exists.
+    ///
+    /// A cold Flutter engine on the first click is what made opening slow. The
+    /// delay keeps the boot out of the startup burst (manager engine, bar
+    /// creation, the ordering rebuild) so it does not compete with it; nothing
+    /// is shown, the popover is only built.
+    private func schedulePopoverPrewarm() {
+        guard !prewarmScheduled else { return }
+        prewarmScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self, !self.bars.isEmpty else { return }
+            self.popoverHost.prewarm()
+        }
+    }
+
+    /// Create the system status item and attach the custom view to its button.
+    ///
+    /// Extracted from `createBar` because the ordering pass has to recreate
+    /// status items while keeping the view: the system object's position is
+    /// fixed at creation, the view carries all the state.
+    private func makeStatusItem(for view: StatusItemView) -> NSStatusItem {
+        // Variable length: the width is driven from `measuredWidth` after every
+        // content change, and a fixed length would clip the content instead.
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
+        // The custom view is a subview of the button rather than `statusItem.view`:
+        // `NSStatusItem.view` is deprecated, and the button is what modern macOS
+        // gives the status item. The view is the mouse target for clicks, wheel
+        // and right-clicks; it is transparent, so the button's native highlight
+        // still shows through (the view drives it from mouseDown/mouseUp).
+        if let button = statusItem.button {
+            button.addSubview(view)
+            // Track the button's bounds: `applyWidth` sets `statusItem.length`,
+            // which AppKit applies to the button, and the view has to follow.
+            // Without this the view would keep its creation-time frame and the
+            // strip would draw at the wrong size.
+            view.autoresizingMask = [.width, .height]
+            // No target/action: clicks are handled by the view, which forwards
+            // them to the plugin. The button is only used for its chrome.
+            button.target = nil
+            button.action = nil
+        }
+        return statusItem
+    }
+
+    // MARK: - Menu-bar ordering
+
+    /// Coalesces the ordering pass onto the next run-loop turn.
+    ///
+    /// The Dart controller creates its bars one `setSpans` at a time, so a
+    /// rebuild per call would tear the strip down three times on startup. The
+    /// flag makes a burst of creations one rebuild.
+    private func scheduleOrderingRebuild() {
+        guard !reorderScheduled else { return }
+        reorderScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.reorderScheduled = false
+            self.rebuildStatusItems()
+        }
+    }
+
+    /// Recreate every status item so the menu bar reads left-to-right in
+    /// ascending bar id (= config index) order.
+    ///
+    /// WHY THIS IS NEEDED: `NSStatusBar` inserts every newly created item to
+    /// the LEFT of the existing ones, so creating bars in config order displays
+    /// them reversed. There is no public reorder API, so the system objects are
+    /// removed and re-added from the highest id down; the last one added (the
+    /// lowest id) ends up leftmost.
+    ///
+    /// TRADE-OFF: the custom views are reused, so content, callbacks and the
+    /// hover/pressed state survive — but a user's ⌘-drag repositioning does
+    /// not. `autosaveName` is deliberately NOT set: a saved per-item position
+    /// would fight this deterministic config order on the next pin/unpin, and
+    /// there is no API to reorder the other items around it. Config order wins.
+    private func rebuildStatusItems() {
+        guard !bars.isEmpty else { return }
+        // A popover is anchored to a view that is about to move to a different
+        // button, so close it rather than leave the anchor stale.
+        popoverHost.closeAll()
+        for entry in bars.values {
+            entry.view.removeFromSuperview()
+            NSStatusBar.system.removeStatusItem(entry.statusItem)
+        }
+        // Descending creation order => ascending left-to-right display order.
+        for entry in bars.values.sorted(by: { $0.barId > $1.barId }) {
+            entry.statusItem = makeStatusItem(for: entry.view)
+            applyWidth(entry, width: CGFloat(entry.width))
+        }
+    }
+
+    /// Whether an ordering pass is already queued.
+    private var reorderScheduled = false
 
     /// Resize the status item and the view together.
     ///

@@ -27,10 +27,12 @@ import 'dart:async';
 import 'package:flutter/gestures.dart'
     show PointerScrollEvent, PointerSignalEvent, kPrimaryMouseButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
 import 'dialog_controller.dart';
+import 'dialog_palette.dart';
 import 'dialog_spec.dart';
 import 'items/button_item.dart';
 import 'items/hr_item.dart';
@@ -45,13 +47,47 @@ const Duration kDialogEscPollInterval = Duration(milliseconds: 100);
 
 /// Renders one [DialogSpec].
 class DialogView extends StatefulWidget {
-  const DialogView({super.key, required this.controller, this.onClose});
+  const DialogView({
+    super.key,
+    required this.controller,
+    this.onClose,
+    this.showScrollbar = false,
+    this.onNaturalSize,
+    this.hostDrawsSurface = false,
+  });
 
   final DialogController controller;
 
   /// Called when the user dismisses the dialog. Null disables the close
   /// affordance in the title bar (the native close still works).
   final VoidCallback? onClose;
+
+  /// Draw an always-visible scrollbar on the item area.
+  ///
+  /// Off for a dialog WINDOW: it grows itself to fit (see
+  /// `_reportContentHeight`) and the user can Shift+scroll it bigger, so a
+  /// scrollbar there is only noise. The macOS popover can do neither — its
+  /// height is capped by the screen — so without a visible thumb its overflow
+  /// looked like clipped content.
+  final bool showScrollbar;
+
+  /// Receives the dialog's NATURAL size after a layout that may have changed
+  /// it: `height` is what the whole dialog (title band + padding + every item)
+  /// needs at the current width, whatever height it was actually given;
+  /// `width` is the item area's preferred (max intrinsic) width plus padding.
+  ///
+  /// At most one call per frame, and NOT de-duplicated: the host decides what
+  /// counts as a change, because only it knows what it last applied. Null (the
+  /// default) skips the measurement entirely.
+  final ValueChanged<Size>? onNaturalSize;
+
+  /// The host draws the dialog's frame, so this view must not.
+  ///
+  /// Set by the macOS popover: the `NSPopover` supplies its own material and
+  /// rounded frame, and a flyout fill, a border and a 16 px clip on top of it
+  /// read as a black-edged box. Off for a dialog WINDOW, which has no frame of
+  /// its own and draws the rounded card.
+  final bool hostDrawsSurface;
 
   @override
   State<DialogView> createState() => _DialogViewState();
@@ -207,6 +243,54 @@ class _DialogViewState extends State<DialogView> {
     unawaited(widget.controller.windowApi.setHeight(target.ceil()));
   }
 
+  /// Wraps the item column so its laid-out size can be read back.
+  final GlobalKey _bodyKey = GlobalKey();
+
+  /// Whether a natural-size measurement is already queued for this frame.
+  bool _naturalQueued = false;
+
+  /// Queue one [DialogView.onNaturalSize] report after the current layout.
+  ///
+  /// HOW THE NATURAL HEIGHT IS MEASURED. The item column is the child of a
+  /// `SingleChildScrollView`, and a scroll view lays its child out with an
+  /// UNBOUNDED main axis — so the column's laid-out height already is its
+  /// natural height for the current width, whether or not it fits. That is
+  /// read straight off its `RenderBox`; nothing is laid out twice and no
+  /// intrinsic-height pass is needed (those are unsupported or wrong for
+  /// several widgets). Everything around the item area — title band, divider,
+  /// borders — is `outer - viewport`, so the chrome is measured rather than
+  /// assumed. Unlike `_reportContentHeight`, this does not depend on the
+  /// current viewport, so a resize by the host cannot feed back into it.
+  void _scheduleNaturalSize() {
+    if (widget.onNaturalSize == null || _naturalQueued) return;
+    _naturalQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _naturalQueued = false;
+      final ValueChanged<Size>? report = widget.onNaturalSize;
+      if (!mounted || report == null || !_scroll.hasClients) return;
+      final RenderObject? outer = context.findRenderObject();
+      final RenderObject? body = _bodyKey.currentContext?.findRenderObject();
+      if (outer is! RenderBox || body is! RenderBox) return;
+      if (!outer.hasSize || !body.hasSize) return;
+      final double chrome =
+          outer.size.height - _scroll.position.viewportDimension;
+      final double height =
+          chrome + body.size.height + _kContentPadding.vertical;
+      double width;
+      try {
+        width = body.getMaxIntrinsicWidth(double.infinity) +
+            _kContentPadding.horizontal;
+      } catch (_) {
+        // An item that cannot answer intrinsics: keep the width it has.
+        width = outer.size.width;
+      }
+      report(Size(width, height));
+    });
+    // From a post-frame callback (a `ScrollMetricsNotification`) the callback
+    // above lands in the NEXT frame, which nothing else may schedule.
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
   void _onScroll(PointerScrollEvent event) {
     // Shift+scroll resizes. This used to be gated on `spec.borderless`, but
     // the window is now ALWAYS borderless at the OS level (the panel draws its
@@ -229,10 +313,28 @@ class _DialogViewState extends State<DialogView> {
     _scroll.jumpTo(next);
   }
 
+  /// The explicit background a popover paints behind its content, or null for
+  /// the default, which is transparent so the popover material shows through.
+  /// `transparent_bg` wins: it asks the host not to paint a colour at all.
+  Color? _hostFill(DialogSpec spec) {
+    if (!widget.hostDrawsSurface || spec.transparentBg) {
+      return null;
+    }
+    return parseDialogColor(spec.bgColor);
+  }
+
   @override
   Widget build(BuildContext context) {
     final DialogSpec spec = widget.controller.spec;
-    final TaskPinTheme theme = TaskPinTheme.of(context);
+    // With an explicit fill, the text follows the fill's brightness instead of
+    // the system appearance, so a dark script colour on a light system (or the
+    // reverse) stays readable.
+    final Color? hostFill = _hostFill(spec);
+    final TaskPinTheme theme = hostFill == null
+        ? TaskPinTheme.of(context)
+        : TaskPinTheme.forBrightness(
+            ThemeData.estimateBrightnessForColor(hostFill),
+          );
 
     Widget body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -285,21 +387,38 @@ class _DialogViewState extends State<DialogView> {
     // the content is than the viewport. Content height = viewport + that.
     // Reporting only when the number changes keeps this from looping (a resize
     // changes the viewport, which re-fires the notification).
+    if (widget.onNaturalSize != null) {
+      // Re-measure when the items change size on their own (an image that
+      // finishes decoding, a refresh that adds rows) without this widget
+      // rebuilding.
+      body = _SizeWatcher(
+        key: _bodyKey,
+        onChanged: _scheduleNaturalSize,
+        child: body,
+      );
+    }
+    Widget scrollView = SingleChildScrollView(
+      controller: _scroll,
+      padding: _kContentPadding,
+      child: body,
+    );
+    if (widget.showScrollbar) {
+      // The automatic desktop scrollbar stays suppressed below; this explicit
+      // one shares the view's controller so it tracks the same position.
+      scrollView = Scrollbar(
+        controller: _scroll,
+        thumbVisibility: true,
+        child: scrollView,
+      );
+    }
     Widget scroll = ScrollConfiguration(
       behavior: const _NoScrollbarBehavior(),
-      child: SingleChildScrollView(
-        controller: _scroll,
-        // C: PADDING_X 12, PADDING_Y 8 (`lib/script_dialog.c:17-18`).
-        padding: const EdgeInsets.symmetric(
-          horizontal: TpSpacing.s12,
-          vertical: TpSpacing.s8,
-        ),
-        child: body,
-      ),
+      child: scrollView,
     );
     scroll = NotificationListener<ScrollMetricsNotification>(
       onNotification: (ScrollMetricsNotification n) {
         _scheduleMeasure();
+        _scheduleNaturalSize();
         return false;
       },
       child: scroll,
@@ -308,6 +427,7 @@ class _DialogViewState extends State<DialogView> {
     // guaranteed on the first frame. Measure after every build instead; the
     // reporter ignores readings that agree with the last request.
     _scheduleMeasure();
+    _scheduleNaturalSize();
     Widget content = scroll;
 
     if (!spec.borderless) {
@@ -318,7 +438,7 @@ class _DialogViewState extends State<DialogView> {
           // distinct surface the caption and the first content row read as one
           // block, and the divider between them looked like a stray line.
           ColoredBox(
-            color: theme.bg.cardSecondary,
+            color: hostFill ?? theme.bg.cardSecondary,
             child: _titleBar(context, theme, spec),
           ),
           const TpDivider(),
@@ -337,7 +457,18 @@ class _DialogViewState extends State<DialogView> {
     // in the C renderer. They are not any more: `DialogController` always
     // strips the OS frame (the panel draws its own title), so `borderless` now
     // means only "no title row" and the surface stays a rounded flyout.
-    final Widget surface = spec.transparentBg
+    //
+    // A popover (`hostDrawsSurface`) has its own frame, so the card is skipped
+    // there and the content sits on the popover's material. An explicit script
+    // colour (`_hostFill`) fills the content instead. The popover clips the
+    // corners, so this fill is square and carries no border.
+    if (hostFill != null) {
+      content = Theme(
+        data: theme.toThemeData(),
+        child: ColoredBox(color: hostFill, child: content),
+      );
+    }
+    final Widget surface = spec.transparentBg || widget.hostDrawsSurface
         ? content
         : DecoratedBox(
             decoration: BoxDecoration(
@@ -346,6 +477,13 @@ class _DialogViewState extends State<DialogView> {
               border: Border.all(color: theme.stroke.divider),
             ),
             child: content,
+          );
+
+    final Widget framed = widget.hostDrawsSurface
+        ? surface
+        : ClipRRect(
+            borderRadius: TpRadius.overlay,
+            child: surface,
           );
 
     return _DialogShortcuts(
@@ -365,10 +503,7 @@ class _DialogViewState extends State<DialogView> {
               _onScroll(e);
             }
           },
-          child: ClipRRect(
-            borderRadius: TpRadius.overlay,
-            child: surface,
-          ),
+          child: framed,
         ),
       ),
     );
@@ -597,6 +732,56 @@ class _NoScrollbarBehavior extends ScrollBehavior {
     ScrollableDetails details,
   ) {
     return child;
+  }
+}
+
+/// Padding around the item area. C: PADDING_X 12, PADDING_Y 8
+/// (`lib/script_dialog.c:17-18`). One constant because the natural-size
+/// measurement must add back exactly what the scroll view pads.
+const EdgeInsets _kContentPadding = EdgeInsets.symmetric(
+  horizontal: TpSpacing.s12,
+  vertical: TpSpacing.s8,
+);
+
+/// Calls [onChanged] whenever its child's laid-out size changes.
+///
+/// A render object rather than a `LayoutBuilder` / `SizeChangedLayoutNotifier`:
+/// it sees the child's actual size in the layout that produced it, and it adds
+/// no intrinsic-dimension restrictions to the subtree (a `LayoutBuilder` would
+/// make the item column unable to answer the intrinsic-width query the popover
+/// uses for its width).
+class _SizeWatcher extends SingleChildRenderObjectWidget {
+  const _SizeWatcher({super.key, required this.onChanged, super.child});
+
+  final VoidCallback onChanged;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSizeWatcher(onChanged);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSizeWatcher renderObject,
+  ) {
+    renderObject.onChanged = onChanged;
+  }
+}
+
+class _RenderSizeWatcher extends RenderProxyBox {
+  _RenderSizeWatcher(this.onChanged);
+
+  VoidCallback onChanged;
+  Size? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size != _last) {
+      _last = size;
+      // Only queues a post-frame callback, which is safe mid-layout.
+      onChanged();
+    }
   }
 }
 

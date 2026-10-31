@@ -307,6 +307,26 @@ abstract class BarApi {
   /// Replace the style.
   Future<void> setStyle(int barId, BarStyleSpec style);
 
+  /// Show (or update) the Flutter popover for [barId] with [spec].
+  ///
+  /// macOS only: the menu-bar item is anchored to a real `NSView`, so the
+  /// native plugin presents an `NSPopover` with a second Flutter engine. The
+  /// Windows half has no equivalent; there the call is simply unimplemented
+  /// and [MethodChannelBarApi._invoke] degrades it to a no-op.
+  ///
+  /// [spec] is the `DialogSpec.toJson()` shape. [luaPath] / [argsJson]
+  /// identify the script that produced it, so the popover engine can re-run it
+  /// on the dialog's own `@refresh` interval.
+  Future<void> showPopover(
+    int barId,
+    Map<String, dynamic> spec, {
+    String luaPath = '',
+    String argsJson = '',
+  });
+
+  /// Close the popover for [barId], if open.
+  Future<void> hidePopover(int barId);
+
   /// Tear one bar down.
   Future<void> remove(int barId);
 
@@ -393,6 +413,27 @@ class MethodChannelBarApi implements BarApi {
       String, dynamic>{'barId': barId, ...style.toWire()});
 
   @override
+  Future<void> showPopover(
+    int barId,
+    Map<String, dynamic> spec, {
+    String luaPath = '',
+    String argsJson = '',
+  }) => _invoke('showPopover', <String, dynamic>{
+    'barId': barId,
+    // The script identity rides with the spec because the popover engine needs
+    // it to re-run the script; it is not part of `DialogSpec` itself.
+    'spec': <String, dynamic>{
+      ...spec,
+      if (luaPath.isNotEmpty) 'luaPath': luaPath,
+      if (argsJson.isNotEmpty) 'argsJson': argsJson,
+    },
+  });
+
+  @override
+  Future<void> hidePopover(int barId) =>
+      _invoke('hidePopover', <String, dynamic>{'barId': barId});
+
+  @override
   Future<void> remove(int barId) =>
       _invoke('remove', <String, dynamic>{'barId': barId});
 
@@ -435,6 +476,15 @@ class NoopBarApi implements BarApi {
   }) async {}
   @override
   Future<void> setStyle(int barId, BarStyleSpec style) async {}
+  @override
+  Future<void> showPopover(
+    int barId,
+    Map<String, dynamic> spec, {
+    String luaPath = '',
+    String argsJson = '',
+  }) async {}
+  @override
+  Future<void> hidePopover(int barId) async {}
   @override
   Future<void> remove(int barId) async {}
   @override
@@ -483,6 +533,28 @@ class RecordingBarApi implements BarApi {
   Future<void> setStyle(int barId, BarStyleSpec style) async {
     styles[barId] = style;
     calls.add('setStyle($barId,${style.state.wireValue})');
+  }
+
+  /// The last spec sent to each popover, so a test can assert on the dialog
+  /// payload rather than on a formatted string.
+  final Map<int, Map<String, dynamic>> popovers =
+      <int, Map<String, dynamic>>{};
+
+  @override
+  Future<void> showPopover(
+    int barId,
+    Map<String, dynamic> spec, {
+    String luaPath = '',
+    String argsJson = '',
+  }) async {
+    popovers[barId] = spec;
+    calls.add('showPopover($barId,${spec['title']})');
+  }
+
+  @override
+  Future<void> hidePopover(int barId) async {
+    popovers.remove(barId);
+    calls.add('hidePopover($barId)');
   }
 
   @override
