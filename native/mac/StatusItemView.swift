@@ -209,10 +209,11 @@ struct BarSpan {
 
 /// Per-item visual configuration.
 ///
-/// PARITY: `taskpin::bar::BarStyle`. `fontSize` defaults to 11 to match
-/// `TpBarTypography.labelSize`, NOT the C++ `BarStyle::font_size = 9` — the two
-/// disagree, and 11 is what the Dart preview strip draws, so 11 is what keeps
-/// the WYSIWYP promise. Flagged for reconciliation in native/mac/README.md.
+/// PARITY: `taskpin::bar::BarStyle`. `fontSize` defaults to 13
+/// (`BarMetrics().labelSize`, the macOS system size from VISUAL_SPEC §7.1), NOT
+/// the C++ `BarStyle::font_size = 9` and NOT the Dart preview's
+/// `TpBarTypography.labelSize = 11`. All three disagree; flagged for
+/// reconciliation in native/mac/README.md.
 ///
 /// `BarMetrics().labelSize` is a construction-time constant (every field of
 /// `BarMetrics` is a `let` with an initialiser), so this default is a compile
@@ -226,7 +227,10 @@ struct BarStyle {
     var bgHover: UInt32 = BarTokens.bgHover
     var label: UInt32 = BarTokens.label
     var value: UInt32 = BarTokens.value
-    var icon: UInt32 = BarTokens.icon
+    /// `useDefault` means "follow the menu bar": monochrome icons take the system
+    /// secondary label colour, resolved per draw like the text. The Dart side only
+    /// sends `icon` when a script or config sets one, so the default is the usual case.
+    var icon: UInt32 = BarTokens.useDefault
     var fontSize: Int = BarMetrics().labelSize
     var state: BarState = .running
     var scrollEnabled: Bool = true
@@ -663,7 +667,15 @@ final class StatusItemView: NSView {
     /// SURVIVES a content change, matching `BarWindow`: `SetContent` there does
     /// not touch `m_width`, so a wheel-resized bar stays resized when the script
     /// returns new text.
-    var explicitWidth: Int = 0
+    var explicitWidth: Int = 0 {
+        didSet {
+            // A deliberate width change is not jitter, so the shrink hysteresis
+            // starts over. `setSpans` re-sends the same value every call, hence the guard.
+            guard explicitWidth != oldValue else { return }
+            lastAppliedWidth = 0
+            shrinkStreak = 0
+        }
+    }
 
     // MARK: callbacks (all fired on the main thread)
 
@@ -722,41 +734,71 @@ final class StatusItemView: NSView {
 
     // MARK: geometry
 
-    /// Last width returned for content-sizing, used for jitter-free hysteresis.
+    /// Width the strip last took, the baseline for the shrink hysteresis.
     private var lastAppliedWidth: CGFloat = 0
+    /// Consecutive `settledWidth` calls that wanted a narrower strip than the
+    /// one applied. The shrink lands once this reaches `shrinkSettleCount`.
+    private var shrinkStreak = 0
+    /// How many content updates in a row must want a narrower strip before it
+    /// narrows. Each update is one `setSpans` call from the script's refresh.
+    private static let shrinkSettleCount = 3
 
-    /// The width the status item should take for the current spans.
+    /// The width the status item would take for the current spans, with no
+    /// side effects, so it is safe to call from `draw`.
     ///
     /// On macOS menu bar, status items are compact indicators and should never
     /// carry empty void in the middle or at the end.
     /// If an explicit width was requested (from a Windows `bar_width` config or
     /// mouse wheel resize), it acts as an upper limit / cap; the strip sizes
     /// to its natural content up to that limit without inflating with blank space.
-    ///
-    /// Width hysteresis prevents horizontal jitter when numerals or bandwidth
-    /// units fluctuate tick to tick.
     var measuredWidth: CGFloat {
         let natural = naturalContentWidth().rounded(.up)
-        guard natural > 0 else {
-            lastAppliedWidth = 0
-            return 0
-        }
+        guard natural > 0 else { return 0 }
         let maxAllowed: CGFloat = explicitWidth > 0
             ? CGFloat(BarGeometryMath.clampWidth(explicitWidth))
             : CGFloat(metrics.maxWidth)
-        let target = min(maxAllowed, natural)
+        return min(maxAllowed, natural)
+    }
 
-        // Width hysteresis for auto-sizing:
-        // Expand immediately on growth so content never truncates.
-        // Absorb small contractions (< 4 pt) to prevent horizontal jitter when
-        // numbers or bandwidth units fluctuate from tick to tick.
-        if lastAppliedWidth > 0 {
-            if target <= lastAppliedWidth && (lastAppliedWidth - target) < 4.0 {
-                return min(maxAllowed, lastAppliedWidth)
-            }
+    /// The width to apply after a content change, with jitter hysteresis.
+    ///
+    /// Numerals and units change width from tick to tick ("1023K/s" to "1.0M/s"
+    /// is about 10 pt narrower), and every width change shifts the menu-bar items
+    /// beside this one. So the strip grows at once, so content never truncates,
+    /// but narrows only after the smaller width has held for `shrinkSettleCount`
+    /// updates. Until then it keeps the wider width.
+    ///
+    /// Stateful: call from the content-change path (`setSpans`) only.
+    func settledWidth() -> CGFloat {
+        let target = measuredWidth
+        guard target > 0 else {
+            // Empty content resets the hysteresis, so the next content grows at once.
+            lastAppliedWidth = 0
+            shrinkStreak = 0
+            return 0
+        }
+        if lastAppliedWidth == 0 || target >= lastAppliedWidth {
+            lastAppliedWidth = target
+            shrinkStreak = 0
+            return target
+        }
+        shrinkStreak += 1
+        guard shrinkStreak >= StatusItemView.shrinkSettleCount else {
+            return lastAppliedWidth
         }
         lastAppliedWidth = target
+        shrinkStreak = 0
         return target
+    }
+
+    /// The width `settledWidth` would give right now, without advancing the
+    /// hysteresis. Used by geometry calls and `draw`, which must agree with the
+    /// width the last content change applied.
+    var heldWidth: CGFloat {
+        let target = measuredWidth
+        guard target > 0 else { return 0 }
+        if lastAppliedWidth == 0 || target >= lastAppliedWidth { return target }
+        return lastAppliedWidth
     }
 
     // MARK: drawing
@@ -833,11 +875,10 @@ final class StatusItemView: NSView {
         // The plan is explicit: ellipsis-truncate, do not clip. Each line is
         // truncated on its own, from its last text span backwards.
         //
-        // Measured against `measuredWidth`, not `bounds.width`: the two agree
-        // once the plugin has applied the width, but on the frame where content
-        // changed they do not yet, and truncating against the stale width would
-        // make the strip lag one edit behind.
-        truncateToFit(&items, width: measuredWidth)
+        // Measured against the width the strip actually holds (`heldWidth`), so
+        // text is cut to the frame it is drawn in. During a shrink hold the strip
+        // is wider than the natural content, and this keeps the text unclipped.
+        truncateToFit(&items, width: heldWidth)
 
         // ---- position pass (mirrors bar_render_d2d.cpp's DrawFrame) ----
         let result = layout(items, in: b)
@@ -905,7 +946,11 @@ final class StatusItemView: NSView {
     /// One laid-out span: its measured size, and its Core Text line once built.
     private struct Item {
         var span: BarSpan
+        /// The line drawn. Truncation replaces it with a shorter one.
         var line: CTLine?
+        /// The untruncated line. Every truncation starts from this, so a line is
+        /// never cut twice.
+        var sourceLine: CTLine?
         var image: NSImage?
         /// Width the span wants with no truncation.
         var naturalWidth: CGFloat
@@ -958,9 +1003,16 @@ final class StatusItemView: NSView {
     /// README.md records that difference until the Dart side catches up.
     private var contentOriginX: CGFloat { metrics.padHorizontal }
 
-    /// Two-line mode is on when any span starts a new line. Otherwise the strip
-    /// renders the single-line flow it always has.
-    private var isTwoLine: Bool { spans.contains { $0.newline } }
+    /// Two-line mode is on when a `newline` span is followed by visible content.
+    /// A trailing `font("\n")` with nothing after it draws nothing, so it must not
+    /// shrink a single-line script to the two-line size.
+    private var isTwoLine: Bool {
+        guard let breakIndex = spans.firstIndex(where: { $0.newline }) else { return false }
+        return spans[breakIndex...].contains { span in
+            if span.isImage { return !span.text.isEmpty }
+            return !span.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
 
     /// The height content is laid out in: the view's own height. Falls back to
     /// the 24 pt metric before the view has a frame, so measuring and drawing
@@ -983,13 +1035,21 @@ final class StatusItemView: NSView {
     /// Baselines of the top and bottom lines, measured up from the view's bottom
     /// edge. The block (top line's cap height to bottom baseline) is centred on
     /// the bar, so the optical centre is the bar's centre. The pitch is
-    /// `lineHeightFactor` x the grid size.
+    /// `lineHeightFactor` x the grid size. Both are snapped to the device pixel
+    /// grid, so the glyphs do not land on half pixels at @2x.
     private func twoLineBaselines() -> (top: CGFloat, bottom: CGFloat) {
         let grid = twoLineGridSize
         let pitch = grid * metrics.lineHeightFactor
         let cap = CTFontGetCapHeight(font(size: grid, tabular: true))
-        let bottom = barHeight / 2 - (pitch + cap) / 2
-        return (top: bottom + pitch, bottom: bottom)
+        let bottom = pixelAligned(barHeight / 2 - (pitch + cap) / 2)
+        return (top: pixelAligned(bottom + pitch), bottom: bottom)
+    }
+
+    /// Rounds a point value to the nearest device pixel. The scale comes from the
+    /// window when there is one; @2x is the fallback before the view is in a window.
+    private func pixelAligned(_ value: CGFloat) -> CGFloat {
+        let scale = window?.backingScaleFactor ?? 2
+        return (value * scale).rounded() / scale
     }
 
     /// How much horizontal room the spans have.
@@ -1133,6 +1193,7 @@ final class StatusItemView: NSView {
             var leading: CGFloat = 0
             let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
             item.line = line
+            item.sourceLine = line
             item.naturalWidth = width
             item.maxWidth = width
             item.height = ascent + descent
@@ -1193,18 +1254,21 @@ final class StatusItemView: NSView {
             }) else {
                 break
             }
-            let natural = items[index].naturalWidth
+            let current = items[index].maxWidth
 
             // The token alone needs some room; below that the span is better
             // dropped entirely than reduced to a bare ellipsis.
             let tokenWidth = ellipsisWidth(items[index])
-            if natural - excess >= tokenWidth + 2 {
-                // Never grow a span, and never take it below the ellipsis.
-                let allowed = max(tokenWidth, min(natural - excess, natural))
-                if allowed < items[index].maxWidth {
-                    items[index].maxWidth = allowed
+            if current - excess >= tokenWidth + 2 {
+                // Never take the span below the ellipsis. `current` is the width the
+                // line really has, so the budget comes off the drawn width.
+                let allowed = max(tokenWidth, current - excess)
+                if allowed < current {
                     if let truncated = makeTruncatedLine(items[index], width: allowed) {
                         items[index].line = truncated
+                        // The strip is laid out from the width the line really has.
+                        // `allowed` is a budget, and Core Text can land a little under it.
+                        items[index].maxWidth = CGFloat(CTLineGetTypographicBounds(truncated, nil, nil, nil))
                     } else {
                         items[index].dropped = true
                     }
@@ -1244,8 +1308,9 @@ final class StatusItemView: NSView {
         var sawItemOnLine = false
 
         // Optical baseline calculation:
-        // SF Pro 13 in a 24 pt menu bar has its optical numeral/cap baseline at
-        // 7.5 pt (matching the macOS system clock and Control Centre).
+        // The baseline puts the reference cap height (SF Pro 13) centred on the bar,
+        // so it tracks the bar height instead of a fixed 7.5 pt, and a taller notched
+        // bar stays centred. It is then snapped to the device pixel grid.
         // To prevent mixed font sizes (e.g. 13 pt + 10 pt in net_monitor) from
         // jumping vertically, all text runs in the strip share this single baseline.
         var maxAscent: CGFloat = 0
@@ -1255,10 +1320,11 @@ final class StatusItemView: NSView {
             maxDescent = max(maxDescent, item.descent)
         }
 
-        var sharedBaseline: CGFloat = 7.5
+        let referenceCap = CTFontGetCapHeight(font(size: CGFloat(metrics.labelSize), tabular: false))
+        var sharedBaseline = pixelAligned((h - referenceCap) / 2)
         if maxAscent > 0 {
             if maxAscent + sharedBaseline > h - 0.5 {
-                sharedBaseline = min(7.5, h - maxAscent - 0.5)
+                sharedBaseline = min(sharedBaseline, h - maxAscent - 0.5)
             }
             if sharedBaseline - maxDescent < 0.5 {
                 sharedBaseline = max(sharedBaseline, maxDescent + 0.5)
@@ -1362,9 +1428,12 @@ final class StatusItemView: NSView {
 
                     let rect: CGRect
                     if item.image != nil {
-                        // An icon is centred on the line's cap centre.
-                        rect = CGRect(x: x, y: (centreY - item.height / 2).rounded(),
-                                      width: width, height: item.height)
+                        // An icon is centred on the line's cap centre, but its bottom
+                        // edge may not dip into the state indicator (top edge at
+                        // y 2.5): it is lifted to clear it by 1 pt.
+                        let indicatorTop = metrics.twoLineStateIndicatorY + metrics.twoLineStateIndicatorHeight
+                        let iconY = max((centreY - item.height / 2).rounded(), indicatorTop + 1)
+                        rect = CGRect(x: x, y: iconY, width: width, height: item.height)
                         result.placed.append(Placed(item: item, rect: rect, baseline: rect.minY, line: nil))
                     } else {
                         rect = CGRect(x: x, y: baseline - item.descent, width: width, height: item.height)
@@ -1461,11 +1530,22 @@ final class StatusItemView: NSView {
     /// appearance happens to be current, which is not necessarily the status
     /// item's (the app can be light while the menu bar is dark).
     private func systemTextColor() -> CGColor {
-        var resolved = NSColor.labelColor.cgColor
+        systemColor(.labelColor)
+    }
+
+    /// `NSColor.secondaryLabelColor` resolved against the menu bar's appearance.
+    private func systemSecondaryColor() -> CGColor {
+        systemColor(.secondaryLabelColor)
+    }
+
+    /// Resolves a semantic colour for the status button's appearance. See
+    /// `systemTextColor` for why this is not a plain `cgColor` read.
+    private func systemColor(_ color: NSColor) -> CGColor {
+        var resolved: CGColor?
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            resolved = NSColor.labelColor.cgColor
+            resolved = color.cgColor
         }
-        return resolved
+        return resolved ?? color.cgColor
     }
 
     private func makeLine(_ text: String, font: CTFont, color: CGColor) -> CTLine? {
@@ -1481,9 +1561,12 @@ final class StatusItemView: NSView {
         return CTLineCreateWithAttributedString(attributed)
     }
 
-    /// Re-cut an item's line to `width`, ending in an ellipsis.
+    /// Re-cut an item's untruncated line to `width`, ending in an ellipsis.
+    ///
+    /// Always cuts from `sourceLine`: cutting an already-cut line would lose the
+    /// ellipsis and give a different result on each pass.
     private func makeTruncatedLine(_ item: Item, width: CGFloat) -> CTLine? {
-        guard let line = item.line else { return nil }
+        guard let line = item.sourceLine else { return nil }
         guard let token = makeLine(
             "\u{2026}", // HORIZONTAL ELLIPSIS
             font: font(for: item.span),
@@ -1521,13 +1604,21 @@ final class StatusItemView: NSView {
             ctx.beginTransparencyLayer(auxiliaryInfo: nil)
             ctx.draw(cg, in: rect)
             ctx.setBlendMode(.sourceAtop)
-            ctx.setFillColor(barCGColor(style.icon))
+            ctx.setFillColor(iconTintColor())
             ctx.fill(rect)
             ctx.endTransparencyLayer()
             ctx.restoreGState()
         } else {
             ctx.draw(cg, in: rect)
         }
+    }
+
+    /// The tint for a monochrome icon. A script that set an explicit `icon`
+    /// colour gets it as-is. The default follows the menu bar's secondary label
+    /// colour, the same way text follows `labelColor`. The frozen `bar/icon`
+    /// (#A2ACBA) is a dark-theme value, about 2.3:1 on a light menu bar.
+    private func iconTintColor() -> CGColor {
+        style.icon == BarTokens.useDefault ? systemSecondaryColor() : barCGColor(style.icon)
     }
 
     // MARK: hover
@@ -1578,6 +1669,10 @@ final class StatusItemView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         (superview as? NSButton)?.highlight(false)
+        // A press released outside the item was a drag-out, not a click. Without
+        // this check the strip would open its popover or run its action anyway.
+        let inside = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(inside) else { return }
         onClick?()
     }
 
@@ -1595,6 +1690,11 @@ final class StatusItemView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        // The script turned scrolling off: pass the event up rather than resize.
+        guard style.scrollEnabled else {
+            super.scrollWheel(with: event)
+            return
+        }
         // Momentum events would otherwise keep firing after the user's fingers
         // leave a trackpad, and the width would run to its clamp.
         if event.momentumPhase != [] { return }

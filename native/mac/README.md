@@ -230,8 +230,10 @@ These are choices, not oversights. Each is a candidate for reconciliation.
     order, and there is no API to reorder the other items around it.
 13. **Two-line mode for `newline` spans.** A menu bar script that emits a line
     break (`font("\n")` or `newline: true`) gets two lines, as on the Windows
-    taskbar. Any `newline` span switches the strip to two-line mode, and the
-    rule is: line 1 is the spans before the first break, line 2 is the rest. A
+    taskbar. Two-line mode starts only when a `newline` span is followed by
+    visible content (text, or an icon). A trailing `font("\n")` with nothing after
+    it draws nothing, so a single-line script keeps its single-line size. The rule
+    is: line 1 is the spans before the first break, line 2 is the rest. A
     third line is joined onto line 2, so no content is lost. Without a `newline`
     span the strip stays single-line: spans flow left to right in source order,
     and `align` is ignored, as before.
@@ -245,7 +247,9 @@ These are choices, not oversights. Each is a candidate for reconciliation.
       single-line rule.
     - Strip width is the widest line's (left run + gap + right run) plus the
       padding. Nothing is wasted at the edges.
-    - Each line truncates on its own, from its last text span backwards.
+    - Each line truncates on its own, from its last text span backwards. A
+      truncated span takes the drawn width of its ellipsised line, so the columns
+      after it do not leave a gap.
 
     Numbers, for a bar `H` pt tall (`bounds.height`; 24 on external displays,
     taller on notched MacBooks). The grid is the reference network-meter look
@@ -262,27 +266,40 @@ These are choices, not oversights. Each is a candidate for reconciliation.
       and a default-size span is 9.5 pt.
     - Each line has one shared baseline, so mixed sizes on a line share it.
     - Icons are scaled down to the band (11 pt on 24 pt), keeping their aspect
-      ratio, so they cannot overlap the other line.
+      ratio, so they cannot overlap the other line. An icon's bottom edge is also
+      kept 1 pt clear of the two-line state indicator (top edge at 2.5 pt).
     - Status indicator in two-line mode: 2 pt thick at y = 0.5 (top edge 2.5 pt),
       instead of 3 pt at y = 1. At 3 pt the top edge would reach 4 pt, above the
       lower line's baseline, and touch its digits. At 2 pt only glyphs with
       descenders can reach it. Single-line mode is unchanged.
 
     Visual check still needed on a real menu bar: the 0.5 pt grid rounding, the
-    3.45 pt baseline, and whether the 8 pt floor reads clearly next to a clock.
+    pixel-snapped baselines (the bottom baseline goes from 3.45 pt to 3.5 pt at
+    @2x, see item 15), the 1 pt clearance of the icon above the indicator, and
+    whether the 8 pt floor reads clearly next to a clock.
 14. **Strip width matches content; explicit width is an upper cap.** Strips are
     auto-sized to their content (`requiredWidth()`) so no blank space is left at the end.
     Configured `bar_width` (such as Windows `375`) acts as an upper bound rather than
     inflating the menu-bar item.
 15. **Optical baseline alignment.** Mixed font sizes within a strip share a
-    single optical baseline (7.5 pt from bottom for standard menu-bar fonts,
-    adjusted gracefully for oversized fonts). This prevents secondary badges
+    single optical baseline. It centres SF Pro 13's cap height on the bar, so
+    it follows the bar height (a notched bar gets its own centre), then snaps to
+    the device pixel grid (`window?.backingScaleFactor`, 2 before the view is in
+    a window). This prevents secondary badges
     (e.g. `[27]` in `net_monitor.lua`) from jumping vertically and aligns
     text optically with the macOS system clock.
 16. **Width hysteresis for auto-sized strips.** Dynamic numerical scripts
-    (e.g. bandwidth monitors) expand immediately on growth so content never
-    clips, but apply a 4 pt hysteresis buffer on minor contractions to absorb
-    single-character and punctuation fluctuations, eliminating menu-bar jitter.
+    (e.g. bandwidth monitors) grow the strip at once so content never clips.
+    A narrower width is applied only after it has held for three `setSpans`
+    updates in a row (`shrinkSettleCount`). Until then the strip keeps its
+    wider width. A unit change such as "1023K/s" to "1.0M/s" otherwise moves
+    the neighbouring menu-bar items on every refresh. Only `setSpans` advances
+    this state. `measuredWidth` is a pure read used by `draw` and `setGeometry`.
+    An explicit width change (`setGeometry`, wheel) restarts the hysteresis.
+17. **Empty strip collapses to zero.** A script with no visible content gives a
+    0 pt status item, not the 28 pt minimum. Nothing is left as an empty box in
+    the menu bar. Non-empty content restores the normal width on the next
+    `setSpans`.
 
 ## Known value disagreements in others' files (not changed here)
 

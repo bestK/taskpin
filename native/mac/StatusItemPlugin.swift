@@ -201,7 +201,7 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
         if requestedWidth > 0 {
             entry.view.explicitWidth = BarGeometryMath.clampWidth(requestedWidth)
         }
-        applyWidth(entry, width: entry.view.measuredWidth)
+        applyWidth(entry, width: entry.view.settledWidth())
     }
 
     /// `setGeometry(barId, width, x?)`
@@ -222,7 +222,7 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
         entry.view.explicitWidth = requested > 0
             ? BarGeometryMath.clampWidth(requested)
             : 0
-        applyWidth(entry, width: entry.view.measuredWidth)
+        applyWidth(entry, width: entry.view.heldWidth)
     }
 
     /// `setStyle(barId, ...)`
@@ -521,8 +521,15 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     ///
     /// `NSStatusItem.length` positions every item to the right of this one, so
     /// the two must not drift: the view is always pinned to the item's bounds.
+    ///
+    /// A width of 0 means "no content" and collapses the item to 0 pt. Clamping it
+    /// to the 28 pt minimum would leave an empty box in the menu bar. The minimum
+    /// only applies to a strip that has something to draw.
     private func applyWidth(_ entry: BarEntry, width: CGFloat) {
-        let clamped = CGFloat(BarGeometryMath.clampWidth(Int(width.rounded(.up))))
+        let rounded = Int(width.rounded(.up))
+        let clamped: CGFloat = rounded <= 0
+            ? 0
+            : CGFloat(BarGeometryMath.clampWidth(rounded))
         if entry.statusItem.length != clamped {
             entry.statusItem.length = clamped
         }
