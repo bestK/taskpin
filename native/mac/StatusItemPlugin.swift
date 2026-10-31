@@ -523,7 +523,9 @@ public final class StatusItemPlugin: NSObject, FlutterPlugin {
     /// the two must not drift: the view is always pinned to the item's bounds.
     private func applyWidth(_ entry: BarEntry, width: CGFloat) {
         let clamped = CGFloat(BarGeometryMath.clampWidth(Int(width.rounded(.up))))
-        entry.statusItem.length = clamped
+        if entry.statusItem.length != clamped {
+            entry.statusItem.length = clamped
+        }
         entry.width = Int(clamped)
         entry.view.frame = NSRect(x: 0, y: 0, width: clamped, height: BarMetrics.shared.height)
         entry.view.needsDisplay = true

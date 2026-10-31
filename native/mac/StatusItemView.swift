@@ -271,7 +271,11 @@ struct BarMetrics {
 
     /// Scroll-wheel width clamping, mirroring the Windows clamp
     /// (`kWidthMin` / `kWidthMax` / `kWheelWidthStep`).
-    let minWidth: Int = 40
+    ///
+    /// On macOS, an icon-only item (16 pt icon + 6 pt padding either side) has
+    /// a natural width of 28 pt, so `minWidth` is 28 pt rather than Windows's
+    /// 40 pt button width, avoiding artificial empty padding.
+    let minWidth: Int = 28
     let maxWidth: Int = 600
     let widthStep: Int = 5
 
@@ -290,7 +294,13 @@ struct BarMetrics {
     /// Font size clamp. The plan says "字号钳制": at 24 pt with no vertical
     /// padding, 18 pt (line height ~22.5) is the largest that still leaves the
     /// descenders inside the strip.
-    let minFontSize: Int = 8
+    ///
+    /// Legible floor on macOS: Apple's system UI defines `miniSystemFontSize`
+    /// as 9 pt and `smallSystemFontSize` as 11 pt. Clamping to 10 pt ensures that
+    /// tiny script sizes (e.g. size 4 in `zeeho.lua` authored for Windows two-line
+    /// layout, or size 8 in `net_monitor.lua`) remain comfortably readable in the
+    /// 24 pt menu bar next to the 13 pt system clock.
+    let minFontSize: Int = 10
     let maxFontSize: Int = 18
 
     /// Gap between an icon and the text that follows it (VISUAL_SPEC §9.2).
@@ -682,25 +692,41 @@ final class StatusItemView: NSView {
 
     // MARK: geometry
 
+    /// Last width returned for content-sizing, used for jitter-free hysteresis.
+    private var lastAppliedWidth: CGFloat = 0
+
     /// The width the status item should take for the current spans.
     ///
-    /// `statusItem.length` is a plain CGFloat, so unlike an auto-sizing AppKit
-    /// control there is nothing to hand this to: `StatusItemPlugin` reads this
-    /// after every `setSpans` and assigns it.
+    /// On macOS menu bar, status items are compact indicators and should never
+    /// carry empty void in the middle or at the end.
+    /// If an explicit width was requested (from a Windows `bar_width` config or
+    /// mouse wheel resize), it acts as an upper limit / cap; the strip sizes
+    /// to its natural content up to that limit without inflating with blank space.
     ///
-    /// Two modes, matching how `bar_width` works in config.json (0 = "size to
-    /// content"):
-    ///   - [explicitWidth] > 0: honour it, clamped. The user asked for this
-    ///     width, so the content truncates into it rather than the strip
-    ///     resizing around the content.
-    ///   - otherwise: size to the content, so a `CPU 12%` item is not padded
-    ///     out to a fixed 200 pt.
+    /// Width hysteresis prevents horizontal jitter when numerals or bandwidth
+    /// units fluctuate tick to tick.
     var measuredWidth: CGFloat {
-        if explicitWidth > 0 {
-            return CGFloat(BarGeometryMath.clampWidth(explicitWidth))
+        let natural = naturalContentWidth().rounded(.up)
+        guard natural > 0 else {
+            lastAppliedWidth = 0
+            return 0
         }
-        let natural = naturalContentWidth()
-        return min(CGFloat(metrics.maxWidth), max(CGFloat(metrics.minWidth), natural.rounded(.up)))
+        let maxAllowed: CGFloat = explicitWidth > 0
+            ? CGFloat(BarGeometryMath.clampWidth(explicitWidth))
+            : CGFloat(metrics.maxWidth)
+        let target = min(maxAllowed, natural)
+
+        // Width hysteresis for auto-sizing:
+        // Expand immediately on growth so content never truncates.
+        // Absorb small contractions (< 4 pt) to prevent horizontal jitter when
+        // numbers or bandwidth units fluctuate from tick to tick.
+        if lastAppliedWidth > 0 {
+            if target <= lastAppliedWidth && (lastAppliedWidth - target) < 4.0 {
+                return min(maxAllowed, lastAppliedWidth)
+            }
+        }
+        lastAppliedWidth = target
+        return target
     }
 
     // MARK: drawing
@@ -740,14 +766,17 @@ final class StatusItemView: NSView {
         // taskbar segment has no system highlight of its own.
 
         // ---- state indicator: bottom-centred rounded bar ----
-        // VISUAL_SPEC §7.2. `state.running` is fully transparent on purpose: a
-        // healthy item shows nothing, so the eye is drawn only to problems.
-        // Replaces the old 2 pt full-height left stripe.
+        // VISUAL_SPEC §7.2: a bottom-centred 16 x 3 rounded bar.
+        // Positioned at y = 1.0 pt with rounded integer-point coordinates so the
+        // bottom pill radius is fully preserved (not clipped by the view boundary)
+        // and pixel-crisp on Retina.
         let indicator = indicatorColor(style.state)
         if barAlpha(indicator) > 0 {
+            let indicatorX = ((b.width - metrics.stateIndicatorWidth) / 2).rounded()
+            let indicatorY: CGFloat = 1.0
             let rect = CGRect(
-                x: (b.width - metrics.stateIndicatorWidth) / 2,
-                y: 0,
+                x: indicatorX,
+                y: indicatorY,
                 width: metrics.stateIndicatorWidth,
                 height: metrics.stateIndicatorHeight
             )
@@ -900,37 +929,19 @@ final class StatusItemView: NSView {
 
     /// Width required to draw `items` with nothing truncated.
     ///
-    /// A pure arithmetic model rather than "run the layout at a huge width and
-    /// see how far it reaches": a right-aligned span is positioned from the
-    /// RIGHT margin, so laying out at an arbitrary width and measuring the last
-    /// item's `maxX` reports that arbitrary width as the requirement. This
-    /// computes what the strip actually needs, and it is the same quantity the
-    /// Windows renderer's `left_total` feeds the marquee decision.
-    ///
-    /// The model mirrors `BarRenderer::DrawFrame`'s position pass:
-    ///   - left-aligned spans stack from `contentOriginX`, with a separator
-    ///     advance between consecutive ones
-    ///   - right-aligned spans stack leftwards from the right margin and carry
-    ///     no separator
-    ///   - a centre-aligned span is centred in the strip and does not advance
-    ///     the left cursor
-    ///
-    /// The two runs overlap exactly when the content does not fit, which is the
-    /// overflow condition `truncateToFit` acts on.
+    /// On the single-line macOS menu bar, all spans flow left-to-right in source
+    /// order, matching native menu bar item behavior.
+    /// Spans are placed from `contentOriginX` with gaps/separators between
+    /// consecutive items. The arithmetic matches `layout`'s cursor arithmetic
+    /// exactly so measured width and drawn bounds never disagree.
     private func requiredWidth(_ items: [Item]) -> CGFloat {
         let separatorAdvance = style.showSeparators
             ? metrics.separatorGap * 2 + metrics.separatorWidth
             : 0
 
         var leftTotal: CGFloat = 0
-        var rightTotal: CGFloat = 0
-        var centerMax: CGFloat = 0
-        var leftCount = 0
+        var sawItem = false
 
-        // The gap before an item is the icon-to-text gap when it has one, and
-        // the separator advance otherwise — the two never stack. This must match
-        // `layout`'s cursor arithmetic exactly, or the measured width and the
-        // drawn width disagree and the strip is permanently one edit behind.
         func gap(before item: Item) -> CGFloat {
             item.gapBefore > 0 ? item.gapBefore : separatorAdvance
         }
@@ -938,34 +949,48 @@ final class StatusItemView: NSView {
         for item in items where !item.dropped {
             let width = item.effectiveWidth
             guard width > 0 else { continue }
-            switch item.span.align {
-            case .left:
-                if leftCount > 0 { leftTotal += gap(before: item) }
-                leftTotal += width
-                leftCount += 1
-            case .right:
-                rightTotal += gap(before: item) + width
-            case .center:
-                centerMax = max(centerMax, gap(before: item) + width)
-            }
+            if sawItem { leftTotal += gap(before: item) }
+            leftTotal += width
+            sawItem = true
         }
 
-        return contentOriginX + leftTotal + max(rightTotal, centerMax) + metrics.padHorizontal
+        if !sawItem { return 0 }
+        return contentOriginX + leftTotal + metrics.padHorizontal
     }
 
-    /// Build the span list for the ONE line macOS renders.
+    /// Build the span list for the macOS menu bar.
     ///
-    /// A `newline` span starts line 2, which the menu bar cannot show, so this
-    /// stops there — mirroring `TpBarContent.lines[0]` on the Dart side.
+    /// The menu bar is 24 pt tall and displays ONE horizontal line (VISUAL_SPEC §7.1).
+    /// When scripts author multi-line content (using `font("\n")` or `newline: true`),
+    /// rather than silently dropping line 2 and losing critical information (e.g. tire
+    /// pressure in `zeeho.lua`), the lines are joined horizontally with a segment break.
+    /// If the joined content exceeds the available width, `truncateToFit` cleanly
+    /// ellipsis-truncates (`…`) the overflow.
     private func buildItems() -> [Item] {
         var items: [Item] = []
         var previousWasImage = false
+        var afterLineBreak = false
 
         for span in spans {
-            if span.newline { break } // line 1 is all macOS has
+            if span.newline {
+                afterLineBreak = true
+            }
+
+            // A pure newline span carries no drawable text: record the boundary and continue.
+            let trimmed = span.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !span.isImage && trimmed.isEmpty && (span.newline || span.text.contains("\n")) {
+                afterLineBreak = true
+                continue
+            }
+
+            // Sanitize any embedded newlines into single spaces for Core Text rendering.
+            var effectiveSpan = span
+            if !span.isImage && span.text.contains("\n") {
+                effectiveSpan.text = span.text.replacingOccurrences(of: "\n", with: " ")
+            }
 
             var item = Item(
-                span: span,
+                span: effectiveSpan,
                 line: nil,
                 image: nil,
                 naturalWidth: 0,
@@ -974,19 +999,23 @@ final class StatusItemView: NSView {
                 ascent: 0,
                 descent: 0
             )
-            // The text a `icon()` introduces belongs to the same segment as the
-            // icon (VISUAL_SPEC §9.5 rule 1), so it is separated by the 4 pt
-            // icon-to-text gap rather than by a 1 pt rule.
-            item.gapBefore = previousWasImage ? metrics.iconTextGap : 0
 
-            if span.isImage {
-                guard !span.text.isEmpty else { continue }
-                let image = BarIconCache.shared.image(for: span.text)
-                let w = span.imageWidth > 0 ? CGFloat(span.imageWidth) : metrics.iconSize
-                let h = span.imageHeight > 0 ? CGFloat(span.imageHeight) : metrics.iconSize
+            // Spacing before this item:
+            // 1. If right after an image on the same line, use the 4 pt icon-to-text gap.
+            // 2. If right after a line break or between segments, use standard separator advance (gapBefore = 0).
+            if previousWasImage && !afterLineBreak {
+                item.gapBefore = metrics.iconTextGap
+            } else {
+                item.gapBefore = 0
+            }
+            afterLineBreak = false
+
+            if effectiveSpan.isImage {
+                guard !effectiveSpan.text.isEmpty else { continue }
+                let image = BarIconCache.shared.image(for: effectiveSpan.text)
+                let w = effectiveSpan.imageWidth > 0 ? CGFloat(effectiveSpan.imageWidth) : metrics.iconSize
+                let h = effectiveSpan.imageHeight > 0 ? CGFloat(effectiveSpan.imageHeight) : metrics.iconSize
                 item.image = image
-                // Even when the image has not loaded yet, reserve its box: the
-                // strip must not reflow the moment an icon arrives.
                 item.naturalWidth = w
                 item.maxWidth = w
                 item.height = h
@@ -995,9 +1024,9 @@ final class StatusItemView: NSView {
                 continue
             }
 
-            guard !span.text.isEmpty else { continue }
-            let font = font(for: span)
-            guard let line = makeLine(span.text, font: font, color: textColor(span)) else {
+            guard !effectiveSpan.text.isEmpty else { continue }
+            let font = font(for: effectiveSpan)
+            guard let line = makeLine(effectiveSpan.text, font: font, color: textColor(effectiveSpan)) else {
                 continue
             }
             var ascent: CGFloat = 0
@@ -1080,85 +1109,90 @@ final class StatusItemView: NSView {
         }
     }
 
-    /// Position the items, mirroring `BarRenderer::DrawFrame`'s position pass.
+    /// Position the items in a single left-to-right flow for the macOS menu bar.
     ///
-    /// Left-aligned spans stack from the left, right-aligned ones stack
-    /// leftwards from the right margin, centre-aligned ones are centred in the
-    /// strip. A separator is drawn before every span except the first on the
-    /// line, and never before a right-aligned span (matching the Windows
-    /// renderer, whose right group carries its own visual separation).
+    /// On the single-line 24 pt macOS menu bar, all spans flow sequentially from
+    /// left to right in source order. Explicit alignment (e.g. `right` or `center`,
+    /// which scripts author for two-line Windows taskbars) is ignored so spans pack
+    /// tightly without artificial empty voids.
+    ///
+    /// A separator is drawn before each span (except after an icon, where the 4 pt
+    /// icon-to-text gap is used instead). Layout coordinates mirror `requiredWidth`
+    /// exactly so the strip's physical width perfectly bounds its placed content.
     private func layout(_ items: [Item], in bounds: CGRect) -> LayoutResult {
         var result = LayoutResult()
         guard !items.isEmpty else { return result }
 
-        let w = bounds.width
         let h = bounds.height
         var leftX = contentOriginX
-        var rightX = w - metrics.padHorizontal
 
         let separatorAdvance = style.showSeparators
             ? metrics.separatorGap * 2 + metrics.separatorWidth
             : 0
 
-        // Tracks whether a LEFT-aligned span has already been placed, which is
-        // exactly the condition `requiredWidth` uses (`leftCount > 0`) to decide
-        // whether a gap is consumed. The two must agree or a separator lands
-        // where no gap was reserved and the strip is a rule-width too narrow.
-        var sawLeftOnLine = false
+        var sawItemOnLine = false
+
+        // Optical baseline calculation:
+        // SF Pro 13 in a 24 pt menu bar has its optical numeral/cap baseline at
+        // 7.5 pt (matching the macOS system clock and Control Centre).
+        // To prevent mixed font sizes (e.g. 13 pt + 10 pt in net_monitor) from
+        // jumping vertically, all text runs in the strip share this single baseline.
+        var maxAscent: CGFloat = 0
+        var maxDescent: CGFloat = 0
+        for item in items where !item.dropped && item.isText {
+            maxAscent = max(maxAscent, item.ascent)
+            maxDescent = max(maxDescent, item.descent)
+        }
+
+        var sharedBaseline: CGFloat = 7.5
+        if maxAscent > 0 {
+            if maxAscent + sharedBaseline > h - 0.5 {
+                sharedBaseline = min(7.5, h - maxAscent - 0.5)
+            }
+            if sharedBaseline - maxDescent < 0.5 {
+                sharedBaseline = max(sharedBaseline, maxDescent + 0.5)
+            }
+        }
 
         for item in items where !item.dropped {
             let width = item.effectiveWidth
             guard width > 0 else { continue }
 
-            // How much room stands before this span: the icon-to-text gap if it
-            // has one, otherwise the separator advance. Mirrors `requiredWidth`'s
-            // `gap(before:)` exactly.
             let gap = item.gapBefore > 0 ? item.gapBefore : separatorAdvance
-
-            let x: CGFloat
-            switch item.span.align {
-            case .left:
-                x = leftX
-                leftX += width
+            if sawItemOnLine {
                 leftX += gap
-            case .right:
-                rightX -= width
-                x = rightX
-                rightX -= gap
-            case .center:
-                x = (w - width) / 2
             }
+            let x = leftX
 
-            // Separator before this span: only for a left-aligned span that is
-            // not the first left one on the line, and only when an icon-to-text
-            // gap is not already standing there. Mirrors `requiredWidth`'s
-            // `gap(before:)` + `leftCount > 0`.
-            if style.showSeparators && item.span.align == .left
-                && sawLeftOnLine && item.gapBefore == 0 {
-                let sepX = x - (metrics.separatorGap + metrics.separatorWidth)
+            // Separator before this span: only for spans after the first on the
+            // line, and only when an icon-to-text gap is not already standing there.
+            // Coordinates are rounded to integer points for Retina pixel crispness.
+            if style.showSeparators && sawItemOnLine && item.gapBefore == 0 {
+                let sepX = (x - (metrics.separatorGap + metrics.separatorWidth)).rounded()
                 result.separators.append(CGRect(
                     x: sepX,
-                    y: (h - metrics.separatorHeight) / 2,
+                    y: ((h - metrics.separatorHeight) / 2).rounded(),
                     width: metrics.separatorWidth,
                     height: metrics.separatorHeight
                 ))
             }
 
-            // Vertical placement: an icon sits on the centre line; text sits on
-            // a baseline that centres its ascent+descent box.
+            // Vertical placement: an icon sits on the centre line;
+            // all text items share the unified optical baseline.
             let baseline: CGFloat
             let rect: CGRect
             if item.image != nil {
-                rect = CGRect(x: x, y: (h - item.height) / 2, width: width, height: item.height)
+                let iconY = ((h - item.height) / 2).rounded()
+                rect = CGRect(x: x, y: iconY, width: width, height: item.height)
                 baseline = rect.minY
             } else {
-                let boxBottom = (h - item.height) / 2
-                baseline = boxBottom + item.descent
-                rect = CGRect(x: x, y: boxBottom, width: width, height: item.height)
+                baseline = sharedBaseline
+                rect = CGRect(x: x, y: sharedBaseline - item.descent, width: width, height: item.height)
             }
 
             result.placed.append(Placed(item: item, rect: rect, baseline: baseline, line: item.line))
-            if item.span.align == .left { sawLeftOnLine = true }
+            leftX += width
+            sawItemOnLine = true
         }
 
         return result

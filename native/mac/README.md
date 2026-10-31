@@ -205,18 +205,21 @@ These are choices, not oversights. Each is a candidate for reconciliation.
 9. **Bottom state indicator, not the left stripe.** VISUAL_SPEC §7.2: stale and
    error draw a bottom-centred 16 x 3 rounded bar (`status/caution` /
    `status/critical`); a healthy item draws nothing. The old 2 pt full-height
-   left stripe is gone. The Dart preview still draws the stripe — a divergence
-   for the Dart lane to close.
+   left stripe is gone. Positioned at y = 1.0 pt with integer-point coordinates
+   so the bottom pill radius is fully preserved and pixel-crisp on Retina.
+   The Dart preview still draws the stripe — a divergence for the Dart lane to close.
 10. **Hover uses the system highlight.** No `bar/bgHover` fill or `bar/hairline`
     is painted; the view is transparent and drives the `NSStatusBarButton`'s own
     `highlight(_:)` from `mouseDown` / `mouseUp` (VISUAL_SPEC §7.1 "系统高亮").
     The two tokens stay frozen for Windows, where a taskbar segment has no
     system highlight of its own.
-11. **Font size 13, not 9.** VISUAL_SPEC §7.1 gives macOS SF Pro 13. The Dart
-    controller sends `kBarDefaultFontSize` (9) when the config has no opinion;
-    the renderer treats 9 as "unspecified" and draws 13 instead. Any other
-    explicit size is honoured. The Dart preview's `TpBarTypography.labelSize`
-    is 11, so the preview and the menu bar differ until that is reconciled.
+11. **Font size 13, not 9, with 10 pt legible floor.** VISUAL_SPEC §7.1 gives
+    macOS SF Pro 13. The Dart controller sends `kBarDefaultFontSize` (9) when
+    the config has no opinion; the renderer treats 9 as "unspecified" and draws
+    13 instead. Furthermore, tiny font sizes (such as size 4 authored for Windows
+    two-line layouts or size 8 for secondary badges) are clamped to a legible floor
+    of 10 pt (`minFontSize`), sitting between Apple's 9 pt mini and 11 pt small
+    system fonts so scripts like `zeeho.lua` remain glanceable without squinting.
 12. **Menu-bar order is deterministic.** `NSStatusBar` inserts each new status
     item to the LEFT of the existing ones, so creating bars in config order
     displays them reversed. The plugin recreates the system items from the
@@ -224,6 +227,28 @@ These are choices, not oversights. Each is a candidate for reconciliation.
     Views are reused, so content and callbacks survive. `autosaveName` is
     deliberately not set: a persisted ⌘-drag position would fight the config
     order, and there is no API to reorder the other items around it.
+13. **Two-line script horizontal joining and left-to-right flow.** The macOS menu bar is
+    24 pt tall: ONE line only (VISUAL_SPEC §7.1). Rather than silently dropping
+    line 2 and losing critical information (e.g. tire pressure in `zeeho.lua`),
+    multi-line spans are joined horizontally with segment spacing, and embedded
+    newlines are sanitized to spaces. Explicit alignment attributes (e.g. `align: right`,
+    authored for two-line Windows taskbar layouts) are ignored on the single-line menu bar;
+    all spans flow sequentially from left to right in source order so items pack
+    naturally without gaping empty voids. If the joined content exceeds the strip width,
+    `truncateToFit` cleanly ellipsis-truncates (`…`) from the rightmost span.
+14. **Strip width matches content; explicit width is an upper cap.** Strips are
+    auto-sized to their content (`requiredWidth()`) so no blank space is left at the end.
+    Configured `bar_width` (such as Windows `375`) acts as an upper bound rather than
+    inflating the menu-bar item.
+15. **Optical baseline alignment.** Mixed font sizes within a strip share a
+    single optical baseline (7.5 pt from bottom for standard menu-bar fonts,
+    adjusted gracefully for oversized fonts). This prevents secondary badges
+    (e.g. `[27]` in `net_monitor.lua`) from jumping vertically and aligns
+    text optically with the macOS system clock.
+16. **Width hysteresis for auto-sized strips.** Dynamic numerical scripts
+    (e.g. bandwidth monitors) expand immediately on growth so content never
+    clips, but apply a 4 pt hysteresis buffer on minor contractions to absorb
+    single-character and punctuation fluctuations, eliminating menu-bar jitter.
 
 ## Known value disagreements in others' files (not changed here)
 
