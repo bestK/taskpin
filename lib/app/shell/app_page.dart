@@ -176,14 +176,12 @@ class _StageHeader extends StatelessWidget {
       ],
     );
 
-    final Widget actionRow = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (int i = 0; i < actions.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(width: TpSpacing.s12),
-          actions[i],
-        ],
-      ],
+    final Widget actionRow = Wrap(
+      spacing: TpSpacing.s12,
+      runSpacing: TpSpacing.s8,
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: actions,
     );
 
     return Padding(
@@ -197,9 +195,9 @@ class _StageHeader extends StatelessWidget {
           // statement. Keeping them out of the headline's row is what lets the
           // statement run the full content width on one line.
           if (actions.isNotEmpty) ...<Widget>[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[Flexible(child: actionRow)],
+            Align(
+              alignment: Alignment.centerRight,
+              child: actionRow,
             ),
             const SizedBox(height: TpSpacing.s24),
           ],

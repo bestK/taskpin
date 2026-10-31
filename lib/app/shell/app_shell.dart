@@ -23,7 +23,7 @@ import 'routes.dart';
 
 /// App theme mode. Defaults to following the system.
 final StateProvider<ThemeMode> appThemeModeProvider =
-    StateProvider<ThemeMode>((Ref ref) => ThemeMode.dark); // TEMP-SHOT
+    StateProvider<ThemeMode>((Ref ref) => ThemeMode.system);
 
 /// The shell frame.
 class AppShell extends ConsumerWidget {

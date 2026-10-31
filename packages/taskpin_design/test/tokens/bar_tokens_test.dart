@@ -139,9 +139,8 @@ void main() {
       expect(m.stateStripWidth, 2);
     });
 
-    test('is one line only', () {
-      // "菜单栏高 24pt：最多一行，字号钳制，超长省略号截断"
-      expect(TpBarMetrics.macOS.maxLines, 1);
+    test('renders up to two lines', () {
+      expect(TpBarMetrics.macOS.maxLines, 2);
     });
 
     test('is shorter than the Windows strip', () {

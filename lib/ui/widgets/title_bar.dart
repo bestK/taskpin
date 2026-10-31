@@ -69,7 +69,7 @@ const double kTitleBarHeight = 36;
 const double kTitleBarButtonWidth = 46;
 
 /// Space reserved on the left for the macOS traffic lights.
-const double kMacTrafficLightInset = 72;
+const double kMacTrafficLightInset = 80;
 
 /// Caption glyphs from `Segoe Fluent Icons` (`Segoe MDL2 Assets` on Win10).
 ///
@@ -194,7 +194,7 @@ class _TitleBarState extends State<TitleBar> {
           // where the child-window subclass is not installed.
           Expanded(
             child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
+              behavior: isWindows ? HitTestBehavior.opaque : HitTestBehavior.translucent,
               onDoubleTap:
                   isWindows && _supported == true ? _toggleMaximize : null,
               child: Row(

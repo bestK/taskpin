@@ -12,6 +12,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -106,9 +107,13 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
         if (items[i].pinned) i,
     ];
 
+    final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
+
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
+            _searchFocus.requestFocus(),
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
             _searchFocus.requestFocus(),
       },
       child: AppPage(
@@ -127,14 +132,19 @@ class _SignalsListPageState extends ConsumerState<SignalsListPage> {
               ),
         headerTrailing: <Widget>[
           if (!empty)
-            SizedBox(
-              width: kSearchWidth,
-              child: TpTextField(
-                hint: l10n.projectsSearchHint,
-                focusNode: _searchFocus,
-                leading: Icon(TpIcons.search, size: 16),
-                trailing: _ShortcutChip(label: l10n.projectsSearchShortcut),
-                onChanged: (String v) => setState(() => _query = v),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: kSearchWidth),
+              child: SizedBox(
+                width: kSearchWidth,
+                child: TpTextField(
+                  hint: l10n.projectsSearchHint,
+                  focusNode: _searchFocus,
+                  leading: Icon(TpIcons.search, size: 16),
+                  trailing: _ShortcutChip(
+                    label: isMac ? '⌘K' : l10n.projectsSearchShortcut,
+                  ),
+                  onChanged: (String v) => setState(() => _query = v),
+                ),
               ),
             ),
         ],

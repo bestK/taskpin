@@ -13,7 +13,6 @@ import '../tokens/radius.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
 import '../util/focus.dart';
-import 'ui.dart';
 
 /// One destination in the [TpNavRail].
 class TpNavDestination {
@@ -78,18 +77,22 @@ class TpTopNav extends StatelessWidget {
       child: Stack(
         children: <Widget>[
           Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                for (int i = 0; i < destinations.length; i++) ...<Widget>[
-                  if (i > 0) const SizedBox(width: TpSpacing.s8),
-                  _TpTopNavItem(
-                    destination: destinations[i],
-                    selected: destinations[i].route == selectedRoute,
-                    onTap: () => onSelect(destinations[i].route),
-                  ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (int i = 0; i < destinations.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(width: TpSpacing.s8),
+                    _TpTopNavItem(
+                      destination: destinations[i],
+                      selected: destinations[i].route == selectedRoute,
+                      onTap: () => onSelect(destinations[i].route),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           if (leading != null)

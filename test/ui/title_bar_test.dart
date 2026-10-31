@@ -78,7 +78,7 @@ void main() {
       expect(find.byKey(const Key('title_bar_close')), findsNothing);
     });
 
-    testWidgets('macOS reserves 72 px for the traffic lights', (
+    testWidgets('macOS reserves 80 px for the traffic lights', (
       WidgetTester tester,
     ) async {
       await _pumpBar(tester, _bar(platform: TargetPlatform.macOS));
@@ -94,7 +94,7 @@ void main() {
         boxes.any((SizedBox b) => b.width == kMacTrafficLightInset),
         isTrue,
       );
-      expect(kMacTrafficLightInset, 72);
+      expect(kMacTrafficLightInset, 80);
     });
 
     testWidgets('Linux renders no window buttons', (WidgetTester tester) async {

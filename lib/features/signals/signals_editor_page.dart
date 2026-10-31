@@ -20,6 +20,7 @@
 //   link    click_enabled = true, click_url = the link
 //   popup   click_enabled = true, click_url = ''  (the script's dialog opens)
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -321,6 +322,10 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
   Widget _previewSection(BuildContext context, PinItem item) {
     final AppLocalizations l10n = context.l10n;
     final TaskPinTheme theme = TaskPinTheme.of(context);
+    final bool isMac = defaultTargetPlatform == TargetPlatform.macOS;
+    final TpBarPlatform barPlatform =
+        isMac ? TpBarPlatform.macOS : TpBarPlatform.windows;
+    final double barHeight = isMac ? 24 : 48;
 
     final TpBarContent? content = _content;
     final bool hasContent = content != null && !content.isEmpty;
@@ -330,6 +335,7 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
     if (hasContent) {
       strip = TpBarPreviewStrip(
         content: content,
+        platform: barPlatform,
         background: _bgColor(item.barBgColor),
         width: item.barWidth > 0 ? item.barWidth.toDouble() : null,
         state: failed ? TpBarState.error : TpBarState.running,
@@ -365,7 +371,7 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
             children: <Widget>[
               Expanded(
                 child: Container(
-                  height: 48,
+                  height: barHeight,
                   clipBehavior: Clip.hardEdge,
                   alignment: Alignment.centerLeft,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -497,19 +503,22 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
       cards = <Widget>[
         TpSettingsCard(
           title: l10n.detailScriptFile,
-          trailing: SizedBox(
-            width: kPathFieldWidth,
-            child: TpTextField(
-              initialValue: item.luaPath,
-              hint: l10n.detailScriptFileDesc,
-              onChanged: (String v) {
-                _edit((PinItem i) => i.luaPath = v);
-                if (v.trim().endsWith('.lua')) _loadHeader();
-              },
-              onSubmitted: (String v) {
-                _edit((PinItem i) => i.luaPath = v);
-                _loadHeader();
-              },
+          trailing: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kPathFieldWidth),
+            child: SizedBox(
+              width: kPathFieldWidth,
+              child: TpTextField(
+                initialValue: item.luaPath,
+                hint: l10n.detailScriptFileDesc,
+                onChanged: (String v) {
+                  _edit((PinItem i) => i.luaPath = v);
+                  if (v.trim().endsWith('.lua')) _loadHeader();
+                },
+                onSubmitted: (String v) {
+                  _edit((PinItem i) => i.luaPath = v);
+                  _loadHeader();
+                },
+              ),
             ),
           ),
         ),
@@ -519,11 +528,14 @@ class _SignalsEditorPageState extends ConsumerState<SignalsEditorPage> {
       cards = <Widget>[
         TpSettingsCard(
           title: l10n.detailAddress,
-          trailing: SizedBox(
-            width: kPathFieldWidth,
-            child: TpTextField(
-              initialValue: item.url,
-              onChanged: (String v) => _edit((PinItem i) => i.url = v),
+          trailing: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kPathFieldWidth),
+            child: SizedBox(
+              width: kPathFieldWidth,
+              child: TpTextField(
+                initialValue: item.url,
+                onChanged: (String v) => _edit((PinItem i) => i.url = v),
+              ),
             ),
           ),
         ),

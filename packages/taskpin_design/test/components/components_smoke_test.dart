@@ -100,11 +100,11 @@ void main() {
     testWidgets('SplitPane renders both panes', (WidgetTester tester) async {
       await pumpBoth(
         tester,
-        () => SizedBox(
+        () => const SizedBox(
           height: 200,
           child: TpSplitPane(
-            master: const Text('master'),
-            detail: const Text('detail'),
+            master: Text('master'),
+            detail: Text('detail'),
           ),
         ),
       );
@@ -865,7 +865,7 @@ void main() {
       expect(find.text('42%'), findsOneWidget);
     });
 
-    testWidgets('BarPreviewStrip renders macOS one-line metrics',
+    testWidgets('BarPreviewStrip renders macOS two-line metrics when newline present',
         (WidgetTester tester) async {
       await pumpBoth(
         tester,
@@ -875,15 +875,17 @@ void main() {
             spans: <TpBarSpan>[
               TpBarSpan(text: 'CPU'),
               TpBarSpan(text: '42%'),
-              // This second line must be dropped on macOS.
               TpBarSpan(text: 'MEM', newline: true),
+              TpBarSpan(text: '12GB'),
             ],
           ),
         ),
       );
 
       expect(find.text('CPU'), findsOneWidget);
-      expect(find.text('MEM'), findsNothing);
+      expect(find.text('42%'), findsOneWidget);
+      expect(find.text('MEM'), findsOneWidget);
+      expect(find.text('12GB'), findsOneWidget);
     });
 
     testWidgets('BarPreviewStrip renders every state',
@@ -966,8 +968,8 @@ void main() {
         (WidgetTester tester) async {
       await pumpBoth(
         tester,
-        () => TpTaskbarFlightStrip(
-          items: const <TpTaskbarFlightStripItem>[
+        () => const TpTaskbarFlightStrip(
+          items: <TpTaskbarFlightStripItem>[
             TpTaskbarFlightStripItem(
               name: 'CPU Monitor',
               spans: <TpBarSpan>[TpBarSpan(text: 'CPU: 12%')],

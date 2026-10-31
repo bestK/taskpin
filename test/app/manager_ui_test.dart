@@ -2,6 +2,7 @@
 // settings and the two stub pages. Runs against an in-memory config; the engine
 // and the bar controller are replaced with fakes.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -57,6 +58,18 @@ PinItem _url(String name, {bool pinned = false, int intervalMs = 5000}) =>
 PinItem _lua(String name, {String path = r'C:\scripts\hud_clock.lua'}) =>
     PinItem(type: PinItemType.lua, name: name, luaPath: path, intervalMs: 5000);
 
+Future<void> withPlatform(
+  TargetPlatform platform,
+  Future<void> Function() fn,
+) async {
+  debugDefaultTargetPlatformOverride = platform;
+  try {
+    await fn();
+  } finally {
+    debugDefaultTargetPlatformOverride = null;
+  }
+}
+
 Future<GoRouter> _pump(
   WidgetTester tester,
   TaskPinConfig config, {
@@ -64,6 +77,7 @@ Future<GoRouter> _pump(
   String location = AppRoutes.signals,
   Brightness brightness = Brightness.dark,
   double textScale = 1,
+  Locale locale = const Locale('zh'),
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -84,7 +98,7 @@ Future<GoRouter> _pump(
       ],
       child: MaterialApp.router(
         routerConfig: router,
-        locale: const Locale('zh'),
+        locale: locale,
         builder: textScale == 1
             ? null
             : (BuildContext context, Widget? child) => MediaQuery(
@@ -265,16 +279,29 @@ void main() {
     testWidgets('the search field is always in the header, 320 wide', (
       WidgetTester tester,
     ) async {
-      await _pump(tester, _config(<PinItem>[_url('P0')]));
-      expect(find.byType(TpTextField), findsOneWidget);
-      expect(
-        tester.getSize(find.ancestor(
-          of: find.byType(TpTextField),
-          matching: find.byType(SizedBox),
-        ).first).width,
-        320,
-      );
-      expect(find.text('Ctrl K'), findsOneWidget);
+      await withPlatform(TargetPlatform.windows, () async {
+        await _pump(
+          tester,
+          _config(<PinItem>[_url('P0')]),
+        );
+        expect(find.byType(TpTextField), findsOneWidget);
+        expect(
+          tester.getSize(find.ancestor(
+            of: find.byType(TpTextField),
+            matching: find.byType(SizedBox),
+          ).first).width,
+          320,
+        );
+        expect(find.text('Ctrl K'), findsOneWidget);
+      });
+
+      await withPlatform(TargetPlatform.macOS, () async {
+        await _pump(
+          tester,
+          _config(<PinItem>[_url('P0')]),
+        );
+        expect(find.text('⌘K'), findsOneWidget);
+      });
     });
 
     testWidgets('search filters cards by name', (WidgetTester tester) async {
@@ -450,27 +477,54 @@ void main() {
       expect(find.text('默认应用'), findsOneWidget);
     });
 
-    testWidgets('the preview strip sits on the taskbar colour, 48 high', (
+    testWidgets('the preview strip sits on the taskbar colour, 48 high on windows', (
       WidgetTester tester,
     ) async {
-      await _pump(
-        tester,
-        _config(<PinItem>[_url('Price')]),
-        location: '/signals/0',
-      );
+      await withPlatform(TargetPlatform.windows, () async {
+        await _pump(
+          tester,
+          _config(<PinItem>[_url('Price')]),
+          location: '/signals/0',
+        );
 
-      final TaskPinTheme theme = TaskPinTheme.of(
-        tester.element(find.byType(TpBreadcrumb)),
-      );
-      final Finder bar = find.byWidgetPredicate(
-        (Widget w) =>
-            w is Container &&
-            w.constraints?.maxHeight == 48 &&
-            w.decoration is BoxDecoration &&
-            (w.decoration! as BoxDecoration).color == theme.taskbarPreview,
-      );
-      expect(bar, findsOneWidget);
-      expect(tester.getSize(bar).height, 48);
+        final TaskPinTheme theme = TaskPinTheme.of(
+          tester.element(find.byType(TpBreadcrumb)),
+        );
+        final Finder bar = find.byWidgetPredicate(
+          (Widget w) =>
+              w is Container &&
+              w.constraints?.maxHeight == 48 &&
+              w.decoration is BoxDecoration &&
+              (w.decoration! as BoxDecoration).color == theme.taskbarPreview,
+        );
+        expect(bar, findsOneWidget);
+        expect(tester.getSize(bar).height, 48);
+      });
+    });
+
+    testWidgets('the preview strip sits on the menu-bar colour, 24 high on macOS', (
+      WidgetTester tester,
+    ) async {
+      await withPlatform(TargetPlatform.macOS, () async {
+        await _pump(
+          tester,
+          _config(<PinItem>[_url('Price')]),
+          location: '/signals/0',
+        );
+
+        final TaskPinTheme theme = TaskPinTheme.of(
+          tester.element(find.byType(TpBreadcrumb)),
+        );
+        final Finder bar = find.byWidgetPredicate(
+          (Widget w) =>
+              w is Container &&
+              w.constraints?.maxHeight == 24 &&
+              w.decoration is BoxDecoration &&
+              (w.decoration! as BoxDecoration).color == theme.taskbarPreview,
+        );
+        expect(bar, findsOneWidget);
+        expect(tester.getSize(bar).height, 24);
+      });
     });
 
     testWidgets('a failed run shows the error under the preview', (
@@ -699,6 +753,32 @@ void main() {
           location: location,
         );
         expect(tester.takeException(), isNull);
+      });
+    }
+
+    for (final String location in <String>[
+      AppRoutes.signals,
+      '/signals/0',
+      AppRoutes.market,
+      AppRoutes.settings,
+      AppRoutes.diagnostics,
+    ]) {
+      testWidgets('$location lays out on macOS at 800x560 in English without overflow', (
+        WidgetTester tester,
+      ) async {
+        await withPlatform(TargetPlatform.macOS, () async {
+          await _pump(
+            tester,
+            _config(<PinItem>[
+              _url('Price', pinned: true),
+              _lua('Clock'),
+            ]),
+            size: const Size(800, 560),
+            location: location,
+            locale: const Locale('en'),
+          );
+          expect(tester.takeException(), isNull);
+        });
       });
     }
   });

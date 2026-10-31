@@ -298,9 +298,26 @@ class BarNotifier extends Notifier<BarState> {
   @override
   BarState build() {
     final bool enabled = ref.watch(barsEnabledProvider);
-    // The engine is watched so a failure to load is visible in the state
-    // rather than only in a log.
-    final AsyncValue<EngineApi> engine = ref.watch(engineProvider);
+    // The engine is LISTENED to, not watched, so a failure to load is still
+    // visible in the state. Watching it rebuilt this notifier when the engine
+    // came up, and a reconcile already awaiting a channel call then hit
+    // `ref.read` in the window between "dependency changed" and "rebuilt" —
+    // a Riverpod assertion in debug builds. A listener has no such window; it
+    // updates the flag and re-runs the scripts now that they can run.
+    final AsyncValue<EngineApi> engine = ref.read(engineProvider);
+    ref.listen<AsyncValue<EngineApi>>(engineProvider, (
+      AsyncValue<EngineApi>? prev,
+      AsyncValue<EngineApi> next,
+    ) {
+      // Deferred: Riverpod may deliver this during `build`, before `state`
+      // exists, and a notifier must not set its own state while building.
+      Future<void>.microtask(() {
+        state = state.copyWith(engineReady: next.hasValue);
+        if (next.hasValue && !(prev?.hasValue ?? false)) {
+          _schedule(ref.read(configProvider));
+        }
+      });
+    });
 
     // A config change is the only thing that should re-push content, so the
     // whole loop is driven from here rather than from a widget build.

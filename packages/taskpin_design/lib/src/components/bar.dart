@@ -9,8 +9,7 @@
 // If the preview looks right and the bar looks wrong, the two token files have
 // drifted — which is exactly the failure this widget is designed to surface.
 
-import 'dart:ui' show FontFeature;
-
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../models/bar_span.dart';
@@ -98,6 +97,7 @@ class TpBarPreviewStrip extends StatelessWidget {
     final double stripHeight = height ?? m.height;
     final double available = stripHeight - m.padVertical * 2;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final bool isMac = platform == TpBarPlatform.macOS;
 
     // The compact strips inside cards are 36 high, leaving 24 px for content.
     // Two 11 px lines at 1.25 do not fit there, so show the first line only
@@ -107,12 +107,14 @@ class TpBarPreviewStrip extends StatelessWidget {
     double used = 0;
     if (available > 0) {
       for (final List<TpBarSpan> line in lines.take(m.maxLines)) {
-        final double lineHeight = _lineHeight(line, m, scaler);
+        final double lineHeight = _lineHeight(line, m, scaler, isMac && lines.length > 1);
         if (visible.isNotEmpty && used + lineHeight > available) break;
         visible.add(line);
         used += lineHeight;
       }
     }
+
+    final bool isTwoLine = isMac && visible.length > 1;
 
     // A single line can still be taller than the strip (a large font size or
     // 150 % text scaling). Clamp its line height to what is available.
@@ -124,8 +126,8 @@ class TpBarPreviewStrip extends StatelessWidget {
       }
     }
 
-    // The state strip occupies the far left, full height.
-    final double stripWidth = showStateStrip ? m.stateStripWidth : 0;
+    // Windows state strip is on the left; macOS uses a bottom-centered indicator.
+    final double stripWidth = (!isMac && showStateStrip) ? m.stateStripWidth : 0;
 
     Widget body = Padding(
       padding: EdgeInsets.fromLTRB(
@@ -140,7 +142,7 @@ class TpBarPreviewStrip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           for (final List<TpBarSpan> line in visible)
-            _line(context, line, m, heightMultiplier),
+            _line(context, line, m, heightMultiplier, isMacTwoLine: isTwoLine),
         ],
       ),
     );
@@ -151,48 +153,97 @@ class TpBarPreviewStrip extends StatelessWidget {
       body = Opacity(opacity: TpBarTypography.loadingOpacity, child: body);
     }
 
+    final bool hasMacStateIndicator = isMac &&
+        showStateStrip &&
+        (state == TpBarState.error || state == TpBarState.stale);
+
     return Container(
       width: width,
       height: height ?? m.height,
       decoration: BoxDecoration(
         color: background ??
-            (hovered ? TpBarColors.bgHover : TpBarColors.bg),
+            (hovered
+                ? TpBarColors.bgHover
+                : (isMac ? Colors.transparent : TpBarColors.bg)),
         borderRadius: BorderRadius.circular(m.radius),
         border: hovered
-            ? Border.symmetric(
+            ? const Border.symmetric(
                 horizontal: BorderSide(color: TpBarColors.hairline),
               )
             : null,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: <Widget>[
-          if (showStateStrip)
-            Container(
-              width: m.stateStripWidth,
-              color: stateColor(state),
-            ),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: body,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (!isMac && showStateStrip)
+                Container(
+                  width: m.stateStripWidth,
+                  color: stateColor(state),
+                ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: body,
+                ),
+              ),
+            ],
           ),
+          if (hasMacStateIndicator)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: isTwoLine ? 0.5 : 1.0,
+              child: Center(
+                child: Container(
+                  width: TpBarMetrics.macStateIndicatorWidth,
+                  height: isTwoLine
+                      ? TpBarMetrics.macTwoLineStateIndicatorHeight
+                      : TpBarMetrics.macStateIndicatorHeight,
+                  decoration: BoxDecoration(
+                    color: stateColor(state),
+                    borderRadius: BorderRadius.circular(
+                      isTwoLine
+                          ? TpBarMetrics.macTwoLineStateIndicatorRadius
+                          : TpBarMetrics.macStateIndicatorRadius,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
   /// Line height in logical pixels, matching what [_span] renders.
-  double _lineHeight(List<TpBarSpan> spans, TpBarMetrics m, TextScaler scaler) =>
-      scaler.scale(_maxFontSize(spans, m)) * TpBarTypography.lineHeightMultiplier;
+  double _lineHeight(
+    List<TpBarSpan> spans,
+    TpBarMetrics m,
+    TextScaler scaler, [
+    bool isMacTwoLine = false,
+  ]) {
+    if (m.platform == TpBarPlatform.macOS && isMacTwoLine) {
+      return scaler.scale(TpBarTypography.macTwoLineGridSize) *
+          TpBarTypography.macTwoLinePitchFactor;
+    }
+    return scaler.scale(_maxFontSize(spans, m)) *
+        TpBarTypography.lineHeightMultiplier;
+  }
 
   /// The largest font size on [spans]; the default when none sets one.
   double _maxFontSize(List<TpBarSpan> spans, TpBarMetrics m) {
-    double size = TpBarTypography.labelSize;
+    double size = m.platform == TpBarPlatform.macOS
+        ? TpBarTypography.macLabelSize
+        : TpBarTypography.labelSize;
     for (final TpBarSpan span in spans) {
       if (!span.isImage && span.fontSize > 0) {
-        size = span.fontSize > size ? span.fontSize.toDouble() : size;
+        final double raw = span.fontSize.toDouble();
+        final double s = m.platform == TpBarPlatform.macOS
+            ? (raw == 9 ? TpBarTypography.macLabelSize : raw.clamp(TpBarTypography.macMinFontSize, TpBarTypography.macMaxFontSize))
+            : raw;
+        size = s > size ? s : size;
       }
     }
     return size;
@@ -202,17 +253,70 @@ class TpBarPreviewStrip extends StatelessWidget {
     BuildContext context,
     List<TpBarSpan> spans,
     TpBarMetrics m,
-    double? heightMultiplier,
-  ) {
+    double? heightMultiplier, {
+    bool isMacTwoLine = false,
+  }) {
+    if (m.platform == TpBarPlatform.macOS && isMacTwoLine) {
+      final List<TpBarSpan> leftRun =
+          spans.where((TpBarSpan s) => s.align != TpSpanAlign.right).toList();
+      final List<TpBarSpan> rightRun =
+          spans.where((TpBarSpan s) => s.align == TpSpanAlign.right).toList();
+
+      List<Widget> buildRun(List<TpBarSpan> run) {
+        final List<Widget> out = <Widget>[];
+        for (int i = 0; i < run.length; i++) {
+          final TpBarSpan span = run[i];
+          final bool prevWasImage = i > 0 && run[i - 1].isImage;
+          if (showSeparators && i > 0 && !prevWasImage && !span.isImage) {
+            out.add(
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: m.separatorGap),
+                child: Container(
+                  width: m.separatorWidth,
+                  height: 10,
+                  color: TpBarColors.separator,
+                ),
+              ),
+            );
+          }
+          out.add(_span(context, span, m, heightMultiplier, isMacTwoLine: true));
+        }
+        return out;
+      }
+
+      if (rightRun.isEmpty) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: buildRun(leftRun),
+        );
+      } else if (leftRun.isEmpty) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: buildRun(rightRun),
+        );
+      } else {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Row(mainAxisSize: MainAxisSize.min, children: buildRun(leftRun)),
+            const SizedBox(width: 8),
+            Row(mainAxisSize: MainAxisSize.min, children: buildRun(rightRun)),
+          ],
+        );
+      }
+    }
+
     final List<Widget> children = <Widget>[];
 
     for (int i = 0; i < spans.length; i++) {
       final TpBarSpan span = spans[i];
+      final bool prevWasImage = i > 0 && spans[i - 1].isImage;
 
-      // A separator between adjacent segments, not before the first one. This
-      // is the rule the plan calls the key to making a run of coloured text
-      // readable as a set of readings.
-      if (showSeparators && i > 0) {
+      // A separator between adjacent segments, not before the first one or after an image.
+      if (showSeparators && i > 0 && !prevWasImage && !span.isImage) {
         children.add(
           Padding(
             padding: EdgeInsets.symmetric(horizontal: m.separatorGap),
@@ -246,19 +350,21 @@ class TpBarPreviewStrip extends StatelessWidget {
     BuildContext context,
     TpBarSpan span,
     TpBarMetrics m,
-    double? heightMultiplier,
-  ) {
+    double? heightMultiplier, {
+    bool isMacTwoLine = false,
+  }) {
     if (span.isImage) {
       // The preview cannot resolve the script's image sources (that is the
       // engine's job), so it draws the icon slot at the correct size. This
       // keeps the layout honest even when the pixels are not available.
+      final double defaultIconSize = isMacTwoLine ? 10.0 : m.iconSize;
+      final double iconWidth = (span.imageWidth > 0 ? span.imageWidth : defaultIconSize).toDouble();
+      final double iconHeight = (span.imageHeight > 0 ? span.imageHeight : defaultIconSize).toDouble();
       return Padding(
-        padding: const EdgeInsets.only(right: TpSpacing.s6),
+        padding: const EdgeInsets.only(right: TpSpacing.s4),
         child: SizedBox(
-          width: (span.imageWidth > 0 ? span.imageWidth : m.iconSize)
-              .toDouble(),
-          height: (span.imageHeight > 0 ? span.imageHeight : m.iconSize)
-              .toDouble(),
+          width: iconWidth,
+          height: iconHeight,
           child: const DecoratedBox(
             decoration: BoxDecoration(
               color: TpBarColors.icon,
@@ -269,9 +375,34 @@ class TpBarPreviewStrip extends StatelessWidget {
       );
     }
 
-    final double size = span.fontSize > 0
-        ? span.fontSize.toDouble()
-        : TpBarTypography.labelSize;
+    final double size;
+    final double? height;
+    if (m.platform == TpBarPlatform.macOS) {
+      if (isMacTwoLine) {
+        final double raw = (span.fontSize > 0 && span.fontSize != 9)
+            ? span.fontSize.toDouble()
+            : TpBarTypography.macTwoLineGridSize;
+        size = raw.clamp(
+          TpBarTypography.macTwoLineMinFontSize,
+          TpBarTypography.macTwoLineGridSize,
+        );
+        height = TpBarTypography.macTwoLinePitchFactor;
+      } else {
+        final double raw = (span.fontSize > 0 && span.fontSize != 9)
+            ? span.fontSize.toDouble()
+            : TpBarTypography.macLabelSize;
+        size = raw.clamp(
+          TpBarTypography.macMinFontSize,
+          TpBarTypography.macMaxFontSize,
+        );
+        height = heightMultiplier ?? TpBarTypography.lineHeightMultiplier;
+      }
+    } else {
+      size = span.fontSize > 0
+          ? span.fontSize.toDouble()
+          : TpBarTypography.labelSize;
+      height = heightMultiplier ?? TpBarTypography.lineHeightMultiplier;
+    }
 
     return Text(
       span.text,
@@ -281,7 +412,7 @@ class TpBarPreviewStrip extends StatelessWidget {
             ? TpBarTypography.windowsFamily
             : TpBarTypography.macOSFamily,
         fontSize: size,
-        height: heightMultiplier ?? TpBarTypography.lineHeightMultiplier,
+        height: height,
         fontWeight: FontWeight.w400,
         color: span.color ?? TpBarColors.value,
         // Tabular, always. This is the rule that stops a value changing width
@@ -397,7 +528,9 @@ class _TpSpanRow extends StatelessWidget {
                 child: Text(
                   span.isImage ? '[image]' : span.text,
                   style: TextStyle(
-                    fontFamily: TpBarTypography.windowsFamily,
+                    fontFamily: defaultTargetPlatform == TargetPlatform.macOS
+                        ? TpBarTypography.macOSFamily
+                        : TpBarTypography.windowsFamily,
                     fontSize: TpBarTypography.labelSize,
                     color: override ?? TpBarColors.label,
                     fontFeatures: const <FontFeature>[
@@ -1127,7 +1260,9 @@ class _TaskbarWidgetPill extends StatelessWidget {
                   Text(
                     item.spans.map((TpBarSpan s) => s.text).join(' '),
                     style: TextStyle(
-                      fontFamily: TpBarTypography.windowsFamily,
+                      fontFamily: defaultTargetPlatform == TargetPlatform.macOS
+                          ? TpBarTypography.macOSFamily
+                          : TpBarTypography.windowsFamily,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: item.spans.first.color ?? theme.text.primary,

@@ -52,6 +52,7 @@ class MainFlutterWindow: NSWindow {
     self.titleVisibility = .hidden
     self.titlebarAppearsTransparent = true
     self.styleMask.insert(.fullSizeContentView)
+    self.isMovableByWindowBackground = true
 
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame

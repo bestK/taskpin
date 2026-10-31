@@ -18,9 +18,9 @@
 //
 // The bar is NOT themed by `TaskPinTheme`. It has its own small palette because
 // it must sit inside the OS shell, not inside the app. In particular the bar
-// uses the SYSTEM UI FONT (Segoe UI Variable / SF Pro), never Inter — forcing
-// Inter onto the taskbar would make TaskPin's strip visibly foreign next to
-// every other taskbar segment.
+// uses the SYSTEM UI FONT (Segoe UI Variable / .AppleSystemUIFont), never
+// Inter — forcing Inter onto the taskbar would make TaskPin's strip visibly
+// foreign next to every other taskbar segment.
 //
 // This file and `primitives.dart` are the only two allowed to hold raw
 // `Color(0x...)` literals.
@@ -213,7 +213,7 @@ class TpBarMetrics {
     widthStep: 5,
   );
 
-  /// macOS defaults: 24 pt, one line only, 6 pt radius.
+  /// macOS defaults: 24 pt, up to 2 lines, 6 pt radius. Aligned with StatusItemView.swift.
   static const TpBarMetrics macOS = TpBarMetrics(
     platform: TpBarPlatform.macOS,
     height: 24,
@@ -221,15 +221,22 @@ class TpBarMetrics {
     padVertical: 0,
     iconSize: 16,
     radius: 6,
-    maxLines: 1,
+    maxLines: 2,
     separatorWidth: 1,
-    separatorHeight: 12,
-    separatorGap: 4,
+    separatorHeight: 14,
+    separatorGap: 6,
     stateStripWidth: 2,
-    minWidth: 40,
+    minWidth: 28,
     maxWidth: 600,
     widthStep: 5,
   );
+
+  /// macOS bottom-centered state indicator metrics (StatusItemView.swift / VISUAL_SPEC §7.2).
+  static const double macStateIndicatorWidth = 16;
+  static const double macStateIndicatorHeight = 3;
+  static const double macStateIndicatorRadius = 1.5;
+  static const double macTwoLineStateIndicatorHeight = 2;
+  static const double macTwoLineStateIndicatorRadius = 1.0;
 
   /// Resolve metrics for a platform.
   static TpBarMetrics of(TpBarPlatform p) =>
@@ -260,13 +267,26 @@ const List<String> kFrozenBarTokenNames = <String>[
 class TpBarTypography {
   const TpBarTypography._();
 
-  /// The family the native renderers ask for, per platform.
+  /// The family Flutter text uses for the bar, per platform. macOS uses
+  /// `.AppleSystemUIFont` (San Francisco). `SF Pro` is not a macOS family name
+  /// and resolves to Helvetica. Keep this in step with `TpFontFamily.macUi`.
   static const String windowsFamily = 'Segoe UI Variable';
-  static const String macOSFamily = 'SF Pro';
+  static const String macOSFamily = '.AppleSystemUIFont';
 
-  /// Label text size (Windows 11 pt / macOS 11 pt are the same nominal size,
-  /// the shells just render them differently).
+  /// Label text size (Windows 11 pt / macOS 11 pt are the nominal size).
   static const double labelSize = 11;
+
+  /// macOS menu bar nominal label size (13 pt, SF Pro).
+  static const double macLabelSize = 13;
+
+  /// macOS font size clamping (StatusItemView.swift).
+  static const double macMinFontSize = 10;
+  static const double macMaxFontSize = 18;
+
+  /// macOS two-line mode font metrics.
+  static const double macTwoLineGridSize = 9.5;
+  static const double macTwoLineMinFontSize = 8;
+  static const double macTwoLinePitchFactor = 1.1;
 
   /// Value text size. Same as the label — values are distinguished by weight
   /// and colour, not by being bigger, so a two-line segment stays balanced.

@@ -305,7 +305,7 @@ class _FilterRow extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // Narrow: stack the search under the filter instead of overflowing.
-        if (constraints.maxWidth < 720) {
+        if (constraints.maxWidth < 860) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
