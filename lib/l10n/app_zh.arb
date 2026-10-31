@@ -280,6 +280,8 @@
   "settingsConfigFile": "配置文件",
   "actionOpen": "打开",
   "logsEmpty": "暂无日志",
+  "logsMore": "展开",
+  "logsLess": "收起",
   "marketSearchHint": "搜索插件",
   "marketManageSources": "管理来源",
   "marketViaProxy": "已通过 gh-proxy 加速",

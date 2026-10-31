@@ -18,12 +18,12 @@ import 'package:go_router/go_router.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
 import '../../core/app/app_providers.dart';
+import '../../features/diagnostics/logs_page.dart';
 import '../../features/market/market_page.dart';
 import '../../features/settings/settings_page.dart';
 import '../../features/signals/signals_editor_page.dart';
 import '../../features/signals/signals_list_page.dart';
 import '../l10n.dart';
-import '../pages/placeholder_page.dart';
 import 'app_shell.dart';
 
 /// Route paths, in one place.
@@ -106,14 +106,8 @@ GoRouter buildRouter() {
           ),
           GoRoute(
             path: AppRoutes.diagnostics,
-            pageBuilder: (BuildContext context, GoRouterState state) => _tab(
-              state,
-              PlaceholderPage(
-                title: context.l10n.navLogs,
-                message: context.l10n.logsEmpty,
-                icon: TpIcons.diagnostics,
-              ),
-            ),
+            pageBuilder: (BuildContext context, GoRouterState state) =>
+                _tab(state, const LogsPage()),
           ),
           // Debug-only: the design system gallery.
           if (kDebugMode)

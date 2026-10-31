@@ -280,6 +280,8 @@
   "settingsConfigFile": "Config file",
   "actionOpen": "Open",
   "logsEmpty": "No logs yet",
+  "logsMore": "Show more",
+  "logsLess": "Show less",
   "marketSearchHint": "Search plugins",
   "marketManageSources": "Manage sources",
   "marketViaProxy": "Using gh-proxy",

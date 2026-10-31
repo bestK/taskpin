@@ -7,18 +7,15 @@
 //
 // The taskbar bars are native windows, not widgets. Nothing here draws them.
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
 import '../../core/bar/bar_controller.dart';
-import '../../core/bar/bar_source.dart' show resolveScriptPath;
 import '../../core/config/config_providers.dart';
 import '../../core/config/config_schema.dart';
-import '../../features/signals/widgets/item_status.dart';
+import '../../features/diagnostics/item_problems.dart';
 import '../../features/dialogs/inline_dialog_layer.dart';
 import '../../ui/widgets/title_bar.dart';
 import '../l10n.dart';
@@ -46,8 +43,13 @@ class AppShell extends ConsumerWidget {
     final TaskPinConfig config = ref.watch(configProvider);
     final Map<int, BarSnapshot> bars =
         ref.watch(barControllerProvider.select((BarState s) => s.bars));
-    final int errorCount =
-        countItemsWithErrors(config.items, bars, _baseDir(ref));
+    // The same list the Logs page renders, so the badge is its row count.
+    final int errorCount = collectItemProblems(
+      config.items,
+      bars,
+      _baseDir(ref),
+      context.l10n,
+    ).length;
 
     return _withInlineDialogs(
       Scaffold(
@@ -117,31 +119,4 @@ class AppShell extends ConsumerWidget {
       return '';
     }
   }
-}
-
-/// Number of items that cannot run: a missing or unset script, an unset URL,
-/// or a script error reported by the bar controller.
-int countItemsWithErrors(
-  List<PinItem> items,
-  Map<int, BarSnapshot> bars,
-  String baseDir,
-) {
-  int count = 0;
-  for (int i = 0; i < items.length; i++) {
-    final SignalStatus status = SignalStatus.of(
-      items[i],
-      pathExists: (String p) {
-        try {
-          return File(resolveScriptPath(p, baseDir)).existsSync();
-        } on Object {
-          return false;
-        }
-      },
-    );
-    final String? error = bars[i]?.error;
-    if (!status.isRunnable || (error != null && error.isNotEmpty)) {
-      count++;
-    }
-  }
-  return count;
 }
