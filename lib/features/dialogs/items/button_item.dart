@@ -53,11 +53,10 @@ class DialogButtonItem extends StatelessWidget {
 /// A button that keeps `TpButton`'s focus/hover/keyboard behaviour but draws
 /// the script's own colours when supplied.
 ///
-/// Built on `TpFocusRing` + `TpHoverBuilder` rather than `TpButton` because
-/// `TpButton` derives its skin from the theme's variants and offers no colour
-/// override — and a script's `bg = "#333333"` is part of the dialog contract,
-/// not decoration.
-class _SpecStyledButton extends StatelessWidget {
+/// Built on `TpFocusRing` rather than `TpButton` because `TpButton` derives its
+/// skin from the theme's variants and offers no colour override — and a
+/// script's `bg = "#333333"` is part of the dialog contract, not decoration.
+class _SpecStyledButton extends StatefulWidget {
   const _SpecStyledButton({
     required this.label,
     required this.customBg,
@@ -71,41 +70,84 @@ class _SpecStyledButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
+  State<_SpecStyledButton> createState() => _SpecStyledButtonState();
+}
+
+class _SpecStyledButtonState extends State<_SpecStyledButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
 
-    return TpHoverBuilder(
-      builder: (BuildContext context, bool hovered) {
-        // When no custom background is passed from the script, default to the
-        // theme's control fill and lift to `control.fillHover` on hover.
-        // If the script provided an explicit hex colour (part of the dialog
-        // contract), preserve it and lighten slightly on hover.
-        final Color background;
-        if (customBg != null) {
-          background = hovered
-              ? Color.lerp(customBg!, theme.text.primary, 0.12) ?? customBg!
-              : customBg!;
-        } else {
-          background = hovered ? theme.control.fillHover : theme.control.fill;
-        }
+    // When no custom background is passed from the script, default to the
+    // theme's control fill and lift to `control.fillHover` on hover /
+    // `control.fillPressed` on press.
+    // If the script provided an explicit hex colour, preserve it and adjust
+    // luminance on hover/press.
+    final Color background;
+    if (widget.customBg != null) {
+      if (_pressed) {
+        background = Color.lerp(widget.customBg!, theme.text.primary, 0.24) ??
+            widget.customBg!;
+      } else if (_hovered) {
+        background = Color.lerp(widget.customBg!, theme.text.primary, 0.12) ??
+            widget.customBg!;
+      } else {
+        background = widget.customBg!;
+      }
+    } else {
+      if (_pressed) {
+        background = theme.control.fillPressed;
+      } else if (_hovered) {
+        background = theme.control.fillHover;
+      } else {
+        background = theme.control.fill;
+      }
+    }
 
-        final Color foreground = customFg ?? theme.text.primary;
+    // VISUAL_SPEC §8: "脚本指定背景色时文字取黑或白中对比度高的一个"
+    final Color foreground;
+    if (widget.customFg != null) {
+      foreground = widget.customFg!;
+    } else if (widget.customBg != null) {
+      foreground = widget.customBg!.computeLuminance() > 0.5
+          ? const Color(0xFF000000)
+          : const Color(0xFFFFFFFF);
+    } else {
+      foreground = theme.text.primary;
+    }
 
-        return TpFocusRing(
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: TpFocusRing(
           radius: TpRadius.control,
-          onTap: onPressed,
-          onActivate: onPressed,
+          onTap: widget.onPressed,
+          onActivate: widget.onPressed,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: background,
               borderRadius: TpRadius.control,
-              border: Border.all(color: theme.control.stroke),
+              border: Border.all(
+                color: _pressed
+                    ? theme.control.strokeStrong
+                    : theme.control.stroke,
+              ),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: TpSpacing.s12),
               child: Center(
                 child: Text(
-                  label,
+                  widget.label,
                   style: TpTypography.body.toTextStyle().copyWith(
                     color: foreground,
                   ),
@@ -115,8 +157,8 @@ class _SpecStyledButton extends StatelessWidget {
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

@@ -27,7 +27,28 @@ class DialogTextItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TaskPinTheme theme = TaskPinTheme.of(context);
-    final Color? explicitColor = parseDialogColor(item.color);
+    final DialogSurfaceContext? surfaceContext =
+        DialogSurfaceContext.of(context);
+    final Color? parsedColor = parseDialogColor(item.color);
+
+    // Color contrast adaptation is strictly gated to macOS popover mode
+    // (`hostDrawsSurface == true`), where native vibrant material or explicit
+    // fill shows through. In Windows window mode (`hostDrawsSurface == false`),
+    // script colours must stay strictly untouched.
+    final Color? explicitColor;
+    if (parsedColor != null) {
+      if (surfaceContext != null && surfaceContext.hostDrawsSurface) {
+        explicitColor = ensureContrast(
+          parsedColor,
+          surfaceContext.surfaceColor,
+          minContrast: item.bold ? 3.0 : 4.5,
+        );
+      } else {
+        explicitColor = parsedColor;
+      }
+    } else {
+      explicitColor = null;
+    }
     final bool isLabel = _isLabel(item);
     final Color defaultColor =
         isLabel ? theme.text.secondary : theme.text.primary;

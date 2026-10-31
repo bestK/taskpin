@@ -11,6 +11,7 @@
 // than a placeholder box: an unloadable image must not leave a 64 px hole.
 
 import 'package:flutter/widgets.dart';
+import 'package:taskpin_design/taskpin_design.dart';
 
 import '../dialog_spec.dart';
 import '../image_source.dart';
@@ -52,15 +53,18 @@ class DialogImageItem extends StatelessWidget {
 
     return Align(
       alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: w,
-        height: h,
-        child: Image(
-          image: provider,
-          fit: BoxFit.contain,
-          // A failed network fetch must not throw inside the dialog's isolate.
-          errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-              const SizedBox.shrink(),
+      child: ClipRRect(
+        borderRadius: TpRadius.control,
+        child: SizedBox(
+          width: w,
+          height: h,
+          child: Image(
+            image: provider,
+            fit: BoxFit.contain,
+            // A failed network fetch must not throw inside the dialog's isolate.
+            errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+                const SizedBox.shrink(),
+          ),
         ),
       ),
     );

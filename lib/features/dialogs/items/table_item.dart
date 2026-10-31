@@ -29,7 +29,9 @@
 // once keeps the grid aligned. This is a rendering nuance, not a data change —
 // which rows have actions is identical.
 
-import 'package:flutter/material.dart' show Colors;
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart' show Colors, Tooltip;
 import 'package:flutter/widgets.dart';
 import 'package:taskpin_design/taskpin_design.dart';
 
@@ -58,6 +60,8 @@ class DialogTableItem extends StatelessWidget {
     }
 
     final bool reserveAction = item.hasAnyRowAction;
+    final List<bool> numericCols = _detectNumericColumns(item);
+    final List<int> flexes = _computeColumnFlexes(item, numericCols);
 
     return TpSurface(
       level: TpSurfaceLevel.card,
@@ -67,18 +71,24 @@ class DialogTableItem extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          _header(context, theme, reserveAction),
+          _header(context, theme, reserveAction, numericCols, flexes),
           const TpDivider(),
           for (int r = 0; r < item.rowCount; r++) ...<Widget>[
             if (r > 0) const TpDivider(),
-            _row(context, theme, r, reserveAction),
+            _row(context, theme, r, reserveAction, numericCols, flexes),
           ],
         ],
       ),
     );
   }
 
-  Widget _header(BuildContext context, TaskPinTheme theme, bool reserveAction) {
+  Widget _header(
+    BuildContext context,
+    TaskPinTheme theme,
+    bool reserveAction,
+    List<bool> numericCols,
+    List<int> flexes,
+  ) {
     return ColoredBox(
       // Header surface is cardSecondary so it visibly steps up from the dialog
       // ground, providing clear visual structure for the table columns.
@@ -90,14 +100,19 @@ class DialogTableItem extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            for (final String c in item.columns)
+            for (int c = 0; c < item.columns.length; c++)
               Expanded(
+                flex: c < flexes.length ? flexes[c] : 1,
                 child: Text(
-                  c,
-                  // C draws the header with the BOLD font (`:231, :245`).
-                  style: TpTypography.bodyStrong.toTextStyle().copyWith(
+                  item.columns[c],
+                  // Header styling uses caption-weight semibold for crisp, dense structure.
+                  style: TpTypography.caption.toTextStyle().copyWith(
                     color: theme.text.secondary,
+                    fontWeight: FontWeight.w600,
                   ),
+                  textAlign: c < numericCols.length && numericCols[c]
+                      ? TextAlign.right
+                      : TextAlign.left,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -114,6 +129,8 @@ class DialogTableItem extends StatelessWidget {
     TaskPinTheme theme,
     int r,
     bool reserveAction,
+    List<bool> numericCols,
+    List<int> flexes,
   ) {
     final bool hasAction = item.rowHasAction(r);
     final List<String> cells = r < item.cells.length
@@ -127,28 +144,33 @@ class DialogTableItem extends StatelessWidget {
           // rather than alternating fills now that hairline dividers delineate
           // the rows cleanly.
           color: hovered ? theme.subtle.hover : Colors.transparent,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: TpSpacing.s8,
-              vertical: TpSpacing.s4,
-            ),
-            child: Row(
-              children: <Widget>[
-                for (int c = 0; c < item.colCount; c++)
-                  Expanded(
-                    child: _cellText(
-                      theme,
-                      c < cells.length ? cells[c] : '',
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 28),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: TpSpacing.s8,
+                vertical: TpSpacing.s4,
+              ),
+              child: Row(
+                children: <Widget>[
+                  for (int c = 0; c < item.colCount; c++)
+                    Expanded(
+                      flex: c < flexes.length ? flexes[c] : 1,
+                      child: _cellText(
+                        theme,
+                        c < cells.length ? cells[c] : '',
+                        isNumeric: c < numericCols.length && numericCols[c],
+                      ),
                     ),
-                  ),
-                if (reserveAction)
-                  SizedBox(
-                    width: actionColumnWidth,
-                    child: hasAction
-                        ? _action(context, theme, r)
-                        : const SizedBox.shrink(),
-                  ),
-              ],
+                  if (reserveAction)
+                    SizedBox(
+                      width: actionColumnWidth,
+                      child: hasAction
+                          ? _action(context, theme, r)
+                          : const SizedBox.shrink(),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -156,18 +178,38 @@ class DialogTableItem extends StatelessWidget {
     );
   }
 
-  Widget _cellText(TaskPinTheme theme, String text) {
-    final bool numeric = _isNumeric(text);
-    return Text(
+  Widget _cellText(
+    TaskPinTheme theme,
+    String text, {
+    required bool isNumeric,
+  }) {
+    final bool numeric = isNumeric || _isNumeric(text);
+    final Widget content = Text(
       text,
       // Numeric and metric data uses tabular figures so numbers align cleanly down columns.
       style: TpTypography.body.toTextStyle(tabular: numeric).copyWith(
         color: theme.text.primary,
       ),
+      textAlign: isNumeric ? TextAlign.right : TextAlign.left,
       overflow: TextOverflow.ellipsis,
       maxLines: 1,
     );
+
+    // Provide a tooltip on hover for long text (e.g. process names) that might truncate.
+    if (!numeric && text.length > 14) {
+      return Tooltip(
+        message: text,
+        waitDuration: const Duration(milliseconds: 500),
+        child: content,
+      );
+    }
+    return content;
   }
+
+  /// Pattern matching numeric values, percentages, currencies, or metric speeds (e.g. "1.2M/s").
+  static final RegExp _kNumericPattern = RegExp(
+    r'^[+-]?[$€¥£]?\d+(?:[.,]\d+)*(?:\s*(?:%|[a-zA-Z/°]+(?:\s*/\s*[a-zA-Z/°]+)*))?$',
+  );
 
   /// Whether a cell string represents numeric, currency, percentage, or metric data.
   static bool _isNumeric(String text) {
@@ -175,8 +217,59 @@ class DialogTableItem extends StatelessWidget {
     if (s.isEmpty) {
       return false;
     }
-    return RegExp(r'^[+-]?[$€¥£]?\d+(?:[.,]\d+)*(?:\s*(?:%|[a-zA-Z]+))?$')
-        .hasMatch(s);
+    return _kNumericPattern.hasMatch(s);
+  }
+
+  /// Detect which columns contain predominantly numeric/metric data across rows.
+  static List<bool> _detectNumericColumns(DialogItem item) {
+    final List<bool> result = List<bool>.filled(item.colCount, false);
+    for (int c = 0; c < item.colCount; c++) {
+      int numericCount = 0;
+      int totalCount = 0;
+      for (final List<String> row in item.cells) {
+        if (c < row.length) {
+          final String val = row[c].trim();
+          if (val.isNotEmpty && val != '-' && val != '?') {
+            totalCount++;
+            if (_isNumeric(val)) {
+              numericCount++;
+            }
+          }
+        }
+      }
+      result[c] = totalCount > 0 && (numericCount / totalCount) >= 0.5;
+    }
+    return result;
+  }
+
+  /// Allocate flexible column widths based on content lengths, giving text
+  /// columns (like process names) proportionally more space than compact numbers.
+  static List<int> _computeColumnFlexes(DialogItem item, List<bool> numericCols) {
+    if (item.colCount <= 1) return const <int>[1];
+
+    final List<int> flexes = List<int>.filled(item.colCount, 1);
+    for (int c = 0; c < item.colCount; c++) {
+      int maxLen = c < item.columns.length ? item.columns[c].length : 0;
+      for (final List<String> row in item.cells) {
+        if (c < row.length) {
+          maxLen = math.max(maxLen, row[c].length);
+        }
+      }
+      if (c < numericCols.length && numericCols[c]) {
+        flexes[c] = maxLen > 14 ? 2 : 1;
+      } else {
+        if (maxLen > 22) {
+          flexes[c] = 4;
+        } else if (maxLen > 14) {
+          flexes[c] = 3;
+        } else if (maxLen > 8) {
+          flexes[c] = 2;
+        } else {
+          flexes[c] = 1;
+        }
+      }
+    }
+    return flexes;
   }
 
   Widget _action(BuildContext context, TaskPinTheme theme, int r) {

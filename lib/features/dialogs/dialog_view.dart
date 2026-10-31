@@ -272,14 +272,15 @@ class _DialogViewState extends State<DialogView> {
       final RenderObject? body = _bodyKey.currentContext?.findRenderObject();
       if (outer is! RenderBox || body is! RenderBox) return;
       if (!outer.hasSize || !body.hasSize) return;
+      final EdgeInsets padding = _contentPadding(widget.hostDrawsSurface);
       final double chrome =
           outer.size.height - _scroll.position.viewportDimension;
       final double height =
-          chrome + body.size.height + _kContentPadding.vertical;
+          chrome + body.size.height + padding.vertical;
       double width;
       try {
         width = body.getMaxIntrinsicWidth(double.infinity) +
-            _kContentPadding.horizontal;
+            padding.horizontal;
       } catch (_) {
         // An item that cannot answer intrinsics: keep the width it has.
         width = outer.size.width;
@@ -336,28 +337,40 @@ class _DialogViewState extends State<DialogView> {
             ThemeData.estimateBrightnessForColor(hostFill),
           );
 
-    Widget body = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (int i = 0; i < spec.items.length; i++) ...<Widget>[
-          if (i > 0)
-            SizedBox(
-              height: _verticalSpacing(spec.items[i - 1], spec.items[i]),
-            ),
-          // A button sizes to its label, not to the dialog. `stretch` is right
-          // for text and tables (they should fill the width) but turns a
-          // one-word button into a full-width bar, which reads as a text field.
-          if (spec.items[i].kind == TpDialogItemKind.button)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IntrinsicWidth(child: _item(context, spec.items[i])),
-            )
-          else
-            _item(context, spec.items[i]),
-        ],
-      ],
-    );
+    final Color effectiveSurface;
+    if (widget.hostDrawsSurface) {
+      effectiveSurface = hostFill ??
+          (theme.brightness == Brightness.light
+              ? kMacPopoverLightSurface
+              : kMacPopoverDarkSurface);
+    } else {
+      effectiveSurface = hostFill ?? theme.bg.flyout;
+    }
+
+    Widget body = spec.items.isEmpty
+        ? const SizedBox(height: TpSpacing.s8)
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int i = 0; i < spec.items.length; i++) ...<Widget>[
+                if (i > 0)
+                  SizedBox(
+                    height: _verticalSpacing(spec.items[i - 1], spec.items[i]),
+                  ),
+                // A button sizes to its label, not to the dialog. `stretch` is right
+                // for text and tables (they should fill the width) but turns a
+                // one-word button into a full-width bar, which reads as a text field.
+                if (spec.items[i].kind == TpDialogItemKind.button)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IntrinsicWidth(child: _item(context, spec.items[i])),
+                  )
+                else
+                  _item(context, spec.items[i]),
+              ],
+            ],
+          );
 
     if (widget.controller.refreshError != null) {
       body = Column(
@@ -399,16 +412,30 @@ class _DialogViewState extends State<DialogView> {
     }
     Widget scrollView = SingleChildScrollView(
       controller: _scroll,
-      padding: _kContentPadding,
+      padding: _contentPadding(widget.hostDrawsSurface),
       child: body,
     );
     if (widget.showScrollbar) {
       // The automatic desktop scrollbar stays suppressed below; this explicit
       // one shares the view's controller so it tracks the same position.
-      scrollView = Scrollbar(
-        controller: _scroll,
-        thumbVisibility: true,
-        child: scrollView,
+      // macOS overlay styling uses a thin pill thumb with adequate margin
+      // so it never overlaps the table's rightmost column.
+      scrollView = ScrollbarTheme(
+        data: ScrollbarThemeData(
+          thumbVisibility: const WidgetStatePropertyAll<bool>(true),
+          thickness: const WidgetStatePropertyAll<double>(5.0),
+          radius: const Radius.circular(3.0),
+          // A theme token, not an alpha-adjusted text colour: the project
+          // forbids overriding a token's alpha (no_token_alpha_override_test).
+          thumbColor: WidgetStatePropertyAll<Color>(theme.control.strokeStrong),
+          crossAxisMargin: 2.0,
+          mainAxisMargin: 4.0,
+        ),
+        child: Scrollbar(
+          controller: _scroll,
+          thumbVisibility: true,
+          child: scrollView,
+        ),
       );
     }
     Widget scroll = ScrollConfiguration(
@@ -431,20 +458,34 @@ class _DialogViewState extends State<DialogView> {
     Widget content = scroll;
 
     if (!spec.borderless) {
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // A title band, not bare text on the dialog's own fill: without a
-          // distinct surface the caption and the first content row read as one
-          // block, and the divider between them looked like a stray line.
-          ColoredBox(
-            color: hostFill ?? theme.bg.cardSecondary,
-            child: _titleBar(context, theme, spec),
-          ),
-          const TpDivider(),
-          Expanded(child: content),
-        ],
-      );
+      final Widget titleWidget = _titleBar(context, theme, spec);
+      if (widget.hostDrawsSurface) {
+        // Popover mode: let the native macOS vibrant material show through the
+        // title band and drop the harsh separator under the title.
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ColoredBox(
+              color: hostFill ?? Colors.transparent,
+              child: titleWidget,
+            ),
+            Expanded(child: content),
+          ],
+        );
+      } else {
+        // Window mode: keep existing title card and divider intact.
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ColoredBox(
+              color: hostFill ?? theme.bg.cardSecondary,
+              child: titleWidget,
+            ),
+            const TpDivider(),
+            Expanded(child: content),
+          ],
+        );
+      }
     }
 
     // The dialog surface. `transparent_bg` means the host composites the window
@@ -486,24 +527,28 @@ class _DialogViewState extends State<DialogView> {
             child: surface,
           );
 
-    return _DialogShortcuts(
-      shiftDown: _shiftDown,
-      onEscape: widget.controller.close,
-      // Always enabled: the OS frame is always removed now (see
-      // `DialogController.applyWindowEffects`), so Shift+drag is the only way
-      // to move the dialog. The script's `borderless` flag no longer gates it,
-      // because it no longer gates the frame.
-      onDragStart: widget.controller.windowApi.beginDrag,
-      child: MouseRegion(
-        onEnter: (_) => _hovering = true,
-        onExit: (_) => _hovering = false,
-        child: Listener(
-          onPointerSignal: (PointerSignalEvent e) {
-            if (e is PointerScrollEvent) {
-              _onScroll(e);
-            }
-          },
-          child: framed,
+    return DialogSurfaceContext(
+      hostDrawsSurface: widget.hostDrawsSurface,
+      surfaceColor: effectiveSurface,
+      child: _DialogShortcuts(
+        shiftDown: _shiftDown,
+        onEscape: widget.controller.close,
+        // Always enabled: the OS frame is always removed now (see
+        // `DialogController.applyWindowEffects`), so Shift+drag is the only way
+        // to move the dialog. The script's `borderless` flag no longer gates it,
+        // because it no longer gates the frame.
+        onDragStart: widget.controller.windowApi.beginDrag,
+        child: MouseRegion(
+          onEnter: (_) => _hovering = true,
+          onExit: (_) => _hovering = false,
+          child: Listener(
+            onPointerSignal: (PointerSignalEvent e) {
+              if (e is PointerScrollEvent) {
+                _onScroll(e);
+              }
+            },
+            child: framed,
+          ),
         ),
       ),
     );
@@ -544,18 +589,26 @@ class _DialogViewState extends State<DialogView> {
     // across the whole desktop instead of only inside its own bounds.
     final Future<void> Function() drag =
         widget.controller.windowApi.beginDrag;
+    final EdgeInsets titlePadding = widget.hostDrawsSurface
+        ? const EdgeInsets.only(
+            left: 14,
+            right: 10,
+            top: 10,
+            bottom: 4,
+          )
+        : const EdgeInsets.only(
+            left: TpSpacing.s12,
+            right: TpSpacing.s8,
+            top: TpSpacing.s4,
+            bottom: TpSpacing.s4,
+          );
+
     final Widget band = Padding(
-      // Caption band: 36 px total (28 px close target + 4 px top/bottom padding).
-      // Left inset aligns with content padding (12 px).
-      padding: const EdgeInsets.only(
-        left: TpSpacing.s12,
-        right: TpSpacing.s8,
-        top: TpSpacing.s4,
-        bottom: TpSpacing.s4,
-      ),
+      padding: titlePadding,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 28),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Expanded(
               child: Text(
@@ -568,34 +621,9 @@ class _DialogViewState extends State<DialogView> {
               ),
             ),
             if (widget.onClose != null)
-              TpHoverBuilder(
-                builder: (BuildContext context, bool hovered) {
-                  return TpFocusRing(
-                    radius: TpRadius.control,
-                    onTap: widget.onClose,
-                    onActivate: widget.onClose,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color:
-                            hovered ? theme.subtle.hover : Colors.transparent,
-                        borderRadius: TpRadius.control,
-                      ),
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: Center(
-                          child: Icon(
-                            TpIcons.close,
-                            size: 14,
-                            color: hovered
-                                ? theme.text.primary
-                                : theme.text.secondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
+              _DialogCloseButton(
+                onClose: widget.onClose!,
+                isPopover: widget.hostDrawsSurface,
               ),
           ],
         ),
@@ -733,6 +761,90 @@ class _NoScrollbarBehavior extends ScrollBehavior {
   ) {
     return child;
   }
+}
+
+/// Close button affordance with deliberate hover and pressed feedback.
+class _DialogCloseButton extends StatefulWidget {
+  const _DialogCloseButton({
+    required this.onClose,
+    required this.isPopover,
+  });
+
+  final VoidCallback onClose;
+  final bool isPopover;
+
+  @override
+  State<_DialogCloseButton> createState() => _DialogCloseButtonState();
+}
+
+class _DialogCloseButtonState extends State<_DialogCloseButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final TaskPinTheme theme = TaskPinTheme.of(context);
+    final double buttonSize = widget.isPopover ? 24 : 28;
+    final double iconSize = widget.isPopover ? 13 : 14;
+    final BorderRadius radius = widget.isPopover
+        ? BorderRadius.circular(14)
+        : TpRadius.control;
+    final Color bg = _pressed
+        ? theme.subtle.pressed
+        : (_hovered ? theme.subtle.hover : Colors.transparent);
+    final Color iconColor = (_hovered || _pressed)
+        ? theme.text.primary
+        : theme.text.secondary;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: TpFocusRing(
+          radius: radius,
+          onTap: widget.onClose,
+          onActivate: widget.onClose,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: radius,
+            ),
+            child: SizedBox(
+              width: buttonSize,
+              height: buttonSize,
+              child: Center(
+                child: Icon(
+                  TpIcons.close,
+                  size: iconSize,
+                  color: iconColor,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dynamic content padding: popover mode supplies slightly more right inset (16px)
+/// so the overlay scrollbar never overlaps table content or right-aligned numbers.
+EdgeInsets _contentPadding(bool hostDrawsSurface) {
+  if (hostDrawsSurface) {
+    return const EdgeInsets.only(
+      left: 14,
+      right: 16,
+      top: 6,
+      bottom: 12,
+    );
+  }
+  return _kContentPadding;
 }
 
 /// Padding around the item area. C: PADDING_X 12, PADDING_Y 8
