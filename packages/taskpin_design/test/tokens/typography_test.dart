@@ -1,5 +1,6 @@
 // Type ramp: docs/VISUAL_SPEC.md §2.
 
+import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskpin_design/taskpin_design.dart';
@@ -93,6 +94,51 @@ void main() {
       expect(TpTypography.mono.family, 'Cascadia Mono');
       expect(TpFontFamily.monoFallback,
           <String>['Consolas', 'SF Mono', 'Menlo', 'Microsoft YaHei UI']);
+    });
+  });
+
+  group('macOS resolution', () {
+    // Names that do NOT resolve to San Francisco on macOS. CoreText maps each
+    // of these to Helvetica (verified by CTFontCreateWithName and by a
+    // family-name descriptor; see the comment on TpFontFamily.macUi).
+    const List<String> notSanFrancisco = <String>[
+      'SF Pro Text',
+      'SF Pro',
+      'SF Mono',
+      'CupertinoSystemText',
+    ];
+
+    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('UI roles resolve to the system UI face', () {
+      expect(TpFontFamily.macUi, '.AppleSystemUIFont');
+      expect(TpTypography.body.toTextStyle().fontFamily, '.AppleSystemUIFont');
+      expect(TpTypography.title.toTextStyle().fontFamily, '.AppleSystemUIFont');
+    });
+
+    test('mono roles resolve to Menlo', () {
+      expect(TpTypography.mono.toTextStyle().fontFamily, 'Menlo');
+    });
+
+    test('no macOS family name is one CoreText fails to resolve', () {
+      final Iterable<String?> resolved = <TextStyle>[
+        for (final TpTextStyleSpec s in TpTypography.all.values)
+          s.toTextStyle(),
+      ].map((TextStyle t) => t.fontFamily);
+      for (final String? name in resolved) {
+        expect(notSanFrancisco.contains(name), isFalse, reason: name);
+      }
+    });
+
+    test('UI fallback is installed macOS faces', () {
+      expect(TpTypography.body.toTextStyle().fontFamilyFallback,
+          <String>['PingFang SC', 'Helvetica Neue']);
+    });
+
+    test('mono fallback is installed macOS faces', () {
+      expect(TpTypography.mono.toTextStyle().fontFamilyFallback,
+          <String>['Monaco', 'PingFang SC']);
     });
   });
 

@@ -36,6 +36,19 @@ class TpFontFamily {
     'Menlo',
     'Microsoft YaHei UI',
   ];
+
+  /// macOS system UI face (San Francisco).
+  ///
+  /// The only name that reaches SF through the font manager. `SF Pro Text`,
+  /// `SF Pro`, `SF Mono` and `CupertinoSystemText` are not family names on
+  /// macOS and resolve to Helvetica. This is also the engine's default family
+  /// (`GetDefaultFontFamilies` in txt/src/txt/platform_mac.mm).
+  static const String macUi = '.AppleSystemUIFont';
+
+  /// macOS monospaced face for code. Menlo ships with macOS and resolves by
+  /// name. `.AppleSystemUIFontMonospaced` resolves to Helvetica through
+  /// CTFontCreateWithName, so it is not used.
+  static const String macMono = 'Menlo';
 }
 
 /// One entry in the type scale.
@@ -74,10 +87,10 @@ class TpTextStyleSpec {
     // time, where the platform is known.
     //
     // WHY IT MATTERS: the tokens name Segoe UI Variable, which does not exist
-    // on macOS. The fallback chain covered that — but macOS then rendered its
-    // THIRD choice, and which face that resolved to depended on whether the
-    // build looked fonts up by family name or by asset. Naming the platform's
-    // own face first makes the result the same in both builds.
+    // on macOS. Naming the platform's own face first (not a fallback) keeps the
+    // result the same in every build. macOS has no family called "SF Pro
+    // Text": CoreText resolves that name to Helvetica. See
+    // [TpFontFamily.macUi].
     final bool mac = defaultTargetPlatform == TargetPlatform.macOS;
     final String resolved = mac ? _macEquivalent(family) : family;
     final List<String> resolvedFallback =
@@ -98,18 +111,20 @@ class TpTextStyleSpec {
 
 /// The macOS face for a Windows family name.
 ///
-/// Only the three families the tokens actually use; anything else is passed
-/// through so a caller-supplied family is never silently replaced.
+/// Only the families the tokens actually use; anything else is passed through
+/// so a caller-supplied family is never silently replaced. Both Segoe UI
+/// roles map to [TpFontFamily.macUi]. The display role is not given the
+/// engine's `CupertinoSystemDisplay` because its large-size registration was
+/// not verified here.
 String _macEquivalent(String family) {
   switch (family) {
     case 'Segoe UI Variable Text':
-    case 'Segoe UI':
-      return 'SF Pro Text';
     case 'Segoe UI Variable Display':
-      return 'SF Pro Display';
+    case 'Segoe UI':
+      return TpFontFamily.macUi;
     case 'Cascadia Mono':
     case 'Consolas':
-      return 'SF Mono';
+      return TpFontFamily.macMono;
     default:
       return family;
   }
@@ -117,16 +132,13 @@ String _macEquivalent(String family) {
 
 /// The macOS fallback chain for a Windows one.
 ///
-/// Each platform's chain stays within its own faces before crossing over, so a
-/// missing primary degrades to a face the user recognises.
+/// Each chain lists faces that are installed on macOS. CJK text falls through
+/// to PingFang SC, which the Windows chains already use.
 List<String> _macFallback(List<String> fallback) {
-  if (fallback.contains('SF Pro Text') || fallback.contains('SF Mono')) {
-    return fallback;  // already a macOS chain
-  }
   if (fallback.contains('Consolas') || fallback.contains('Cascadia Mono')) {
-    return const <String>['Menlo', 'Monaco', 'PingFang SC'];
+    return const <String>['Monaco', 'PingFang SC'];
   }
-  return const <String>['SF Pro Text', 'PingFang SC', 'Helvetica Neue'];
+  return const <String>['PingFang SC', 'Helvetica Neue'];
 }
 
 /// The type ramp (docs/VISUAL_SPEC.md §2.2).

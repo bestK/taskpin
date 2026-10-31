@@ -4,6 +4,7 @@
 // Spacing, radius, sizes, type and motion are static and imported directly
 // from their token files.
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../tokens/bar_tokens.dart';
@@ -374,7 +375,15 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
       onInverseSurface: bg.window,
     );
 
-    final TextStyle Function(TpTextStyleSpec) ts = (spec) => spec.toTextStyle();
+    TextStyle ts(TpTextStyleSpec spec) => spec.toTextStyle();
+    final bool mac = defaultTargetPlatform == TargetPlatform.macOS;
+    // macOS: `.AppleSystemUIFont` is the system UI face (San Francisco). See
+    // TpFontFamily.macUi for why no "SF Pro" name is used.
+    final String defaultFontFamily = mac ? TpFontFamily.macUi : TpFontFamily.uiText;
+    final List<String> defaultFallback = mac
+        ? const <String>['PingFang SC', 'Helvetica Neue']
+        : TpFontFamily.uiFallback;
+
     final TextTheme textTheme = TextTheme(
       displaySmall: ts(TpTypography.title),
       headlineSmall: ts(TpTypography.subtitle),
@@ -387,8 +396,8 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
       labelMedium: ts(TpTypography.body),
       labelSmall: ts(TpTypography.caption),
     ).apply(
-      fontFamily: TpFontFamily.uiText,
-      fontFamilyFallback: TpFontFamily.uiFallback,
+      fontFamily: defaultFontFamily,
+      fontFamilyFallback: defaultFallback,
       bodyColor: text.primary,
       displayColor: text.primary,
     );
@@ -401,8 +410,8 @@ class TaskPinTheme extends ThemeExtension<TaskPinTheme> {
       canvasColor: bg.window,
       dividerColor: stroke.divider,
       splashFactory: NoSplash.splashFactory,
-      fontFamily: TpFontFamily.uiText,
-      fontFamilyFallback: TpFontFamily.uiFallback,
+      fontFamily: defaultFontFamily,
+      fontFamilyFallback: defaultFallback,
       extensions: <ThemeExtension<dynamic>>[this],
       textTheme: textTheme,
     );

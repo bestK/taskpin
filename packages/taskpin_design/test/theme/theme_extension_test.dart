@@ -1,5 +1,6 @@
 // TaskPinTheme: construction, lookup, lerp and the ThemeData bridge.
 
+import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskpin_design/taskpin_design.dart';
@@ -153,6 +154,24 @@ void main() {
       final TextStyle s = TaskPinTheme.dark().metricStyle;
       expect(s.fontFamily, 'Cascadia Mono');
       expect(s.fontFeatures, isNotNull);
+    });
+  });
+
+  group('ThemeData font defaults', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('Windows keeps the Segoe UI chain', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      final ThemeData td = TaskPinTheme.dark().toThemeData();
+      expect(td.textTheme.bodyMedium?.fontFamily, 'Segoe UI Variable Text');
+    });
+
+    test('macOS uses the system UI face, never an SF Pro name', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final ThemeData td = TaskPinTheme.dark().toThemeData();
+      expect(td.textTheme.bodyMedium?.fontFamily, '.AppleSystemUIFont');
+      expect(td.textTheme.bodyMedium?.fontFamilyFallback,
+          <String>['PingFang SC', 'Helvetica Neue']);
     });
   });
 }
